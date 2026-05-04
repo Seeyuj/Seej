@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "seeyuj/server/**"
+      - "seej/server/**"
       - ".github/workflows/rust.yml"
   pull_request:
     branches: [main]
     paths:
-      - "seeyuj/server/**"
+      - "seej/server/**"
       - ".github/workflows/rust.yml"
 
 env:
@@ -18,7 +18,7 @@ env:
 
 defaults:
   run:
-    working-directory: seeyuj/server
+    working-directory: seej/server
 
 jobs:
   check:
@@ -38,8 +38,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            seeyuj/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seeyuj/server/Cargo.lock') }}
+            seej/server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -77,8 +77,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            seeyuj/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seeyuj/server/Cargo.lock') }}
+            seej/server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -100,8 +100,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            seeyuj/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seeyuj/server/Cargo.lock') }}
+            seej/server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -128,8 +128,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            seeyuj/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seeyuj/server/Cargo.lock') }}
+            seej/server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -152,8 +152,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            seeyuj/server/target
-          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('seeyuj/server/Cargo.lock') }}
+            seej/server/target
+          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('seej/server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-doc-
 

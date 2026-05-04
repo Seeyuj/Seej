@@ -21,10 +21,10 @@ It defines:
 - structural choices ensuring coherence, persistence, and long-term maintainability.
 
 Implementation references for current scope are documented in:
-- [`../seeyuj/docs/phase1/README.md`](../seeyuj/docs/phase1/README.md)
-- [`../seeyuj/docs/phase1/DETERMINISM.md`](../seeyuj/docs/phase1/DETERMINISM.md)
-- [`../seeyuj/docs/phase1/PERSISTENCE.md`](../seeyuj/docs/phase1/PERSISTENCE.md)
-- [`../seeyuj/docs/phase1/BINARIES.md`](../seeyuj/docs/phase1/BINARIES.md)
+- [`../seej/docs/phase1/README.md`](../seej/docs/phase1/README.md)
+- [`../seej/docs/phase1/DETERMINISM.md`](../seej/docs/phase1/DETERMINISM.md)
+- [`../seej/docs/phase1/PERSISTENCE.md`](../seej/docs/phase1/PERSISTENCE.md)
+- [`../seej/docs/phase1/BINARIES.md`](../seej/docs/phase1/BINARIES.md)
 
 This document is authoritative.  
 Any proposal or contribution incompatible with this architecture is rejected.

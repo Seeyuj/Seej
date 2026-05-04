@@ -57,7 +57,7 @@ This is implemented under `sy_core` (so it can run without real I/O).
 
 ## How to run the determinism tests
 
-From `seeyuj/server/`:
+From `seej/server/`:
 
 ```bash
 cargo test -p sy_core

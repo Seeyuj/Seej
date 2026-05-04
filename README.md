@@ -32,10 +32,10 @@ Implemented but being hardened:
 
 Reference docs:
 
-- [Phase 1 Scope](seeyuj/docs/phase1/README.md)
-- [Determinism Contract](seeyuj/docs/phase1/DETERMINISM.md)
-- [Persistence and Recovery](seeyuj/docs/phase1/PERSISTENCE.md)
-- [Binary Usage](seeyuj/docs/phase1/BINARIES.md)
+- [Phase 1 Scope](seej/docs/phase1/README.md)
+- [Determinism Contract](seej/docs/phase1/DETERMINISM.md)
+- [Persistence and Recovery](seej/docs/phase1/PERSISTENCE.md)
+- [Binary Usage](seej/docs/phase1/BINARIES.md)
 
 ## Architecture
 
@@ -58,9 +58,9 @@ Core principles:
 Documentation structure:
 
 - Repository-level docs in [`doc/`](doc/) define project governance and architecture
-- Implementation-level docs in [`seeyuj/docs/phase1/`](seeyuj/docs/phase1/) define current Phase 1 scope and behavior
+- Implementation-level docs in [`seej/docs/phase1/`](seej/docs/phase1/) define current Phase 1 scope and behavior
 
-See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seeyuj/docs/ARCHITECTURE.md](seeyuj/docs/ARCHITECTURE.md), and [seeyuj/docs/phase1/README.md](seeyuj/docs/phase1/README.md).
+See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seej/docs/ARCHITECTURE.md](seej/docs/ARCHITECTURE.md), and [seej/docs/phase1/README.md](seej/docs/phase1/README.md).
 
 ## Quick Start
 
@@ -68,7 +68,7 @@ Prerequisite: Rust toolchain installed.
 
 ```bash
 git clone https://github.com/Seej/Seej.git
-cd Seej/seeyuj/server
+cd Seej/seej/server
 
 cargo build --workspace
 cargo test --workspace
@@ -110,4 +110,4 @@ Key references:
 
 - [doc/DECISIONS.md](doc/DECISIONS.md)
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
-- [seeyuj/docs/phase1/README.md](seeyuj/docs/phase1/README.md)
+- [seej/docs/phase1/README.md](seej/docs/phase1/README.md)

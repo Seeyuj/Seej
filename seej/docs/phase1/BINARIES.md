@@ -3,7 +3,7 @@
 All commands below assume you are in:
 
 ```bash
-cd seeyuj/server
+cd seej/server
 ```
 
 ## Build / test

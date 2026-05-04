@@ -256,7 +256,7 @@ mod tests {
     use sy_types::{EventId, RngSeed, SimTime, Tick};
 
     fn temp_store() -> FilesystemStore {
-        let path = temp_dir().join(format!("seeyuj_test_{}", std::process::id()));
+        let path = temp_dir().join(format!("seej_test_{}", std::process::id()));
         FilesystemStore::new(&path).unwrap()
     }
 

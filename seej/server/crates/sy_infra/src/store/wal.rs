@@ -435,7 +435,7 @@ mod tests {
 
     fn temp_wal() -> FileEventLog {
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = temp_dir().join(format!("seeyuj_wal_test_{}_{}.wal", std::process::id(), id));
+        let path = temp_dir().join(format!("seej_wal_test_{}_{}.wal", std::process::id(), id));
         // Clean up any existing file
         let _ = fs::remove_file(&path);
         FileEventLog::new(&path).unwrap()
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn recovery_after_reopen() {
-        let path = temp_dir().join(format!("seeyuj_wal_recovery_{}.wal", std::process::id()));
+        let path = temp_dir().join(format!("seej_wal_recovery_{}.wal", std::process::id()));
         let _ = fs::remove_file(&path);
 
         // Write some events

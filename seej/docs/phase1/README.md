@@ -69,7 +69,7 @@ See `PERSISTENCE.md` for the exact record layout and recovery algorithm.
 
 ## Workspace scope for Phase 1 (minimal build)
 
-The Phase 1 workspace members are defined in `seeyuj/server/Cargo.toml`.
+The Phase 1 workspace members are defined in `seej/server/Cargo.toml`.
 Phase 2+ crates/modules are kept in the repository to preserve the architecture, but are **commented out** from the workspace members and (when applicable) from dependencies.
 
 ## Determinism invariants (Phase 1)
