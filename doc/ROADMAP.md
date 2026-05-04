@@ -17,16 +17,17 @@ The project's absolute priority is the **solidity of the simulation core**, its 
 
 ---
 
-## Phase 0 – Conceptual Foundations (Current)
+## Phase 0 – Conceptual Foundations (Completed)
 
-🎯 **Objective: Lock in the vision and invariants**
+Status: Done
 
-This phase aims to ensure that the project rests on clear, understandable, and defensible foundations over time.
+Phase 0 locked the project's long-term invariants and governance model.
+Its objective was to establish clear, defensible foundations before scaling implementation.
 
-Expected deliverables:
-- Vision and fundamental principles clearly documented
+Delivered:
+- Vision and fundamental principles documented
 - Explicit definition of what the project **is** and **is not**
-- Clear separation between:
+- Formal separation between:
   - simulation core
   - optional modules
   - clients
@@ -34,15 +35,15 @@ Expected deliverables:
   - README
   - CONTRIBUTING
   - Code of Conduct
-  - initial architecture documents
+  - architecture and decision documents
 
-No "functional" implementation is a priority until foundations are stabilized.
+Phase 0 remains the reference baseline for all future decisions.
 
 ---
 
 ## Phase 1 – Minimal Simulation Core (Server Only)
 
-🟢 **Status: Foundational phase — non-negotiable**
+Status: In Progress (advanced)
 
 🎯 **Single (exclusive) objective**
 
@@ -54,9 +55,9 @@ This phase explicitly does **not** target:
 - advanced extensibility
 - user experience
 
-👉 It only aims to make the world's autonomous existence undeniable.
+It aims to make the world's autonomous existence undeniable.
 
-🧠 **Guiding principle**
+Guiding principle
 
 If the server can run alone for hours, is killed abruptly, restarts, and the world continues as if nothing happened, then Phase 1 is validated.
 
@@ -72,7 +73,7 @@ Anything that does not directly serve this proof is out of scope.
      - no non-injected RNG
    - Same inputs ⇒ same outputs
 
-   📌 Determinism is a functional requirement, not an optimization.
+Determinism is a functional requirement, not an optimization.
 
 2. **Persistent simulated time**
    - World time is simulated data
@@ -86,7 +87,7 @@ Anything that does not directly serve this proof is out of scope.
    - Space can be partially loaded / simulated
    - No realism or spatial optimization goals
 
-   📌 Space may be abstract. It only needs to exist.
+   Space may be abstract. It only needs to exist.
 
 4. **Persistent non-player entities**
    - Entities have:
@@ -95,7 +96,7 @@ Anything that does not directly serve this proof is out of scope.
      - lifecycle
    - They exist without players, evolve via simple systemic rules, and survive restarts
 
-   📌 No “player” entities. No exceptions.
+   No "player" entities. No exceptions.
 
 5. **Minimal systemic rules**
    - At least one causal rule exists (e.g., consumption, degradation, transformation, movement)
@@ -103,7 +104,7 @@ Anything that does not directly serve this proof is out of scope.
    - It depends only on the simulation
    - No gameplay or balancing goals
 
-   📌 A single rule is enough if it is real and persistent.
+   A single rule is enough if it is real and persistent.
 
 6. **Explicit on-disk persistence**
    - Every world mutation is explicitly written to disk and traceable
@@ -116,7 +117,7 @@ Anything that does not directly serve this proof is out of scope.
    - The server may be killed abruptly and restarted
    - The world is automatically restored, coherent, and requires no human intervention
 
-   📌 A lost world = Phase 1 failure.
+   A lost world = Phase 1 failure.
 
 8. **Headless server execution**
    - No graphical interface
@@ -124,7 +125,7 @@ Anything that does not directly serve this proof is out of scope.
    - No connected client required
    - “Solo” = local server; “Multi” = the same server, remote
 
-👁️ **Minimal observability required**
+Minimal observability required
 
 The world must be observable without a UI. Acceptable means:
 - structured logs
@@ -132,9 +133,9 @@ The world must be observable without a UI. Acceptable means:
 - basic CLI tools
 - diagnostic files
 
-📌 No graphical visualization is required.
+No graphical visualization is required.
 
-⛔ **Explicit out of scope (forbidden in Phase 1)**
+Explicit out of scope (forbidden in Phase 1)
 
 Formally excluded:
 - any graphical client
@@ -150,9 +151,9 @@ Formally excluded:
 - graphics standards
 - stabilized public API
 
-👉 Introducing any of these invalidates Phase 1.
+Introducing any of these too early invalidates Phase 1 scope discipline.
 
-🧪 **Validation criteria (measurable)**
+Validation criteria (measurable)
 
 Phase 1 is complete only if:
 - the server can run alone indefinitely
@@ -161,7 +162,24 @@ Phase 1 is complete only if:
 - two runs with the same inputs produce the same world
 - the server has zero graphical dependencies
 
-🧱 **Final rule (non-negotiable)**
+Phase 1 implementation status (current repository)
+
+Already implemented:
+- Deterministic tick loop with mandatory seed at world creation
+- Persistent simulated time (`Tick`, `SimTime`) in world state
+- Persistent zones and entities with stable identifiers
+- Snapshot + WAL persistence with event cursor (`last_event_id`)
+- Crash recovery by loading snapshot and replaying WAL
+- Headless daemon (`server_d`) for create/list/run flows
+- Inspection CLI (`sy_cli`) for status, events, entities, zones, dumps
+- Determinism tooling and tests (canonical hashing and replay checks)
+
+Still to complete before Phase 1 closure:
+- Harden operational scenarios with longer burn-in runs
+- Expand reproducibility test matrix and failure-mode coverage
+- Finalize the strict, measurable Phase 1 exit checklist in CI/docs
+
+Final rule (non-negotiable)
 
 Phase 1 is not meant to be impressive. It is meant to be irrefutable.
 

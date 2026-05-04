@@ -31,6 +31,7 @@ Some contributions, even technically correct, may be rejected if they do not ser
   - [Strict Separation Between Simulation and Rendering](#strict-separation-between-simulation-and-rendering)
   - [Platform Before Content](#platform-before-content)
 - [Accepted Contribution Types](#accepted-contribution-types)
+- [Good First Contributions](#good-first-contributions)
 - [Explicitly Rejected Contributions](#explicitly-rejected-contributions)
 - [Architecture Technical Rules and Constraints](#architecture-technical-rules-and-constraints)
 - [Contribution Workflow](#contribution-workflow)
@@ -153,6 +154,18 @@ Contributions adding "default" content to the detriment of platform robustness a
 ## Accepted Contribution Types
 
 The project accepts and encourages contributions that strengthen the platform's stability, coherence, and sustainability.
+
+## Good First Contributions
+
+If you want to contribute quickly with high acceptance probability, start with small, verifiable work directly aligned with Phase 1:
+
+- replay validation tests (snapshot cursor + WAL boundary cases);
+- persistence documentation improvements (snapshot/WAL/recovery behavior);
+- CLI inspection improvements (`sy_cli status`, `events`, `dump`, `entities`, `zones`);
+- burn-in scenarios and reproducibility checks;
+- structured logging and diagnostic clarity improvements.
+
+These contributions are valuable because they strengthen determinism, persistence confidence, and operational observability without changing the architectural direction.
 
 ### Bug Fixes
 

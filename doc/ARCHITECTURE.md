@@ -12,13 +12,19 @@
 
 ## Document Purpose
 
-This document describes the fundamental architecture of the persistent sandbox worlds platform.
+This document describes the fundamental architecture of the persistent world kernel.
 
 It defines:
 - the responsibilities of each system layer;
 - non-negotiable architectural boundaries;
 - technical constraints imposed on contributions;
 - structural choices ensuring coherence, persistence, and long-term maintainability.
+
+Implementation references for current scope are documented in:
+- [`../seeyuj/docs/phase1/README.md`](../seeyuj/docs/phase1/README.md)
+- [`../seeyuj/docs/phase1/DETERMINISM.md`](../seeyuj/docs/phase1/DETERMINISM.md)
+- [`../seeyuj/docs/phase1/PERSISTENCE.md`](../seeyuj/docs/phase1/PERSISTENCE.md)
+- [`../seeyuj/docs/phase1/BINARIES.md`](../seeyuj/docs/phase1/BINARIES.md)
 
 This document is authoritative.  
 Any proposal or contribution incompatible with this architecture is rejected.
@@ -151,7 +157,7 @@ The core:
 - imports no client dependencies;
 - can run entirely in headless mode.
 
-An official client based on Unreal Engine may exist as a reference implementation, but:
+An official client based on Unreal Engine may exist as a reference implementation (Phase 4+), but:
 
 - it has no privilege;
 - it is interchangeable;

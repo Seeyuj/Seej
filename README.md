@@ -1,103 +1,113 @@
 # SeeYuj
 
-> **Worlds shouldn't end just because the server restarts.**
-> An infrastructure for persistent, autonomous realities.
+> Deterministic, headless simulation kernel for persistent sandbox worlds.
 
-🔗 GitHub: [https://github.com/Seeyuj/Seeyuj](https://github.com/Seeyuj/Seeyuj)
-🧵 Follow: [https://x.com/SeeYuj](https://x.com/SeeYuj)
+SeeYuj is open-source simulation infrastructure for worlds that evolve without players, clients, or rendering engines.
+It focuses on deterministic server execution, explicit persistence, and replayable state transitions.
+Clients are rendering-agnostic consumers: they observe and interact through APIs, but the server remains authoritative.
+In Phase 1, this means: create a world, run ticks, persist state, kill the process, restart it, replay events, and verify identical state.
 
----
+- GitHub: [https://github.com/Seeyuj/Seeyuj](https://github.com/Seeyuj/Seeyuj)
+- Follow: [https://x.com/SeeYuj](https://x.com/SeeYuj)
 
-## The Manifesto
+## What Works Today (Phase 1)
 
-SeeYuj is not a game engine. It does not care about your frame rate, your polygons, or your shaders.
+Phase 1 core capabilities are implemented, but the phase is not closed yet and is under active hardening.
 
-**SeeYuj cares about the Truth.**
+Implemented and testable today:
 
-It is a specialized kernel designed to run persistent simulations that continue to breathe, evolve, and function whether a player is watching or not. It is the "backend of the metaverse" stripped of the buzzwords and built on cold, hard systems engineering.
+- Deterministic tick loop with mandatory world seed
+- Headless authoritative daemon (`server_d`)
+- Snapshot + WAL persistence (`snapshot.json`, `meta.json`, `events`)
+- Crash recovery by replaying WAL events after snapshot cursor
+- Minimal autonomous simulation (zones, entities, systemic degradation rules)
+- Inspection CLI (`sy_cli`) for status, events, entities, zones, and JSON dumps
+- Determinism validation utilities and tests in `sy_core`
 
-We believe that:
-1.  **Simulation > Narration.** Stories should emerge from systems colliding, not from scripts written by a designer.
-2.  **The World is Sovereign.** It exists without players. It does not pause. It does not wait.
-3.  **Determinism is King.** Same input + Same state = Same result. Always.
+Implemented but being hardened:
 
----
+- Longer burn-in scenarios under operational conditions
+- Expanded reproducibility and failure-mode coverage
+- Explicit CI gating for full Phase 1 closure criteria
 
-## The Mission
+Reference docs:
 
-**To enable the creation of persistent worlds without the infrastructural headache.**
-
-Building a living, breathing world is usually a nightmare of database locks, race conditions, and netcode. Most creators give up before their world even starts ticking.
-
-SeeYuj handles the heavy lifting. We provide a bulletproof, reliable platform for **any type of world**—whether it's a sci-fi economy, a fantasy simulation, or a social experiment.
-
-We provide the **bedrock**:
-*   **Time:** A rigorous, deterministic clock.
-*   **Persistence:** State that survives crashes and restarts automatically.
-*   **Safety:** A foundation where your world's history is preserved forever.
-
-**You bring the rules. We bring the reality.**
-
----
-
-## Why Build With Us?
-
-Most game engines solve the problem of *rendering* and *input*. We are solving the problem of **existence**.
-
-Building on SeeYuj means grappling with deep, fascinating engineering challenges:
-*   How do you simulate a million entities without melting the CPU?
-*   How do you ensure a simulation run today produces the *exact* same result ten years from now?
-
-**Join us if:**
-*   You are tired of "gameplay code" and want to write **system architectures**.
-*   You want to build the foundation that thousands of future worlds will stand upon.
-*   You love Rust and uncompromising quality.
-
----
+- [Phase 1 Scope](seeyuj/docs/phase1/README.md)
+- [Determinism Contract](seeyuj/docs/phase1/DETERMINISM.md)
+- [Persistence and Recovery](seeyuj/docs/phase1/PERSISTENCE.md)
+- [Binary Usage](seeyuj/docs/phase1/BINARIES.md)
 
 ## Architecture
 
-We don't do "spaghetti code". SeeYuj is built on strict strict architectural layers (NIV 0 to NIV 4).
+SeeYuj follows strict dependency layering (NIV 0 to NIV 4):
 
-*   **The Core (Rust):** Pure, isolated, standard-library only. It computes the next tick. That's it.
-*   **The Ports:** We use dependency inversion. The simulation doesn't know it's saving to a disk or sending packets. It just emits events.
-*   **The Modules:** Physics, Economics, AI. Plug them in, or write your own.
+- **NIV 0**: stable primitives (`sy_types`, `sy_config`)
+- **NIV 1**: protocol/API definitions (`sy_protocol`, `sy_api`)
+- **NIV 2**: pure simulation core (`sy_core`)
+- **NIV 2b**: optional simulation modules (`mods/*`)
+- **NIV 3**: infrastructure, tooling, testkit (`sy_infra`, `sy_tools`, `sy_testkit`)
+- **NIV 4**: runtime wiring (`sy_loader`)
 
-> **Status: Foundation Phase 🟡**
-> The bedrock is setting. We are locking in the invariants. There is no gameplay yet. Only pure, unadulterated infrastructure.
+Core principles:
 
----
+- **Headless first**: no graphics dependency on the server
+- **Determinism first**: same genesis + same input stream = same state transitions
+- **Event-sourced persistence**: mutations are persisted and replayable
+- **Strict decoupling**: simulation logic is independent from rendering technologies
+
+Documentation structure:
+
+- Repository-level docs in [`doc/`](doc/) define project governance and architecture
+- Implementation-level docs in [`seeyuj/docs/phase1/`](seeyuj/docs/phase1/) define current Phase 1 scope and behavior
+
+See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seeyuj/docs/ARCHITECTURE.md](seeyuj/docs/ARCHITECTURE.md), and [seeyuj/docs/phase1/README.md](seeyuj/docs/phase1/README.md).
 
 ## Quick Start
 
-You need **Rust**. That's it.
+Prerequisite: Rust toolchain installed.
 
 ```bash
-# 1. Clone the reality
 git clone https://github.com/Seeyuj/Seeyuj.git
-cd Seeyuj
+cd Seeyuj/seeyuj/server
 
-# 2. Ignite the core
-cd seeyuj/server
-cargo run --bin server_d
+cargo build --workspace
+cargo test --workspace
+
+cargo run --bin server_d -- create --name "MyWorld" --seed 42
+cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 100
+cargo run --bin sy_cli -- status world_42
 ```
 
-If it compiles, the laws of physics are holding.
+## What SeeYuj Is Not
 
----
+SeeYuj is not:
+
+- a game engine
+- a graphics engine
+- a narrative RPG framework
+- a metaverse platform claim
+- a default-content game project
+
+It is a persistent world kernel: server simulation infrastructure that others can build worlds on top of.
+
+## Current Status
+
+- **Phase 0** (conceptual foundations): complete
+- **Phase 1** (minimal headless core): core capabilities implemented, phase not closed
+- **Phase 2+** (`sy_protocol`, optional modules, advanced client/network concerns): intentionally deferred
+
+Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)
 
 ## Contributing
 
-**We are looking for Architects.**
+If you want to help build robust simulation infrastructure:
 
-This is a project for those who enjoy the craft of software engineering. Whether you are a master of distributed systems, a determinism wizard, or a documentation artist, there is a place for you here.
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
+2. Check open [Issues](https://github.com/Seeyuj/Seeyuj/issues)
+3. Open a PR aligned with architecture and decision documents
 
-We maintain high standards because we are building a foundation for others to dream on.
+Key references:
 
-1.  Check out the [Issues](https://github.com/Seeyuj/Seeyuj/issues) to find a quest.
-2.  Read [CONTRIBUTING.md](CONTRIBUTING.md) to understand our laws of physics.
-3.  Open a PR and help us build the engine of the future.
-
----
-
-> *"A persistent world is a system, not a story."*
+- [doc/DECISIONS.md](doc/DECISIONS.md)
+- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
+- [seeyuj/docs/phase1/README.md](seeyuj/docs/phase1/README.md)

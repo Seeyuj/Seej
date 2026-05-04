@@ -204,6 +204,11 @@ However, no engine or client must become a structural dependency.
   - introduces no server-side dependencies;
   - can evolve independently of the core.
 
+### Scope note
+
+This decision targets the roadmap's client phase (Phase 4+).  
+It is not part of the current minimal server scope (Phase 1).
+
 > Unreal Engine is not the project.  
 > It is an official client among others, replaceable.
 
