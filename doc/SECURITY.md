@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the security policy for the **Seeyuj** project.
+This document defines the security policy for the **Seej** project.
 
 ## Navigation
 
@@ -106,7 +106,7 @@ This includes notably:
 
 Please report any vulnerability responsibly via:
 
-**Email:** `security@seeyuj.org`
+**Email:** `security@seej.org`
 
 For general contribution rules (issues, PR, workflow), see `doc/CONTRIBUTING.md` — except for vulnerabilities, which must follow this document.
 

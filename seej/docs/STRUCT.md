@@ -1,4 +1,4 @@
-/see-yuj-platform (Seeyuj/)
+/seej-platform (Seej/)
 ├── /docs                      # Documentation in English
 │   ├── ARCHITECTURE.md
 │   ├── DATA_FLOW.md

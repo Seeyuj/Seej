@@ -1,14 +1,14 @@
-# SeeYuj
+# Seej
 
 > Deterministic, headless simulation kernel for persistent sandbox worlds.
 
-SeeYuj is open-source simulation infrastructure for worlds that evolve without players, clients, or rendering engines.
+Seej is open-source simulation infrastructure for worlds that evolve without players, clients, or rendering engines.
 It focuses on deterministic server execution, explicit persistence, and replayable state transitions.
 Clients are rendering-agnostic consumers: they observe and interact through APIs, but the server remains authoritative.
 In Phase 1, this means: create a world, run ticks, persist state, kill the process, restart it, replay events, and verify identical state.
 
-- GitHub: [https://github.com/Seeyuj/Seeyuj](https://github.com/Seeyuj/Seeyuj)
-- Follow: [https://x.com/SeeYuj](https://x.com/SeeYuj)
+- GitHub: [https://github.com/Seej/Seej](https://github.com/Seej/Seej)
+- Follow: [https://x.com/Seej](https://x.com/Seej)
 
 ## What Works Today (Phase 1)
 
@@ -39,7 +39,7 @@ Reference docs:
 
 ## Architecture
 
-SeeYuj follows strict dependency layering (NIV 0 to NIV 4):
+Seej follows strict dependency layering (NIV 0 to NIV 4):
 
 - **NIV 0**: stable primitives (`sy_types`, `sy_config`)
 - **NIV 1**: protocol/API definitions (`sy_protocol`, `sy_api`)
@@ -67,8 +67,8 @@ See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seeyuj/docs/ARCHITECTURE.md](se
 Prerequisite: Rust toolchain installed.
 
 ```bash
-git clone https://github.com/Seeyuj/Seeyuj.git
-cd Seeyuj/seeyuj/server
+git clone https://github.com/Seej/Seej.git
+cd Seej/seeyuj/server
 
 cargo build --workspace
 cargo test --workspace
@@ -78,9 +78,9 @@ cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 10
 cargo run --bin sy_cli -- status world_42
 ```
 
-## What SeeYuj Is Not
+## What Seej Is Not
 
-SeeYuj is not:
+Seej is not:
 
 - a game engine
 - a graphics engine
@@ -103,7 +103,7 @@ Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)
 If you want to help build robust simulation infrastructure:
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
-2. Check open [Issues](https://github.com/Seeyuj/Seeyuj/issues)
+2. Check open [Issues](https://github.com/Seej/Seej/issues)
 3. Open a PR aligned with architecture and decision documents
 
 Key references:

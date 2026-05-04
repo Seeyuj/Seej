@@ -1,4 +1,4 @@
-# Roadmap – Seeyuj
+# Roadmap – Seej
 
 > This roadmap describes the **major construction steps** of the platform.  
 > It is **neither exhaustive nor contractual**, and may evolve according to governance decisions.
