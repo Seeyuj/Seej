@@ -23,7 +23,7 @@ use sy_core::Simulation;
 use sy_infra::{FileEventLog, FilesystemStore, Pcg32Rng, UnlimitedClock};
 use sy_types::{EntityKind, Position, RngSeed, WorldPos, ZoneId};
 
-/// See-Yuj headless simulation server
+/// Seej headless simulation server
 #[derive(Parser)]
 #[command(name = "server_d")]
 #[command(author, version, about, long_about = None)]
@@ -92,7 +92,7 @@ fn main() {
         .with_target(false)
         .init();
 
-    info!("See-Yuj Server v{}", env!("CARGO_PKG_VERSION"));
+    info!("Seej Server v{}", env!("CARGO_PKG_VERSION"));
     info!("Data directory: {:?}", cli.data_dir);
 
     // Setup shutdown signal handler

@@ -18,7 +18,7 @@ use sy_core::World;
 use sy_infra::{FileEventLog, FilesystemStore};
 use sy_types::EntityId;
 
-/// See-Yuj CLI - World inspection and administration
+/// Seej CLI - World inspection and administration
 #[derive(Parser)]
 #[command(name = "sy_cli")]
 #[command(author, version, about, long_about = None)]

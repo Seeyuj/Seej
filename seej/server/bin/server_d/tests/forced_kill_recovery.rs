@@ -66,18 +66,8 @@ fn load_hash_and_tick(data_dir: &Path, world_id: &str) -> (u64, Tick) {
     )
 }
 
-#[cfg(windows)]
 fn force_kill(child: &mut Child) {
-    let status = StdCommand::new("taskkill")
-        .args(["/F", "/PID", &child.id().to_string()])
-        .status()
-        .expect("taskkill failed to spawn");
-    assert!(status.success(), "taskkill /F failed with {status}");
-}
-
-#[cfg(unix)]
-fn force_kill(child: &mut Child) {
-    child.kill().expect("SIGKILL failed");
+    child.kill().expect("forced child kill failed");
 }
 
 fn wait_for_wal_growth(child: &mut Child, wal_path: &Path, initial_len: u64) {
