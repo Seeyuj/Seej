@@ -26,12 +26,17 @@ Operator (server_d / sy_cli)
 > Phase 2+: a `sy_protocol` step deserializes wire requests into `SimCommand`
 > before `sy_api` validation. Phase 1 has no wire layer.
 
-## Event Sourcing
+## Snapshot + WAL Commit Flow
 
 1. Commands are validated and converted to internal API commands
 2. The simulation core processes commands and emits events
 3. Events are persisted to the Write-Ahead Log (WAL)
-4. State is reconstructed by replaying events
+4. In-memory state is accepted only after the WAL append succeeds
+5. Recovery loads `snapshot.json` and replays WAL events after the snapshot cursor
+
+Phase 1 does not yet persist canonical external command envelopes. Full
+re-simulation from `GenesisSpec + CommandEnvelope[]` is tracked as Phase 1
+hardening work in `phase1/EXIT_CHECKLIST.md`.
 
 ## Tick Loop
 

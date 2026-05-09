@@ -1,41 +1,18 @@
 # Schemas
 
-This directory contains the source of truth for all data structures exchanged between client and server.
+This directory is reserved for Phase 2+ wire-protocol schemas.
 
-## Format
+There are no active client/server schema files in Phase 1. The current
+repository uses Rust command/event types in `sy_api` for the headless server
+slice, and `sy_protocol` is intentionally excluded from the active workspace.
 
-We use FlatBuffers (or Protobuf) for:
-- Efficient binary serialization
-- Schema evolution with backward compatibility
-- Code generation for Rust and client languages
+When protocol work starts, this directory should become the source of truth for
+wire messages only. It must not redefine core simulation state or become a
+dependency of `sy_core`.
 
-## Directory Structure
+Planned responsibilities:
 
-```
-/schemas
-├── common.fbs       # Shared types (Vec3, EntityId, Timestamp)
-├── commands.fbs     # Client → Server messages
-├── events.fbs       # Server → Client messages
-└── README.md
-```
-
-## Generating Code
-
-### Rust (sy_protocol crate)
-
-```bash
-flatc --rust -o ../server/crates/sy_protocol/src/generated/ *.fbs
-```
-
-### TypeScript (web client)
-
-```bash
-flatc --ts -o ../clients/web/src/generated/ *.fbs
-```
-
-## Versioning
-
-- Schema files are versioned with the repository
-- Breaking changes require a protocol version bump
-- Use `@deprecated` annotations before removing fields
-- Always add new fields at the end with default values
+- versioned client/server command and event envelopes;
+- generated code for `sy_protocol`;
+- compatibility rules for schema evolution;
+- explicit mapping into `sy_api` commands/events.

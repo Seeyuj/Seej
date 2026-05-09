@@ -12,7 +12,10 @@ In Phase 1, this means: create a world, run ticks, persist state, kill the proce
 
 ## What Works Today (Phase 1)
 
-Phase 1 core capabilities are implemented and the closure criteria are explicit in the exit checklist. Fast local gates are expected to pass; ignored operational gates remain scheduled/manual evidence.
+The current repository implements the minimal Phase 1 server slice: a headless,
+deterministic world can be created, ticked, persisted, recovered, and inspected.
+This is not yet a durable Phase 1 sign-off; remaining hardening work is tracked
+in the exit checklist.
 
 Implemented and testable today:
 
@@ -24,16 +27,20 @@ Implemented and testable today:
 - Inspection CLI (`sy_cli`) for status, events, entities, zones, and JSON dumps
 - Determinism validation utilities and tests in `sy_core`
 
-Closure evidence tracked separately:
+Closure and hardening evidence tracked separately:
 
-- Longer burn-in scenarios under operational conditions
-- Expanded reproducibility and failure-mode coverage
-- Scheduled/manual ignored gates for forced-kill recovery and long burn-in
-- Explicit CI gating for the fast Phase 1 criteria
+- Fast CI gates for check/build, format, clippy, tests, rustdoc,
+  supply-chain checks, dependency-boundary checks, and WAL fuzz-target build
+- Scheduled/manual gates for ignored tests, forced-kill recovery, long burn-in,
+  coverage, and WAL fuzz smoke
+- Open hardening gaps for simulation contracts, formal genesis, command
+  journaling, integrity validation, single-writer ownership, compatibility
+  fixtures, compaction, and operator recovery procedures
 
 Reference docs:
 
 - [Phase 1 Scope](seej/docs/phase1/README.md)
+- [Phase 1 Exit Checklist and Engineering Gaps](seej/docs/phase1/EXIT_CHECKLIST.md)
 - [Determinism Contract](seej/docs/phase1/DETERMINISM.md)
 - [Persistence and Recovery](seej/docs/phase1/PERSISTENCE.md)
 - [Binary Usage](seej/docs/phase1/BINARIES.md)
@@ -43,17 +50,17 @@ Reference docs:
 Seej follows strict dependency layering (NIV 0 to NIV 4):
 
 - **NIV 0**: stable primitives (`sy_types`, `sy_config`)
-- **NIV 1**: protocol/API definitions (`sy_protocol`, `sy_api`)
+- **NIV 1**: API definitions (`sy_api`) and Phase 2+ protocol placeholder (`sy_protocol`)
 - **NIV 2**: pure simulation core (`sy_core`)
-- **NIV 2b**: optional simulation modules (`mods/*`)
+- **NIV 2b**: optional simulation modules (`mods/*`, Phase 2+, outside active workspace)
 - **NIV 3**: infrastructure, tooling, testkit (`sy_infra`, `sy_tools`, `sy_testkit`)
-- **NIV 4**: runtime wiring (`sy_loader`)
+- **NIV 4**: runtime wiring target (`sy_loader`; Phase 1 wires directly in `server_d`)
 
 Core principles:
 
 - **Headless first**: no graphics dependency on the server
 - **Determinism first**: same genesis + same input stream = same state transitions
-- **Event-sourced persistence**: mutations are persisted and replayable
+- **Snapshot + WAL persistence**: snapshots are recovered, then WAL events after the snapshot cursor are replayed
 - **Strict decoupling**: simulation logic is independent from rendering technologies
 
 Documentation structure:
@@ -94,7 +101,7 @@ It is a persistent world kernel: server simulation infrastructure that others ca
 ## Current Status
 
 - **Phase 0** (conceptual foundations): complete
-- **Phase 1** (minimal headless core): core capabilities implemented; closure evidence tracked in the exit checklist
+- **Phase 1** (minimal headless server slice): implemented; durable sign-off blocked by hardening gaps in the exit checklist
 - **Phase 2+** (`sy_protocol`, optional modules, advanced client/network concerns): intentionally deferred
 
 Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)

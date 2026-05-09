@@ -1,6 +1,8 @@
-# Phase 1 — Implemented Scope (Authoritative)
+# Phase 1 — Implemented Scope and Remaining Hardening (Authoritative)
 
-This folder documents **exactly what is implemented** for Phase 1 in this repository, and what is explicitly out of scope.
+This folder documents **exactly what is implemented** for Phase 1 in this
+repository, what is explicitly out of scope, and what still blocks durable Phase
+1 sign-off.
 
 ## Goals (Phase 1)
 
@@ -64,7 +66,18 @@ See `PERSISTENCE.md` for the exact record layout and recovery algorithm.
 
 ## Exit checklist
 
-Phase 1 closure is tracked in `EXIT_CHECKLIST.md`. The default CI gate covers fast checks; the ignored Phase 1 gate covers forced-kill recovery and long burn-in tests.
+Phase 1 closure is tracked in `EXIT_CHECKLIST.md`. The default CI gate covers
+fast checks; scheduled/manual gates cover ignored tests, forced-kill recovery,
+long burn-in, coverage, and WAL fuzz smoke.
+
+The same checklist also tracks open engineering gaps that are not closed by the
+current tests: simulation-contract versioning, formal genesis, stable persisted
+DTOs, canonical command ordering, command journaling, world integrity
+validation, single-writer ownership, WAL/world contract binding, corruption
+policy, replay oracle tooling, crashpoint injection, deterministic flight
+recording, read-only world diagnostics, divergence bisection, compaction, and
+operator recovery procedures. Those gaps must be closed before treating Phase 1
+as durable infrastructure rather than an implemented minimal recovery slice.
 
 ### Observability (minimal)
 
@@ -75,6 +88,17 @@ Phase 1 closure is tracked in `EXIT_CHECKLIST.md`. The default CI gate covers fa
 
 The Phase 1 workspace members are defined in `seej/server/Cargo.toml`.
 Phase 2+ crates/modules are kept in the repository to preserve the architecture, but are **commented out** from the workspace members and (when applicable) from dependencies.
+
+Active workspace members:
+
+- `sy_types`, `sy_config`, `sy_api`, `sy_core`, `sy_infra`, `sy_loader`, `sy_tools`, `sy_testkit`
+- `server_d`, `sy_cli`
+
+Present but deferred:
+
+- `sy_protocol`
+- `mods/mod_economics`
+- `mods/mod_physics`
 
 ## Determinism invariants (Phase 1)
 

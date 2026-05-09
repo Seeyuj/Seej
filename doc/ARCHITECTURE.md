@@ -20,8 +20,9 @@ It defines:
 - technical constraints imposed on contributions;
 - structural choices ensuring coherence, persistence, and long-term maintainability.
 
-Implementation references for current scope are documented in:
+Implementation references for the current Phase 1 scope are documented in:
 - [`../seej/docs/phase1/README.md`](../seej/docs/phase1/README.md)
+- [`../seej/docs/phase1/EXIT_CHECKLIST.md`](../seej/docs/phase1/EXIT_CHECKLIST.md)
 - [`../seej/docs/phase1/DETERMINISM.md`](../seej/docs/phase1/DETERMINISM.md)
 - [`../seej/docs/phase1/PERSISTENCE.md`](../seej/docs/phase1/PERSISTENCE.md)
 - [`../seej/docs/phase1/BINARIES.md`](../seej/docs/phase1/BINARIES.md)
@@ -86,18 +87,23 @@ It contains **only what is strictly necessary** for the persistent simulation of
 #### Core Responsibilities
 
 - simulated time management;
-- space representation (regions, chunks, topology);
-- persistent entities (agents, objects, structures);
-- rule systems (economy, needs, production, conflicts, flows);
-- systemic events;
-- explicit persistence to disk;
-- recovery after shutdown or crash;
-- public, documented, and versioned APIs.
+- minimal persistent world state representation;
+- stable identifiers for entities and zones;
+- deterministic state transitions from explicit commands/events;
+- deterministic event replay over in-memory world state;
+- minimal systemic rules that are part of the active simulation contract.
+
+In the current implementation, `sy_core` owns pure simulation only. Persistence
+contracts live in `sy_api`; filesystem storage, snapshots, WAL, recovery
+orchestration, logging, and runtime wiring live outside the core.
 
 #### What the Core Never Does
 
 - graphical rendering;
 - user interface;
+- filesystem I/O;
+- networking;
+- wall-clock time or OS randomness;
 - "fun"-oriented gameplay;
 - narration, quests, or scripted scenarios;
 - player-specific or privileged logic;
@@ -116,7 +122,8 @@ Non-essential features are implemented as **optional modules**.
 
 A module:
 
-- uses only the core's public APIs;
+- uses only the public APIs exposed for extension (`sy_api`, and Phase 2+
+  module contracts once stabilized);
 - never bypasses the core;
 - can be enabled or disabled without compromising the world;
 - is versioned independently;
@@ -175,6 +182,13 @@ Other clients can coexist:
 
 Tools are not part of the core, but are essential to the project's viability.
 
+In Phase 1 this includes:
+
+- `sy_infra`: filesystem store, snapshot encoding/decoding, WAL, deterministic RNG implementation, clock implementations, persistent runtime, and recovery orchestration;
+- `server_d`: thin headless runtime binary for create/list/run flows;
+- `sy_cli`: read-only inspection of recovered world state and WAL events;
+- `sy_tools` and `sy_loader`: workspace crates preserved for the target architecture, mostly placeholders in Phase 1.
+
 They may include:
 
 - server administration;
@@ -226,6 +240,11 @@ Persistence:
 
 The world never disappears when the server stops.
 
+Phase 1 implements this through `snapshot.json`, `meta.json`, and an append-only
+WAL file named `events`. The authoritative recovery path loads the snapshot and
+replays WAL events after the snapshot cursor. Full replay from canonical
+external commands is a documented hardening gap, not an implemented guarantee.
+
 Any logic relying on:
 
 - volatile memory;
@@ -259,8 +278,10 @@ Scalability is a **structural property**, not a late optimization.
 
 - mandatory headless server;
 - no server graphics dependencies;
-- stable and versioned public APIs;
+- stable API boundaries before extension work;
 - strict core / modules separation;
+- no filesystem, networking, protocol, UI, rendering, wall-clock time, or
+  non-injected randomness in `sy_core`;
 - readability and maintainability prioritized;
 - rejection of opaque or "magical" abstractions;
 - rejection of unjustified closed dependencies.

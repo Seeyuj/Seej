@@ -255,9 +255,15 @@ A core that is too rich becomes unstable, rigid, and costly to maintain.
 
 ### Consequences
 
-- Documented and versioned public APIs.
+- Documented and versioned public APIs before extension work is opened.
 - Modules that can be activated, deactivated, or replaced.
 - No module bypasses the core.
+
+### Scope note
+
+In Phase 1, `sy_api` is the active internal command/event/persistence contract.
+The stabilized public extension surface and module-loading contract are Phase 2
+work.
 
 ---
 

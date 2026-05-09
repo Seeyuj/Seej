@@ -41,9 +41,11 @@ Phase 0 remains the reference baseline for all future decisions.
 
 ---
 
-## Phase 1 – Minimal Simulation Core (Server Only)
+## Phase 1 – Minimal Headless Server Slice
 
-Status: Implemented; closure evidence tracked in `seej/docs/phase1/EXIT_CHECKLIST.md`
+Status: implemented as a minimal recovery slice; not yet durable Phase 1
+sign-off. Closure evidence and open engineering gaps are tracked in
+`seej/docs/phase1/EXIT_CHECKLIST.md`.
 
 🎯 **Single (exclusive) objective**
 
@@ -155,12 +157,18 @@ Introducing any of these too early invalidates Phase 1 scope discipline.
 
 Validation criteria (measurable)
 
-Phase 1 is complete only if:
+Durable Phase 1 sign-off is closed only if:
 - the server can run alone indefinitely
 - the world evolves without human interaction
 - a restart destroys nothing
 - two runs with the same inputs produce the same world
 - the server has zero graphical dependencies
+
+The current repository satisfies the minimal implementation proof, but the
+durable infrastructure bar is higher: world identity, command journaling,
+simulation-contract versioning, compatibility fixtures, integrity validation,
+single-writer ownership, corruption policy, compaction, and operator recovery
+procedures remain Phase 1 hardening work.
 
 Phase 1 implementation status (current repository)
 
@@ -175,9 +183,14 @@ Already implemented:
 - Determinism tooling and tests (canonical hashing and replay checks)
 
 Closure evidence tracked separately:
-- Fast local gates cover formatting, tests, clippy, replay strictness, WAL recovery, and dependency drift.
-- Scheduled/manual ignored gates cover forced-kill recovery and long burn-in runs.
+- Fast CI gates cover check/build, formatting, tests, clippy, rustdoc, supply-chain checks, dependency-boundary checks, and WAL fuzz-target build.
+- Scheduled/manual gates cover ignored Phase 1 tests, forced-kill recovery, long burn-in runs, coverage, and WAL fuzz smoke.
 - The authoritative closure checklist is `seej/docs/phase1/EXIT_CHECKLIST.md`.
+
+Phase 1 hardening backlog before durable sign-off:
+- P0: simulation-contract versioning, formal genesis, world identity independent from seed, stable persisted DTOs, canonical command journaling and ordering, world integrity validation, single-writer ownership with fencing, WAL/world contract binding, corruption/repair policy, replay oracle, crashpoint injection, and separation of semantic hashes from storage-layout hashes.
+- P1: snapshot integrity metadata, compatibility fixtures, causality hashes, deterministic flight recorder, read-only world doctor, divergence bisector, stronger validation and limits, limits manifest, adversarial replay tests, and real WAL compaction/checkpointing.
+- P2: operator recovery runbook, structured recovery diagnostics, failure-mode matrix, and an explicit boundary decision log for Phase 1 systemic rules.
 
 Final rule (non-negotiable)
 
@@ -189,9 +202,14 @@ Anything that does not help prove the world's autonomous, persistent existence d
 
 ## Phase 2 – Modular Architecture and Public APIs
 
+Status: deferred. `sy_protocol` and `mods/*` directories exist as placeholders
+or future crates, but they are intentionally excluded from the active Phase 1
+workspace.
+
 🎯 **Objective: Enable extension without weakening the core**
 
-Once the minimal core is stable, the focus shifts to controlled extensibility.
+Once the minimal headless slice and Phase 1 hardening backlog are closed, the
+focus shifts to controlled extensibility.
 
 Main axes:
 - Definition of versioned public APIs

@@ -127,9 +127,14 @@ Any non-essential feature must be implemented as an **optional module**, clearly
 
 Modules:
 
-- use public and versioned APIs;
+- use public APIs exposed for extension;
 - do not bypass the core;
 - can be activated, deactivated, or replaced without compromising the world.
+
+In the current Phase 1 workspace, `mods/*` and `sy_protocol` remain deferred.
+Contributions should first close the Phase 1 hardening gaps listed in
+[`seej/docs/phase1/EXIT_CHECKLIST.md`](seej/docs/phase1/EXIT_CHECKLIST.md)
+before expanding extension or network scope.
 
 ### Strict Separation Between Simulation and Rendering
 
@@ -220,13 +225,16 @@ Any improvement facilitating debugging of a persistent world is considered strat
 
 ### Optional Modules and Extensions
 
-Features non-essential to the core may be proposed as **optional modules**, provided they:
+Features non-essential to the core may be proposed as **optional modules** for
+the Phase 2+ roadmap, provided they:
 
 - strictly respect public APIs;
 - do not introduce a dependency toward the core;
 - remain deactivatable without impact on simulation.
 
-Experimental modules are accepted as long as they remain clearly identified as such.
+Experimental modules are not part of the active Phase 1 workspace. They can be
+discussed or prototyped separately, but Phase 1 PRs should prioritize
+determinism, persistence, recovery, observability, and hardening.
 
 ### Development and Operational Tools
 
@@ -341,22 +349,28 @@ The project is structured around:
 The core:
 
 - contains exclusively mechanisms essential to persistent simulation;
-- exposes public, documented, and versioned APIs;
+- depends only on `sy_types` and `sy_api`;
+- keeps filesystem I/O, networking, persistence orchestration, and observability outside `sy_core`;
 - depends on no external module.
 
-Any non-strictly essential feature must be implemented as a module.
+Any non-strictly essential feature must be implemented as a module once the
+module/API surface is part of the active roadmap phase.
 
 ### API Stability and Breaking Change Management
 
-The core's public APIs are considered **stable**.
+Phase 1 API crates are internal contracts for the active server slice. A
+stabilized public extension/API surface is a Phase 2 objective, not a Phase 1
+deliverable.
 
 Consequently:
 
 - any incompatible modification must be explicitly justified;
-- no breaking change will be accepted without prior discussion;
+- no breaking change to commands, events, persistence contracts, snapshots, or
+  WAL semantics will be accepted without prior discussion;
 - impacts on existing modules must be clearly documented.
 
-Backward compatibility is a priority.
+Backward compatibility is a priority for persisted worlds and recovery
+artifacts.
 
 ### Determinism and Reproducibility
 

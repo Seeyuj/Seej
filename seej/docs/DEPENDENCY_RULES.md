@@ -15,7 +15,7 @@ This document defines the allowed dependencies between crates to prevent archite
 | sy_loader    | ALL crates (Phase 1 placeholder; no active wiring) |
 | sy_tools     | sy_types, sy_config, sy_api, sy_core              |
 | sy_testkit   | sy_types, sy_api, sy_core                         |
-| mod_*        | sy_types, sy_api                                  |
+| mod_*        | sy_types, sy_api (when modules enter the active workspace) |
 
 ## Forbidden Dependencies
 
@@ -24,6 +24,7 @@ This document defines the allowed dependencies between crates to prevent archite
 - **sy_infra** MUST NOT depend on sy_protocol in the active Phase 1 workspace
 - **mod_*** MUST NOT depend on sy_core directly (only via sy_api)
 - **sy_protocol** is Phase 2+ and must remain excluded from the active Phase 1 workspace build
+- `mods/*` are Phase 2+ and must remain excluded from the active Phase 1 workspace build
 
 ## Enforcement
 
