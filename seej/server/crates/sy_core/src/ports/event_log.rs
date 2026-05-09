@@ -22,8 +22,10 @@ pub trait IEventLog: Send {
     /// Must be durable before returning (for crash recovery).
     fn append(&mut self, event: SimEvent) -> SimResult<SimEvent>;
 
-    /// Append multiple events atomically.
-    /// Assigns event_ids and returns the persisted events.
+    /// Append multiple events as one durable batch.
+    /// Assigns event_ids and returns only after the full batch is flushed.
+    /// On error, the in-memory cursor must not advance; recovery may keep a
+    /// valid prefix and truncate any partial tail.
     fn append_batch(&mut self, events: Vec<SimEvent>) -> SimResult<Vec<SimEvent>>;
 
     /// Read all valid events with event_id > from_id.
@@ -41,6 +43,9 @@ pub trait IEventLog: Send {
     fn last_tick(&self) -> Option<Tick>;
 
     /// Truncate the log after a given event_id (for recovery/branching).
+    #[deprecated(
+        note = "Phase 1 rewrite helper: it may reassign event_id values. Do not use for automated compaction."
+    )]
     fn truncate_after(&mut self, event_id: EventId) -> SimResult<()>;
 
     /// Sync to disk (if buffered).

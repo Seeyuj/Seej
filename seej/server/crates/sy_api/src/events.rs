@@ -22,7 +22,7 @@ use crate::commands::EntityProperties;
 /// ## Crash Recovery
 /// `event_id` is assigned by the WAL when the event is persisted.
 /// On replay, events with `event_id > snapshot.last_event_id` are replayed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimEvent {
     /// Unique monotonic ID (assigned by WAL on persist)
     pub event_id: EventId,
@@ -53,7 +53,7 @@ impl SimEvent {
 }
 
 /// Event data variants
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EventData {
     // ========================================================================
     // World lifecycle events
@@ -77,6 +77,10 @@ pub enum EventData {
         tick: Tick,
         sim_time: SimTime,
         entities_processed: u32,
+        /// RNG state after processing this tick.
+        /// Optional for backward compatibility with older WAL payloads.
+        #[serde(default)]
+        rng_state_after: Option<u64>,
     },
 
     // ========================================================================
@@ -145,7 +149,7 @@ pub enum EventData {
 }
 
 /// Reason for entity despawn
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DespawnReason {
     /// Removed by system command
     Command,
@@ -158,7 +162,7 @@ pub enum DespawnReason {
 }
 
 /// Generic property value for flexible property changes
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub enum PropertyValue {
     #[default]
     None,
@@ -167,4 +171,137 @@ pub enum PropertyValue {
     Float(f64),
     Bool(bool),
     String(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sy_types::{EntityKind, EntityState, Position};
+
+    fn round_trip_event_data(data: EventData) {
+        let encoded = serde_json::to_string(&data).expect("event data must serialize");
+        let decoded: EventData =
+            serde_json::from_str(&encoded).expect("event data must deserialize");
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn all_event_data_variants_round_trip_through_json() {
+        let entity_id = EntityId::new(42);
+        let zone_id = ZoneId::new(7);
+        let origin = WorldPos::origin();
+        let target = WorldPos::new(zone_id, Position::new(1, -2, 3));
+
+        let cases = [
+            EventData::WorldCreated {
+                world_id: "world-1".to_string(),
+                name: "deterministic test world".to_string(),
+                seed: RngSeed::new(123),
+            },
+            EventData::WorldLoaded {
+                world_id: "world-1".to_string(),
+                tick: Tick(5),
+            },
+            EventData::WorldSaved { tick: Tick(8) },
+            EventData::TickProcessed {
+                tick: Tick(9),
+                sim_time: SimTime::from_ticks(Tick(9)),
+                entities_processed: 3,
+                rng_state_after: Some(0x5eed),
+            },
+            EventData::ZoneCreated {
+                zone_id,
+                name: Some("origin-adjacent".to_string()),
+            },
+            EventData::ZoneLoaded { zone_id },
+            EventData::ZoneUnloaded { zone_id },
+            EventData::EntitySpawned {
+                entity_id,
+                kind: EntityKind::Resource,
+                position: origin,
+                properties: EntityProperties {
+                    name: Some("resource-node".to_string()),
+                    amount: Some(100),
+                    health: Some(10),
+                },
+            },
+            EventData::EntityDespawned {
+                entity_id,
+                reason: DespawnReason::Depleted,
+            },
+            EventData::EntityMoved {
+                entity_id,
+                from: origin,
+                to: target,
+            },
+            EventData::EntityStateChanged {
+                entity_id,
+                old_state: EntityState::Active,
+                new_state: EntityState::Dormant,
+            },
+            EventData::EntityPropertyChanged {
+                entity_id,
+                property: "health".to_string(),
+                old_value: PropertyValue::UInt(10),
+                new_value: PropertyValue::UInt(9),
+            },
+            EventData::ResourceDepleted {
+                entity_id,
+                amount: 1,
+                remaining: 99,
+            },
+            EventData::EntityDegraded {
+                entity_id,
+                old_health: 10,
+                new_health: 9,
+            },
+        ];
+
+        for data in cases {
+            round_trip_event_data(data);
+        }
+    }
+
+    #[test]
+    fn sim_event_round_trip_preserves_replay_cursor_and_payload() {
+        let event = SimEvent::with_id(
+            EventId::new(12),
+            Tick(34),
+            EventData::TickProcessed {
+                tick: Tick(34),
+                sim_time: SimTime::from_ticks(Tick(34)),
+                entities_processed: 2,
+                rng_state_after: Some(987_654),
+            },
+        );
+
+        let encoded = serde_json::to_string(&event).expect("sim event must serialize");
+        let decoded: SimEvent = serde_json::from_str(&encoded).expect("sim event must deserialize");
+
+        assert_eq!(decoded, event);
+    }
+
+    #[test]
+    fn tick_processed_accepts_missing_rng_state_for_older_wal_payloads() {
+        let json = r#"{
+            "TickProcessed": {
+                "tick": 3,
+                "sim_time": { "units": 3 },
+                "entities_processed": 4
+            }
+        }"#;
+
+        let decoded: EventData =
+            serde_json::from_str(json).expect("legacy tick event must deserialize");
+
+        assert_eq!(
+            decoded,
+            EventData::TickProcessed {
+                tick: Tick(3),
+                sim_time: SimTime::from_ticks(Tick(3)),
+                entities_processed: 4,
+                rng_state_after: None,
+            }
+        );
+    }
 }

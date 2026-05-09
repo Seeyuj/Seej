@@ -5,7 +5,8 @@
 //!
 //! ## Crash Safety
 //! - Snapshots use atomic write (tmp + fsync + rename)
-//! - Directory is synced after rename (POSIX)
+//! - Rename uses write-through replacement on Windows
+//! - Directory is synced after rename on Unix
 
 #[cfg(unix)]
 use std::fs::OpenOptions;
@@ -17,6 +18,76 @@ use sy_core::ports::{IWorldStore, WorldSnapshot};
 use sy_types::{SimError, SimResult, WorldMeta};
 use tracing::{debug, info, warn};
 
+#[cfg(windows)]
+fn atomic_rename(temp_path: &Path, final_path: &Path) -> SimResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let temp_wide: Vec<u16> = temp_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let final_wide: Vec<u16> = final_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result = unsafe {
+        MoveFileExW(
+            temp_wide.as_ptr(),
+            final_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+
+    if result == 0 {
+        Err(SimError::PersistenceError(format!(
+            "Failed to rename {} to {}: {}",
+            temp_path.display(),
+            final_path.display(),
+            std::io::Error::last_os_error()
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn atomic_rename(temp_path: &Path, final_path: &Path) -> SimResult<()> {
+    fs::rename(temp_path, final_path).map_err(|e| {
+        SimError::PersistenceError(format!(
+            "Failed to rename {} to {}: {}",
+            temp_path.display(),
+            final_path.display(),
+            e
+        ))
+    })?;
+
+    if let Some(parent) = final_path.parent() {
+        if let Ok(dir_file) = OpenOptions::new().read(true).open(parent) {
+            let _ = dir_file.sync_all();
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn atomic_rename(temp_path: &Path, final_path: &Path) -> SimResult<()> {
+    fs::rename(temp_path, final_path).map_err(|e| {
+        SimError::PersistenceError(format!(
+            "Failed to rename {} to {}: {}",
+            temp_path.display(),
+            final_path.display(),
+            e
+        ))
+    })
+}
+
 /// Filesystem-based world store.
 ///
 /// Directory structure:
@@ -26,7 +97,7 @@ use tracing::{debug, info, warn};
 ///     {world_id}/
 ///       meta.json      - World metadata
 ///       snapshot.json  - World state snapshot
-///       events/        - Event log directory
+///       events         - WAL file path
 /// ```
 pub struct FilesystemStore {
     base_path: PathBuf,
@@ -77,7 +148,7 @@ impl FilesystemStore {
         &self.base_path
     }
 
-    /// Get the events directory for a world.
+    /// Get the WAL file path for a world (historically named `events`).
     pub fn events_dir(&self, world_id: &str) -> PathBuf {
         self.world_dir(world_id).join("events")
     }
@@ -150,7 +221,9 @@ impl IWorldStore for FilesystemStore {
         let contents = serde_json::to_string_pretty(meta)
             .map_err(|e| SimError::PersistenceError(format!("Failed to serialize meta: {}", e)))?;
 
-        let mut file = File::create(&path).map_err(|e| {
+        let temp_path = path.with_extension("json.tmp");
+
+        let mut file = File::create(&temp_path).map_err(|e| {
             SimError::PersistenceError(format!("Failed to create meta file: {}", e))
         })?;
 
@@ -159,6 +232,10 @@ impl IWorldStore for FilesystemStore {
 
         file.sync_all()
             .map_err(|e| SimError::PersistenceError(format!("Failed to sync meta: {}", e)))?;
+
+        drop(file);
+
+        atomic_rename(&temp_path, &path)?;
 
         debug!("Saved metadata for world {}", meta.world_id);
         Ok(())
@@ -208,18 +285,10 @@ impl IWorldStore for FilesystemStore {
         file.sync_all()
             .map_err(|e| SimError::PersistenceError(format!("Failed to sync snapshot: {}", e)))?;
 
-        // Step 3: Atomic rename (atomic on POSIX, best-effort on Windows)
-        fs::rename(&temp_path, &path)
-            .map_err(|e| SimError::PersistenceError(format!("Failed to rename snapshot: {}", e)))?;
+        drop(file);
 
-        // Step 4: fsync the directory (ensures rename is durable on POSIX)
-        #[cfg(unix)]
-        {
-            let dir = self.world_dir(world_id);
-            if let Ok(dir_file) = OpenOptions::new().read(true).open(&dir) {
-                let _ = dir_file.sync_all();
-            }
-        }
+        // Step 3: Atomic rename with platform durability primitive.
+        atomic_rename(&temp_path, &path)?;
 
         info!(
             "Saved snapshot for world {} ({} bytes)",
@@ -252,23 +321,24 @@ impl IWorldStore for FilesystemStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env::temp_dir;
     use sy_types::{EventId, RngSeed, SimTime, Tick};
+    use tempfile::TempDir;
 
-    fn temp_store() -> FilesystemStore {
-        let path = temp_dir().join(format!("seej_test_{}", std::process::id()));
-        FilesystemStore::new(&path).unwrap()
+    fn temp_store() -> (TempDir, FilesystemStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStore::new(dir.path()).unwrap();
+        (dir, store)
     }
 
     #[test]
     fn create_store() {
-        let store = temp_store();
+        let (_dir, store) = temp_store();
         assert!(store.base_path().exists());
     }
 
     #[test]
     fn save_load_meta() {
-        let mut store = temp_store();
+        let (_dir, mut store) = temp_store();
 
         let meta = WorldMeta {
             world_id: "test_world".to_string(),
@@ -294,7 +364,7 @@ mod tests {
 
     #[test]
     fn save_load_snapshot() {
-        let mut store = temp_store();
+        let (_dir, mut store) = temp_store();
 
         // First save meta
         let meta = WorldMeta {

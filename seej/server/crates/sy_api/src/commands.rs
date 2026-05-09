@@ -60,7 +60,7 @@ pub struct SpawnEntityCmd {
 }
 
 /// Entity properties (simple key-value for Phase 1)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EntityProperties {
     /// Display name (optional)
     pub name: Option<String>,

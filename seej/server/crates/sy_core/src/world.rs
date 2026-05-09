@@ -12,7 +12,7 @@
 //! Uses BTreeMap (not HashMap) for deterministic iteration order.
 //! This is critical for reproducible hash computation and simulation.
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use sy_api::commands::EntityProperties;
@@ -302,27 +302,21 @@ impl World {
 
     /// Serialize to bytes (for snapshots).
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        bincode_serialize(self).map_err(|e| e.to_string())
+        json_serialize(self).map_err(|e| e.to_string())
     }
 
     /// Deserialize from bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
-        bincode_deserialize(data).map_err(|e| e.to_string())
+        json_deserialize(data).map_err(|e| e.to_string())
     }
 }
 
-// Simple bincode-like serialization using serde_json for now
-// (In production, we'd use actual bincode for efficiency)
-fn bincode_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, serde::de::value::Error> {
-    // Using JSON as a simple serialization format for Phase 1
-    // Can be replaced with bincode later for efficiency
-    serde_json::to_vec(value).map_err(|_| serde::de::Error::custom("serialization failed"))
+fn json_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(value)
 }
 
-fn bincode_deserialize<'a, T: Deserialize<'a>>(
-    data: &'a [u8],
-) -> Result<T, serde::de::value::Error> {
-    serde_json::from_slice(data).map_err(|_| serde::de::Error::custom("deserialization failed"))
+fn json_deserialize<T: DeserializeOwned>(data: &[u8]) -> Result<T, serde_json::Error> {
+    serde_json::from_slice(data)
 }
 
 #[cfg(test)]

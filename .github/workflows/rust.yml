@@ -1,6 +1,9 @@
 name: Rust CI
 
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
   push:
     branches: [main]
     paths:
@@ -28,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy, rustfmt
 
@@ -53,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
 
@@ -67,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy
 
@@ -92,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -108,6 +111,31 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets
 
+  phase1-ignored:
+    name: Phase 1 ignored tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            seej/server/target
+          key: ${{ runner.os }}-cargo-ignored-${{ hashFiles('seej/server/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ignored-
+            ${{ runner.os }}-cargo-
+
+      - name: Run ignored Phase 1 tests
+        run: cargo test --workspace --all-targets -- --ignored
+
   # Build on multiple platforms
   build:
     name: Build (${{ matrix.os }})
@@ -120,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -144,7 +172,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -161,3 +189,81 @@ jobs:
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run coverage
+        run: cargo llvm-cov -p sy_core -p sy_infra --all-targets --fail-under-lines 70
+
+  supply-chain:
+    name: Supply chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Audit dependencies
+        uses: actions-rust-lang/audit@v1
+        with:
+          workingDirectory: seej/server
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Check dependency policy
+        run: cargo deny check advisories licenses sources
+        working-directory: seej/server
+
+  wal-fuzz-build:
+    name: WAL fuzz build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@cargo-fuzz
+
+      - name: Build WAL fuzz targets
+        run: cargo fuzz build --dev
+        working-directory: seej/server/crates/sy_infra/fuzz
+
+  wal-fuzz:
+    name: WAL fuzz smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@cargo-fuzz
+
+      - name: Fuzz WAL decoder
+        run: cargo fuzz run decode_record -- -max_total_time=180
+        working-directory: seej/server/crates/sy_infra/fuzz
+
+      - name: Fuzz WAL round-trip
+        run: cargo fuzz run wal_round_trip -- -max_total_time=180
+        working-directory: seej/server/crates/sy_infra/fuzz

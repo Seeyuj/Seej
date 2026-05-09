@@ -62,6 +62,10 @@ See `DETERMINISM.md`.
 
 See `PERSISTENCE.md` for the exact record layout and recovery algorithm.
 
+## Exit checklist
+
+Phase 1 closure is tracked in `EXIT_CHECKLIST.md`. The default CI gate covers fast checks; the ignored Phase 1 gate covers forced-kill recovery and long burn-in tests.
+
 ### Observability (minimal)
 
 - Structured logs via `tracing`.

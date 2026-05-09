@@ -334,6 +334,7 @@ mod tests {
                 tick: Tick(1),
                 sim_time: SimTime::ZERO,
                 entities_processed: 0,
+                rng_state_after: None,
             },
         );
 
@@ -356,6 +357,7 @@ mod tests {
                     tick: Tick(i),
                     sim_time: SimTime { units: i },
                     entities_processed: 0,
+                    rng_state_after: None,
                 },
             );
             log.append(event).unwrap();

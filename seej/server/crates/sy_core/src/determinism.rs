@@ -6,7 +6,7 @@
 //! Same genesis (seed + config) + same inputs (commands in order) = same outputs (state hash)
 //!
 //! ## Usage
-//! ```ignore
+//! ```text
 //! let hashes_a = run_deterministic(&genesis, &inputs, steps, checkpoint_every);
 //! let hashes_b = run_deterministic(&genesis, &inputs, steps, checkpoint_every);
 //! assert_eq!(hashes_a, hashes_b);

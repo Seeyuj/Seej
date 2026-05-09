@@ -318,7 +318,7 @@ pub struct WorldMeta {
 }
 
 impl WorldMeta {
-    pub const CURRENT_FORMAT_VERSION: u32 = 2; // Bumped for crash recovery support
+    pub const CURRENT_FORMAT_VERSION: u32 = 3; // Bumped for per-tick RNG checkpoint support
 }
 
 // ============================================================================

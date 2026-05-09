@@ -16,8 +16,8 @@
 use sy_api::commands::{Command, CreateWorldCmd, CreateZoneCmd, SpawnEntityCmd};
 use sy_api::errors::{ApiError, ApiResult};
 use sy_api::events::{DespawnReason, EventData, SimEvent};
-use sy_types::{EntityId, EntityKind, EntityState, Tick, ZoneId};
-use tracing::{debug, info, warn};
+use sy_types::{EntityId, EntityKind, EntityState, Tick, WorldMeta, ZoneId};
+use tracing::{debug, info};
 
 use crate::ports::{IEventLog, IRng, ISimClock, IWorldStore};
 use crate::replay::apply_event;
@@ -93,34 +93,60 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
         }
 
         self.pending_events.clear();
+        let world_before = self.world.clone();
+        let rng_seed_before = self.rng.seed();
+        let rng_state_before = self.rng.state();
+        let clock_tick_before = self.clock.current_tick();
 
-        match cmd {
-            Command::CreateWorld(c) => self.cmd_create_world(c)?,
-            Command::LoadWorld(c) => self.cmd_load_world(&c.world_id)?,
-            Command::SaveWorld => self.cmd_save_world()?,
-            Command::Tick => self.cmd_tick()?,
+        let command_result = match cmd {
+            Command::CreateWorld(c) => self.cmd_create_world(c),
+            Command::LoadWorld(c) => self.cmd_load_world(&c.world_id),
+            Command::SaveWorld => self.cmd_save_world(),
+            Command::Tick => self.cmd_tick(),
             Command::TickN(n) => {
+                let mut result = Ok(());
                 for _ in 0..n {
-                    self.cmd_tick()?;
+                    if let Err(err) = self.cmd_tick() {
+                        result = Err(err);
+                        break;
+                    }
                 }
+                result
             }
-            Command::SpawnEntity(c) => self.cmd_spawn_entity(c)?,
-            Command::DespawnEntity(id) => self.cmd_despawn_entity(id)?,
-            Command::CreateZone(c) => self.cmd_create_zone(c)?,
+            Command::SpawnEntity(c) => self.cmd_spawn_entity(c),
+            Command::DespawnEntity(id) => self.cmd_despawn_entity(id),
+            Command::CreateZone(c) => self.cmd_create_zone(c),
             Command::Shutdown => {
                 // Save before shutdown
                 if self.world.is_some() {
-                    self.cmd_save_world()?;
+                    self.cmd_save_world()
+                } else {
+                    Ok(())
                 }
             }
+        };
+
+        if let Err(err) = command_result {
+            self.world = world_before;
+            self.rng.restore_seeded(rng_seed_before, rng_state_before);
+            self.clock.set_tick(clock_tick_before);
+            self.pending_events.clear();
+            return Err(err);
         }
 
         // Record events to log (assigns event_id to each event)
         let persisted = if !self.pending_events.is_empty() {
             let events = std::mem::take(&mut self.pending_events);
-            self.event_log
-                .append_batch(events)
-                .map_err(|e| ApiError::StorageError(e.to_string()))?
+            match self.event_log.append_batch(events) {
+                Ok(persisted) => persisted,
+                Err(e) => {
+                    self.world = world_before;
+                    self.rng.restore_seeded(rng_seed_before, rng_state_before);
+                    self.clock.set_tick(clock_tick_before);
+                    self.pending_events.clear();
+                    return Err(ApiError::StorageError(e.to_string()));
+                }
+            }
         } else {
             Vec::new()
         };
@@ -142,7 +168,7 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
         }
 
         // Initialize RNG with world seed
-        self.rng.restore(cmd.seed.as_u64());
+        self.rng.restore_seeded(cmd.seed, cmd.seed.as_u64());
 
         // Set clock to tick 0
         self.clock.set_tick(Tick::ZERO);
@@ -184,6 +210,14 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
         let snapshot_tick = world.meta.snapshot_tick;
         let last_event_id = world.meta.last_event_id;
 
+        if world.meta.format_version != WorldMeta::CURRENT_FORMAT_VERSION {
+            return Err(ApiError::StorageError(format!(
+                "Unsupported world format {} (current {}). No implicit migration is available.",
+                world.meta.format_version,
+                WorldMeta::CURRENT_FORMAT_VERSION
+            )));
+        }
+
         info!(
             "Loaded snapshot at tick {}, last_event_id={}",
             snapshot_tick, last_event_id
@@ -212,8 +246,10 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
 
             for event in &events_to_replay {
                 if let Err(e) = apply_event(&mut world, event) {
-                    warn!("Failed to replay event {}: {}", event.event_id, e);
-                    // Continue anyway - events may reference entities that no longer exist
+                    return Err(ApiError::StorageError(format!(
+                        "Replay failed at event {}: {}",
+                        event.event_id, e
+                    )));
                 }
             }
 
@@ -233,20 +269,20 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
             );
         }
 
-        // Restore RNG state
-        self.rng.restore(world.rng_state);
+        // Restore RNG state using persisted seed + state.
+        // This is done after replay so the RNG continues exactly from the recovered world.
+        self.rng.restore_seeded(world.meta.seed, world.rng_state);
 
         // Restore clock
         self.clock.set_tick(world.current_tick);
 
         let tick = world.current_tick;
+        self.world = Some(world);
 
         self.emit(EventData::WorldLoaded {
             world_id: world_id.to_string(),
             tick,
         });
-
-        self.world = Some(world);
 
         Ok(())
     }
@@ -292,22 +328,31 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
     }
 
     fn cmd_tick(&mut self) -> ApiResult<()> {
-        let world = self.world.as_mut().ok_or(ApiError::NoWorldLoaded)?;
-
         // Advance tick
-        world.advance_tick();
-        self.clock.set_tick(world.current_tick);
+        {
+            let world = self.world.as_mut().ok_or(ApiError::NoWorldLoaded)?;
+            world.advance_tick();
+            self.clock.set_tick(world.current_tick);
+        }
 
-        let tick = world.current_tick;
-        let sim_time = world.sim_time;
+        let (tick, sim_time) = {
+            let world = self.world.as_ref().ok_or(ApiError::NoWorldLoaded)?;
+            (world.current_tick, world.sim_time)
+        };
 
         // Run systemic rules
         let entities_processed = self.run_tick_systems()?;
+
+        // Checkpoint RNG state every tick so replay can restore the exact future stream.
+        let rng_state_after = self.rng.state();
+        let world = self.world.as_mut().ok_or(ApiError::NoWorldLoaded)?;
+        world.rng_state = rng_state_after;
 
         self.emit(EventData::TickProcessed {
             tick,
             sim_time,
             entities_processed,
+            rng_state_after: Some(rng_state_after),
         });
 
         Ok(())
@@ -531,5 +576,346 @@ impl<R: IRng, C: ISimClock, E: IEventLog, S: IWorldStore> Simulation<R, C, E, S>
 
 #[cfg(test)]
 mod tests {
-    // Tests will use sy_testkit mocks
+    use super::*;
+    use crate::ports::{IEventLog, IRng, ISimClock, IWorldStore, WorldSnapshot};
+    use std::collections::HashMap;
+    use sy_api::commands::{EntityProperties, SpawnEntityCmd};
+    use sy_types::{
+        EntityId, EventId, Position, RngSeed, SimError, SimResult, SimTime, WorldMeta, WorldPos,
+    };
+
+    struct TestRng {
+        seed: RngSeed,
+        state: u64,
+    }
+
+    impl TestRng {
+        fn new(seed: RngSeed) -> Self {
+            Self {
+                seed,
+                state: seed.as_u64(),
+            }
+        }
+    }
+
+    impl IRng for TestRng {
+        fn seed(&self) -> RngSeed {
+            self.seed
+        }
+
+        fn state(&self) -> u64 {
+            self.state
+        }
+
+        fn restore(&mut self, state: u64) {
+            self.state = state;
+        }
+
+        fn restore_seeded(&mut self, seed: RngSeed, state: u64) {
+            self.seed = seed;
+            self.state = state;
+        }
+
+        fn next_u32(&mut self) -> u32 {
+            self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (self.state >> 32) as u32
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            let hi = self.next_u32() as u64;
+            let lo = self.next_u32() as u64;
+            (hi << 32) | lo
+        }
+    }
+
+    struct TestClock {
+        tick: Tick,
+    }
+
+    impl TestClock {
+        fn new() -> Self {
+            Self { tick: Tick::ZERO }
+        }
+    }
+
+    impl ISimClock for TestClock {
+        fn current_tick(&self) -> Tick {
+            self.tick
+        }
+
+        fn sim_time(&self) -> SimTime {
+            SimTime::from_ticks(self.tick)
+        }
+
+        fn advance(&mut self) -> Tick {
+            self.tick = self.tick.next();
+            self.tick
+        }
+
+        fn set_tick(&mut self, tick: Tick) {
+            self.tick = tick;
+        }
+
+        fn should_tick(&self) -> bool {
+            true
+        }
+    }
+
+    struct TestWorldStore {
+        metas: HashMap<String, WorldMeta>,
+        snapshots: HashMap<String, WorldSnapshot>,
+    }
+
+    impl TestWorldStore {
+        fn new() -> Self {
+            Self {
+                metas: HashMap::new(),
+                snapshots: HashMap::new(),
+            }
+        }
+    }
+
+    impl IWorldStore for TestWorldStore {
+        fn exists(&self, world_id: &str) -> bool {
+            self.metas.contains_key(world_id)
+        }
+
+        fn list_worlds(&self) -> SimResult<Vec<String>> {
+            Ok(self.metas.keys().cloned().collect())
+        }
+
+        fn load_meta(&self, world_id: &str) -> SimResult<WorldMeta> {
+            self.metas
+                .get(world_id)
+                .cloned()
+                .ok_or_else(|| SimError::PersistenceError(format!("World not found: {}", world_id)))
+        }
+
+        fn save_meta(&mut self, meta: &WorldMeta) -> SimResult<()> {
+            self.metas.insert(meta.world_id.clone(), meta.clone());
+            Ok(())
+        }
+
+        fn load_snapshot(&self, world_id: &str) -> SimResult<WorldSnapshot> {
+            self.snapshots.get(world_id).cloned().ok_or_else(|| {
+                SimError::PersistenceError(format!("Snapshot not found: {}", world_id))
+            })
+        }
+
+        fn save_snapshot(&mut self, world_id: &str, snapshot: &WorldSnapshot) -> SimResult<()> {
+            self.snapshots
+                .insert(world_id.to_string(), snapshot.clone());
+            Ok(())
+        }
+
+        fn delete_world(&mut self, world_id: &str) -> SimResult<()> {
+            self.metas.remove(world_id);
+            self.snapshots.remove(world_id);
+            Ok(())
+        }
+
+        fn world_path(&self, world_id: &str) -> String {
+            format!("test://{}", world_id)
+        }
+    }
+
+    struct FailOnNthBatchLog {
+        events: Vec<SimEvent>,
+        next_event_id: u64,
+        batch_calls: usize,
+        fail_on_batch: usize,
+    }
+
+    impl FailOnNthBatchLog {
+        fn new(fail_on_batch: usize) -> Self {
+            Self {
+                events: Vec::new(),
+                next_event_id: 1,
+                batch_calls: 0,
+                fail_on_batch,
+            }
+        }
+    }
+
+    impl IEventLog for FailOnNthBatchLog {
+        fn append(&mut self, event: SimEvent) -> SimResult<SimEvent> {
+            let mut persisted = self.append_batch(vec![event])?;
+            Ok(persisted.remove(0))
+        }
+
+        fn append_batch(&mut self, events: Vec<SimEvent>) -> SimResult<Vec<SimEvent>> {
+            self.batch_calls += 1;
+            if self.batch_calls == self.fail_on_batch {
+                return Err(SimError::PersistenceError(
+                    "forced append failure".to_string(),
+                ));
+            }
+
+            let mut persisted = Vec::with_capacity(events.len());
+            for mut event in events {
+                event.event_id = EventId::new(self.next_event_id);
+                self.next_event_id += 1;
+                self.events.push(event.clone());
+                persisted.push(event);
+            }
+            Ok(persisted)
+        }
+
+        fn read_from_event_id(&self, from_id: EventId) -> SimResult<Vec<SimEvent>> {
+            Ok(self
+                .events
+                .iter()
+                .filter(|event| event.event_id > from_id)
+                .cloned()
+                .collect())
+        }
+
+        fn read_all_valid(&self) -> SimResult<Vec<SimEvent>> {
+            Ok(self.events.clone())
+        }
+
+        fn last_event_id(&self) -> EventId {
+            self.events
+                .last()
+                .map(|event| event.event_id)
+                .unwrap_or(EventId::ZERO)
+        }
+
+        fn last_tick(&self) -> Option<Tick> {
+            self.events.last().map(|event| event.tick)
+        }
+
+        fn truncate_after(&mut self, event_id: EventId) -> SimResult<()> {
+            self.events.retain(|event| event.event_id <= event_id);
+            self.next_event_id = self
+                .events
+                .last()
+                .map(|event| event.event_id.as_u64() + 1)
+                .unwrap_or(1);
+            Ok(())
+        }
+
+        fn sync(&mut self) -> SimResult<()> {
+            Ok(())
+        }
+
+        fn len(&self) -> usize {
+            self.events.len()
+        }
+    }
+
+    #[test]
+    fn append_failure_rolls_back_world_rng_and_clock() {
+        let seed = RngSeed::new(42);
+        let mut sim = Simulation::new(
+            TestRng::new(seed),
+            TestClock::new(),
+            FailOnNthBatchLog::new(3),
+            TestWorldStore::new(),
+        );
+
+        sim.process_command(Command::CreateWorld(CreateWorldCmd {
+            name: "Rollback".to_string(),
+            seed,
+        }))
+        .unwrap();
+        sim.process_command(Command::SpawnEntity(SpawnEntityCmd {
+            position: WorldPos::new(ZoneId::ORIGIN, Position::new(0, 0, 0)),
+            kind: EntityKind::Resource,
+            properties: EntityProperties {
+                name: Some("ore".to_string()),
+                amount: Some(10),
+                health: None,
+            },
+        }))
+        .unwrap();
+
+        let rng_before = sim.rng().state();
+        let err = sim.process_command(Command::Tick).unwrap_err();
+        assert!(matches!(err, ApiError::StorageError(_)));
+
+        let world = sim.world().unwrap();
+        assert_eq!(world.current_tick, Tick::ZERO);
+        assert_eq!(world.sim_time, sy_types::SimTime::ZERO);
+        assert_eq!(
+            world
+                .get_entity(EntityId::new(1))
+                .unwrap()
+                .properties
+                .amount,
+            Some(10)
+        );
+        assert_eq!(sim.current_tick(), Tick::ZERO);
+        assert_eq!(sim.rng().state(), rng_before);
+    }
+
+    #[test]
+    fn command_error_rolls_back_world_rng_clock_and_pending_events() {
+        let seed = RngSeed::new(43);
+        let mut sim = Simulation::new(
+            TestRng::new(seed),
+            TestClock::new(),
+            FailOnNthBatchLog::new(usize::MAX),
+            TestWorldStore::new(),
+        );
+
+        sim.process_command(Command::CreateWorld(CreateWorldCmd {
+            name: "CommandRollback".to_string(),
+            seed,
+        }))
+        .unwrap();
+
+        let world_before = sim.world().unwrap().clone();
+        let rng_before = sim.rng().state();
+        let clock_before = sim.clock.current_tick();
+
+        let err = sim
+            .process_command(Command::SpawnEntity(SpawnEntityCmd {
+                position: WorldPos::new(ZoneId::new(99), Position::new(0, 0, 0)),
+                kind: EntityKind::Resource,
+                properties: EntityProperties::default(),
+            }))
+            .unwrap_err();
+
+        assert!(matches!(err, ApiError::ZoneNotFound(_)));
+        let world_after = sim.world().unwrap();
+        assert_eq!(world_after.current_tick, world_before.current_tick);
+        assert_eq!(world_after.next_entity_id, world_before.next_entity_id);
+        assert_eq!(world_after.entity_count(), world_before.entity_count());
+        assert_eq!(sim.rng().state(), rng_before);
+        assert_eq!(sim.clock.current_tick(), clock_before);
+        assert!(sim.pending_events.is_empty());
+    }
+
+    #[test]
+    fn load_world_rejects_unsupported_snapshot_format() {
+        let seed = RngSeed::new(44);
+        let mut world = World::new("OldFormat".to_string(), seed);
+        world.meta.format_version = WorldMeta::CURRENT_FORMAT_VERSION - 1;
+        let world_id = world.id().to_string();
+        let snapshot = world.to_bytes().unwrap();
+
+        let mut store = TestWorldStore::new();
+        store.metas.insert(world_id.clone(), world.meta.clone());
+        store.snapshots.insert(world_id.clone(), snapshot);
+
+        let mut sim = Simulation::new(
+            TestRng::new(seed),
+            TestClock::new(),
+            FailOnNthBatchLog::new(usize::MAX),
+            store,
+        );
+
+        let err = sim
+            .process_command(Command::LoadWorld(sy_api::commands::LoadWorldCmd {
+                world_id,
+            }))
+            .unwrap_err();
+
+        assert!(
+            matches!(err, ApiError::StorageError(msg) if msg.contains("Unsupported world format"))
+        );
+        assert!(sim.world().is_none());
+        assert!(sim.pending_events.is_empty());
+    }
 }

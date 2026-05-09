@@ -26,16 +26,18 @@ The `server_d` binary typically creates worlds under ids like `world_<seed>` (e.
   - `snapshot_tick: Tick`
   - `last_event_id: EventId`
 
-### Atomic write strategy (best-effort durability)
+### Atomic write strategy
 
-`FilesystemStore::save_snapshot` writes the snapshot using:
+`FilesystemStore::save_snapshot` and `FilesystemStore::save_meta` write using:
 
 - write to `*.tmp`
 - `fsync` the temp file
-- atomic rename to the final path
-- `fsync` the parent directory (where supported; best-effort on Windows)
+- atomic replacement to the final path
+- `fsync` the parent directory on Unix
 
 This minimizes corrupted snapshots on crash/power loss.
+
+On Windows, `FilesystemStore` uses `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` for the replacement step.
 
 ## WAL (Write-Ahead Log)
 
@@ -57,9 +59,14 @@ VERSION : u16  (little-endian)  1
 LENGTH  : u32  (little-endian)  payload byte length
 EVENT_ID: u64  (little-endian)  monotonic per WAL
 TICK    : u64  (little-endian)  simulated tick
-PAYLOAD : [u8; LENGTH]          JSON bytes of sy_api::events::EventData
+PAYLOAD : [u8; LENGTH]          JSON bytes of current WAL batch payload:
+                                {"type":"Batch","data":{"events":[...]}}
 CRC32   : u32  (little-endian)  CRC32 over (MAGIC..PAYLOAD), excluding CRC field
 ```
+
+`append_batch` writes the whole batch as one WAL record. Recovery therefore either sees the complete batch or discards/truncates the partial record; it must not replay a valid prefix of a partially written batch as a half-tick.
+
+For batch records, the header `EVENT_ID` and `TICK` are the `event_id` and `tick` of the last `SimEvent` in the batch. Recovery rejects a batch whose header does not match the last event.
 
 ### Crash safety behavior
 
@@ -73,6 +80,10 @@ CRC32   : u32  (little-endian)  CRC32 over (MAGIC..PAYLOAD), excluding CRC field
 `FileEventLog` assigns `event_id` on append, starting at 1 and incrementing monotonically.
 The core should treat `event_id` as the durable cursor.
 
+### Snapshot format compatibility
+
+`WorldMeta::format_version` is an exact compatibility gate in Phase 1. Loading a snapshot whose format version differs from the current format is refused with an explicit storage error. No implicit v2-to-v3 migration is performed because old snapshots do not contain the per-tick RNG checkpoint contract required for deterministic recovery.
+
 ## Crash recovery algorithm
 
 Crash recovery is performed during `LoadWorld`:
@@ -83,6 +94,8 @@ Crash recovery is performed during `LoadWorld`:
    - replay events where `event.event_id > meta.last_event_id`
 4. Apply each event using the deterministic event applier (core):
    - `sy_core::replay::apply_event(&mut world, &event)`
+
+`WorldSaved` is intentionally replay-safe and must remain a no-op. The snapshot cursor points to the last event included in the snapshot; the `WorldSaved` event emitted after snapshot capture may be replayed and must not alter state.
 
 This makes recovery robust even if:
 - the snapshot is taken while the WAL already contains events for the same tick,
@@ -98,4 +111,5 @@ The Phase 1 `IEventLog::truncate_after(event_id)` implementation is a simple rew
 
 Because append assigns fresh `event_id`s, the rewritten WAL will have **new** `event_id` values starting at 1.
 This is acceptable for an operator/manual maintenance tool in Phase 1, but it is not a stable “compaction” mechanism yet.
+The trait method is deprecated to prevent accidental automated use.
 

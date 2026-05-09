@@ -2,6 +2,7 @@
 name = "sy_core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 sy_types.workspace = true

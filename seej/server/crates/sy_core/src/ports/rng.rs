@@ -22,6 +22,13 @@ pub trait IRng: Send {
     /// Restore from a saved state
     fn restore(&mut self, state: u64);
 
+    /// Restore from a saved state with an explicit seed.
+    /// Useful when implementations keep additional seed-derived internals.
+    fn restore_seeded(&mut self, seed: RngSeed, state: u64) {
+        let _ = seed;
+        self.restore(state);
+    }
+
     /// Generate a random u32
     fn next_u32(&mut self) -> u32;
 

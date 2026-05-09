@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
+use serde::{Deserialize, Serialize};
 
 use sy_api::events::SimEvent;
 use sy_core::ports::IEventLog;
@@ -38,6 +39,12 @@ const RECORD_HEADER_SIZE: usize = 4 + 2 + 4 + 8 + 8; // 26 bytes
 /// CRC size - kept for documentation
 #[allow(dead_code)]
 const CRC_SIZE: usize = 4;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+enum WalPayload {
+    Batch { events: Vec<SimEvent> },
+}
 
 /// File-based event log with binary format and CRC validation.
 pub struct FileEventLog {
@@ -105,10 +112,12 @@ impl FileEventLog {
 
         while offset < file_len {
             match self.read_record_at(&mut reader, offset) {
-                Ok(event) => {
-                    self.next_event_id = event.event_id.as_u64() + 1;
-                    self.last_tick = Some(event.tick);
-                    self.total_events += 1;
+                Ok(events) => {
+                    if let Some(last) = events.last() {
+                        self.next_event_id = last.event_id.as_u64() + 1;
+                        self.last_tick = Some(last.tick);
+                    }
+                    self.total_events += events.len();
                     last_valid_offset = reader.stream_position().map_err(|e| {
                         SimError::PersistenceError(format!("Stream position error: {}", e))
                     })?;
@@ -121,8 +130,9 @@ impl FileEventLog {
             }
         }
 
-        // If there's garbage at the end, truncate it
-        if last_valid_offset < file_len && last_valid_offset > 0 {
+        // If there's garbage at the end, truncate it. This includes offset 0:
+        // a corrupt first record must not poison all future appends.
+        if last_valid_offset < file_len {
             warn!(
                 "Truncating WAL from {} to {} bytes (removing partial record)",
                 file_len, last_valid_offset
@@ -148,8 +158,12 @@ impl FileEventLog {
         Ok(())
     }
 
-    /// Read a single record at the given offset.
-    fn read_record_at(&self, reader: &mut BufReader<File>, offset: u64) -> SimResult<SimEvent> {
+    /// Read a single WAL record at the given offset.
+    fn read_record_at(
+        &self,
+        reader: &mut BufReader<File>,
+        offset: u64,
+    ) -> SimResult<Vec<SimEvent>> {
         reader
             .seek(SeekFrom::Start(offset))
             .map_err(|e| SimError::PersistenceError(format!("Seek failed: {}", e)))?;
@@ -209,11 +223,23 @@ impl FileEventLog {
             )));
         }
 
-        // Deserialize event data
-        let data: sy_api::events::EventData = serde_json::from_slice(&payload)
-            .map_err(|e| SimError::PersistenceError(format!("Deserialize event failed: {}", e)))?;
+        let WalPayload::Batch { events } = serde_json::from_slice::<WalPayload>(&payload)
+            .map_err(|e| SimError::CorruptedState(format!("Invalid WAL batch payload: {}", e)))?;
 
-        Ok(SimEvent::with_id(EventId::new(event_id), Tick(tick), data))
+        let last = events.last().ok_or_else(|| {
+            SimError::CorruptedState("WAL batch record contains no events".to_string())
+        })?;
+        if last.event_id.as_u64() != event_id || last.tick.as_u64() != tick {
+            return Err(SimError::CorruptedState(format!(
+                "WAL batch header mismatch: header=({}, {}), last=({}, {})",
+                event_id,
+                tick,
+                last.event_id.as_u64(),
+                last.tick.as_u64()
+            )));
+        }
+
+        Ok(events)
     }
 
     /// Compute CRC32 over record contents (excluding CRC field itself).
@@ -235,24 +261,45 @@ impl FileEventLog {
         hasher.finalize()
     }
 
-    /// Write a single event to the WAL.
-    fn write_event(&mut self, mut event: SimEvent) -> SimResult<SimEvent> {
-        // Assign event_id
-        event.event_id = EventId::new(self.next_event_id);
-        self.next_event_id += 1;
-
-        // Serialize payload
-        let payload = serde_json::to_vec(&event.data)
-            .map_err(|e| SimError::PersistenceError(format!("Serialize event failed: {}", e)))?;
+    fn encode_event_record(&self, events: &[SimEvent]) -> SimResult<Vec<u8>> {
+        let last = events.last().ok_or_else(|| {
+            SimError::PersistenceError("Cannot encode empty WAL batch".to_string())
+        })?;
+        let payload = serde_json::to_vec(&WalPayload::Batch {
+            events: events.to_vec(),
+        })
+        .map_err(|e| SimError::PersistenceError(format!("Serialize WAL batch failed: {}", e)))?;
 
         let payload_len = payload.len() as u32;
-        let event_id = event.event_id.as_u64();
-        let tick = event.tick.as_u64();
-
-        // Compute CRC
+        let event_id = last.event_id.as_u64();
+        let tick = last.tick.as_u64();
         let crc = self.compute_crc(WAL_VERSION, payload_len, event_id, tick, &payload);
 
-        // Ensure writer is open
+        let mut record = Vec::with_capacity(RECORD_HEADER_SIZE + payload.len() + CRC_SIZE);
+        record
+            .write_u32::<LittleEndian>(WAL_MAGIC)
+            .map_err(|e| SimError::PersistenceError(format!("Encode magic failed: {}", e)))?;
+        record
+            .write_u16::<LittleEndian>(WAL_VERSION)
+            .map_err(|e| SimError::PersistenceError(format!("Encode version failed: {}", e)))?;
+        record
+            .write_u32::<LittleEndian>(payload_len)
+            .map_err(|e| SimError::PersistenceError(format!("Encode length failed: {}", e)))?;
+        record
+            .write_u64::<LittleEndian>(event_id)
+            .map_err(|e| SimError::PersistenceError(format!("Encode event_id failed: {}", e)))?;
+        record
+            .write_u64::<LittleEndian>(tick)
+            .map_err(|e| SimError::PersistenceError(format!("Encode tick failed: {}", e)))?;
+        record.extend_from_slice(&payload);
+        record
+            .write_u32::<LittleEndian>(crc)
+            .map_err(|e| SimError::PersistenceError(format!("Encode CRC failed: {}", e)))?;
+
+        Ok(record)
+    }
+
+    fn ensure_writer(&mut self) -> SimResult<()> {
         if self.writer.is_none() {
             let file = OpenOptions::new()
                 .create(true)
@@ -261,33 +308,18 @@ impl FileEventLog {
                 .map_err(|e| SimError::PersistenceError(format!("Failed to open WAL: {}", e)))?;
             self.writer = Some(BufWriter::new(file));
         }
+        Ok(())
+    }
+
+    fn write_records(&mut self, bytes: &[u8]) -> SimResult<()> {
+        self.ensure_writer()?;
 
         let writer = self.writer.as_mut().unwrap();
 
-        // Write record
         writer
-            .write_u32::<LittleEndian>(WAL_MAGIC)
-            .map_err(|e| SimError::PersistenceError(format!("Write magic failed: {}", e)))?;
-        writer
-            .write_u16::<LittleEndian>(WAL_VERSION)
-            .map_err(|e| SimError::PersistenceError(format!("Write version failed: {}", e)))?;
-        writer
-            .write_u32::<LittleEndian>(payload_len)
-            .map_err(|e| SimError::PersistenceError(format!("Write length failed: {}", e)))?;
-        writer
-            .write_u64::<LittleEndian>(event_id)
-            .map_err(|e| SimError::PersistenceError(format!("Write event_id failed: {}", e)))?;
-        writer
-            .write_u64::<LittleEndian>(tick)
-            .map_err(|e| SimError::PersistenceError(format!("Write tick failed: {}", e)))?;
-        writer
-            .write_all(&payload)
-            .map_err(|e| SimError::PersistenceError(format!("Write payload failed: {}", e)))?;
-        writer
-            .write_u32::<LittleEndian>(crc)
-            .map_err(|e| SimError::PersistenceError(format!("Write CRC failed: {}", e)))?;
+            .write_all(bytes)
+            .map_err(|e| SimError::PersistenceError(format!("Write WAL records failed: {}", e)))?;
 
-        // Flush and sync
         writer
             .flush()
             .map_err(|e| SimError::PersistenceError(format!("Flush failed: {}", e)))?;
@@ -296,6 +328,17 @@ impl FileEventLog {
             .sync_all()
             .map_err(|e| SimError::PersistenceError(format!("Sync failed: {}", e)))?;
 
+        Ok(())
+    }
+
+    /// Write a single event to the WAL.
+    fn write_event(&mut self, mut event: SimEvent) -> SimResult<SimEvent> {
+        event.event_id = EventId::new(self.next_event_id);
+
+        let record = self.encode_event_record(std::slice::from_ref(&event))?;
+        self.write_records(&record)?;
+
+        self.next_event_id += 1;
         self.last_tick = Some(event.tick);
         self.total_events += 1;
 
@@ -322,11 +365,11 @@ impl FileEventLog {
 
         while offset < file_len {
             match self.read_record_at(&mut reader, offset) {
-                Ok(event) => {
+                Ok(record_events) => {
                     offset = reader.stream_position().map_err(|e| {
                         SimError::PersistenceError(format!("Stream position error: {}", e))
                     })?;
-                    events.push(event);
+                    events.extend(record_events);
                 }
                 Err(_) => break, // Stop at first invalid record
             }
@@ -343,9 +386,27 @@ impl IEventLog for FileEventLog {
 
     fn append_batch(&mut self, events: Vec<SimEvent>) -> SimResult<Vec<SimEvent>> {
         let mut persisted = Vec::with_capacity(events.len());
-        for event in events {
-            persisted.push(self.write_event(event)?);
+        if events.is_empty() {
+            return Ok(persisted);
         }
+
+        let mut next_event_id = self.next_event_id;
+
+        for mut event in events {
+            event.event_id = EventId::new(next_event_id);
+            next_event_id += 1;
+            persisted.push(event);
+        }
+
+        let record = self.encode_event_record(&persisted)?;
+        self.write_records(&record)?;
+
+        self.next_event_id = next_event_id;
+        if let Some(last) = persisted.last() {
+            self.last_tick = Some(last.tick);
+        }
+        self.total_events += persisted.len();
+
         Ok(persisted)
     }
 
@@ -426,24 +487,62 @@ impl IEventLog for FileEventLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env::temp_dir;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::io::{Read, Seek, SeekFrom, Write};
     use sy_api::events::EventData;
     use sy_types::RngSeed;
+    use tempfile::TempDir;
 
-    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+    fn temp_wal() -> (TempDir, PathBuf, FileEventLog) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events");
+        let log = FileEventLog::new(&path).unwrap();
+        (dir, path, log)
+    }
 
-    fn temp_wal() -> FileEventLog {
-        let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = temp_dir().join(format!("seej_wal_test_{}_{}.wal", std::process::id(), id));
-        // Clean up any existing file
-        let _ = fs::remove_file(&path);
-        FileEventLog::new(&path).unwrap()
+    fn tick_event(tick: u64) -> SimEvent {
+        SimEvent::new(
+            Tick(tick),
+            EventData::TickProcessed {
+                tick: Tick(tick),
+                sim_time: sy_types::SimTime { units: tick },
+                entities_processed: 0,
+                rng_state_after: None,
+            },
+        )
+    }
+
+    fn flip_byte(path: &Path, offset: u64) {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        let mut byte = [0u8; 1];
+        file.read_exact(&mut byte).unwrap();
+        byte[0] ^= 0xff;
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        file.write_all(&byte).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    fn write_raw_record(log: &FileEventLog, path: &Path, event_id: u64, tick: u64, payload: &[u8]) {
+        let payload_len = payload.len() as u32;
+        let crc = log.compute_crc(WAL_VERSION, payload_len, event_id, tick, payload);
+        let mut record = Vec::new();
+        record.write_u32::<LittleEndian>(WAL_MAGIC).unwrap();
+        record.write_u16::<LittleEndian>(WAL_VERSION).unwrap();
+        record.write_u32::<LittleEndian>(payload_len).unwrap();
+        record.write_u64::<LittleEndian>(event_id).unwrap();
+        record.write_u64::<LittleEndian>(tick).unwrap();
+        record.extend_from_slice(payload);
+        record.write_u32::<LittleEndian>(crc).unwrap();
+        fs::write(path, record).unwrap();
     }
 
     #[test]
     fn append_and_read() {
-        let mut log = temp_wal();
+        let (_dir, _path, mut log) = temp_wal();
 
         let event = SimEvent::new(
             Tick(1),
@@ -465,19 +564,22 @@ mod tests {
     }
 
     #[test]
+    fn empty_wal_recovers_as_empty() {
+        let (dir, _path, log) = temp_wal();
+        assert_eq!(log.len(), 0);
+        drop(log);
+
+        let reopened = FileEventLog::new(dir.path().join("events")).unwrap();
+        assert_eq!(reopened.len(), 0);
+        assert_eq!(reopened.last_event_id(), EventId::ZERO);
+    }
+
+    #[test]
     fn event_id_is_monotonic() {
-        let mut log = temp_wal();
+        let (_dir, _path, mut log) = temp_wal();
 
         for i in 1..=10 {
-            let event = SimEvent::new(
-                Tick(i),
-                EventData::TickProcessed {
-                    tick: Tick(i),
-                    sim_time: sy_types::SimTime { units: i },
-                    entities_processed: 0,
-                },
-            );
-            let persisted = log.append(event).unwrap();
+            let persisted = log.append(tick_event(i)).unwrap();
             assert_eq!(persisted.event_id.as_u64(), i);
         }
 
@@ -486,18 +588,10 @@ mod tests {
 
     #[test]
     fn read_from_event_id() {
-        let mut log = temp_wal();
+        let (_dir, _path, mut log) = temp_wal();
 
         for i in 1..=10 {
-            let event = SimEvent::new(
-                Tick(i),
-                EventData::TickProcessed {
-                    tick: Tick(i),
-                    sim_time: sy_types::SimTime { units: i },
-                    entities_processed: 0,
-                },
-            );
-            log.append(event).unwrap();
+            log.append(tick_event(i)).unwrap();
         }
 
         let events = log.read_from_event_id(EventId::new(5)).unwrap();
@@ -507,26 +601,16 @@ mod tests {
 
     #[test]
     fn recovery_after_reopen() {
-        let path = temp_dir().join(format!("seej_wal_recovery_{}.wal", std::process::id()));
-        let _ = fs::remove_file(&path);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events");
 
-        // Write some events
         {
             let mut log = FileEventLog::new(&path).unwrap();
             for i in 1..=5 {
-                let event = SimEvent::new(
-                    Tick(i),
-                    EventData::TickProcessed {
-                        tick: Tick(i),
-                        sim_time: sy_types::SimTime { units: i },
-                        entities_processed: 0,
-                    },
-                );
-                log.append(event).unwrap();
+                log.append(tick_event(i)).unwrap();
             }
         }
 
-        // Reopen and verify
         {
             let log = FileEventLog::new(&path).unwrap();
             assert_eq!(log.len(), 5);
@@ -535,8 +619,137 @@ mod tests {
             let events = log.read_all_valid().unwrap();
             assert_eq!(events.len(), 5);
         }
+    }
 
-        // Clean up
-        let _ = fs::remove_file(&path);
+    #[test]
+    fn recovery_truncates_corrupt_first_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events");
+        fs::write(&path, b"not-a-valid-wal").unwrap();
+
+        let mut log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 0);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+
+        log.append(tick_event(1)).unwrap();
+        drop(log);
+
+        let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.last_event_id(), EventId::new(1));
+    }
+
+    #[test]
+    fn recovery_rejects_legacy_single_event_payload() {
+        let (_dir, path, log) = temp_wal();
+        let legacy_payload = serde_json::to_vec(&EventData::WorldCreated {
+            world_id: "legacy".to_string(),
+            name: "Legacy".to_string(),
+            seed: RngSeed::new(7),
+        })
+        .unwrap();
+        write_raw_record(&log, &path, 1, 0, &legacy_payload);
+        drop(log);
+
+        let recovered = FileEventLog::new(&path).unwrap();
+
+        assert_eq!(recovered.len(), 0);
+        assert_eq!(recovered.last_event_id(), EventId::ZERO);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn append_batch_assigns_contiguous_ids() {
+        let (_dir, _path, mut log) = temp_wal();
+        let events: Vec<_> = (1..=3).map(tick_event).collect();
+
+        let persisted = log.append_batch(events).unwrap();
+        assert_eq!(persisted.len(), 3);
+        assert_eq!(persisted[0].event_id, EventId::new(1));
+        assert_eq!(persisted[2].event_id, EventId::new(3));
+        assert_eq!(log.last_event_id(), EventId::new(3));
+        assert_eq!(log.read_all_valid().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn recovery_discards_partially_written_batch_record() {
+        let (_dir, path, mut log) = temp_wal();
+        let events = vec![tick_event(10), tick_event(10), tick_event(10)];
+        log.append_batch(events).unwrap();
+        drop(log);
+
+        let len = fs::metadata(&path).unwrap().len();
+        OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(len - 1)
+            .unwrap();
+
+        let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 0);
+        assert_eq!(log.read_all_valid().unwrap().len(), 0);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn recovery_keeps_prefix_before_truncated_tail_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        drop(log);
+        let valid_prefix_len = fs::metadata(&path).unwrap().len();
+
+        let mut log = FileEventLog::new(&path).unwrap();
+        log.append(tick_event(2)).unwrap();
+        drop(log);
+        let full_len = fs::metadata(&path).unwrap().len();
+        OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(full_len - 1)
+            .unwrap();
+
+        let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.last_event_id(), EventId::new(1));
+        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+    }
+
+    #[test]
+    fn recovery_keeps_prefix_before_crc_invalid_tail_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        drop(log);
+        let valid_prefix_len = fs::metadata(&path).unwrap().len();
+
+        let mut log = FileEventLog::new(&path).unwrap();
+        log.append(tick_event(2)).unwrap();
+        drop(log);
+        let full_len = fs::metadata(&path).unwrap().len();
+        flip_byte(&path, full_len - 1);
+
+        let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.last_event_id(), EventId::new(1));
+        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+    }
+
+    #[test]
+    fn recovery_keeps_prefix_before_magic_invalid_tail_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        drop(log);
+        let valid_prefix_len = fs::metadata(&path).unwrap().len();
+
+        let mut log = FileEventLog::new(&path).unwrap();
+        log.append(tick_event(2)).unwrap();
+        drop(log);
+        flip_byte(&path, valid_prefix_len);
+
+        let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.last_event_id(), EventId::new(1));
+        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
     }
 }

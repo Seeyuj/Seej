@@ -23,12 +23,17 @@ impl Pcg32Rng {
     /// PCG multiplier constant
     const MULTIPLIER: u64 = 6364136223846793005;
 
+    #[inline]
+    fn increment_from_seed(seed: RngSeed) -> u64 {
+        (seed.as_u64() << 1) | 1 // Must be odd
+    }
+
     /// Create a new PCG32 RNG with the given seed.
     pub fn new(seed: RngSeed) -> Self {
         let mut rng = Pcg32Rng {
             seed,
             state: 0,
-            increment: (seed.as_u64() << 1) | 1, // Must be odd
+            increment: Self::increment_from_seed(seed),
         };
         // Warm up the generator
         rng.state = rng.state.wrapping_add(seed.as_u64());
@@ -55,6 +60,12 @@ impl IRng for Pcg32Rng {
     }
 
     fn restore(&mut self, state: u64) {
+        self.state = state;
+    }
+
+    fn restore_seeded(&mut self, seed: RngSeed, state: u64) {
+        self.seed = seed;
+        self.increment = Self::increment_from_seed(seed);
         self.state = state;
     }
 
@@ -118,6 +129,25 @@ mod tests {
         // Restore and regenerate
         rng.restore(saved_state);
         let actual: Vec<u32> = (0..10).map(|_| rng.next_u32()).collect();
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn restore_seeded_from_fresh_instance() {
+        let seed = RngSeed::new(42);
+
+        let mut source = Pcg32Rng::new(seed);
+        for _ in 0..50 {
+            source.next_u32();
+        }
+        let checkpoint_state = source.state();
+        let expected: Vec<u32> = (0..10).map(|_| source.next_u32()).collect();
+
+        // Fresh RNG intentionally initialized with a different seed.
+        let mut recovered = Pcg32Rng::new(RngSeed::new(999));
+        recovered.restore_seeded(seed, checkpoint_state);
+        let actual: Vec<u32> = (0..10).map(|_| recovered.next_u32()).collect();
 
         assert_eq!(expected, actual);
     }
