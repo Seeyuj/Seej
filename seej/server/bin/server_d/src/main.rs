@@ -17,10 +17,9 @@ use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use sy_api::commands::{Command, CreateWorldCmd, EntityProperties, SpawnEntityCmd};
-use sy_core::ports::IWorldStore;
-use sy_core::Simulation;
-use sy_infra::{FileEventLog, FilesystemStore, Pcg32Rng, UnlimitedClock};
+use sy_api::commands::{CreateWorldCmd, EntityProperties, SimCommand, SpawnEntityCmd};
+use sy_api::persistence::IWorldStore;
+use sy_infra::{FileEventLog, FilesystemStore, Pcg32Rng, PersistentSimulation, UnlimitedClock};
 use sy_types::{EntityKind, Position, RngSeed, WorldPos, ZoneId};
 
 /// Seej headless simulation server
@@ -153,7 +152,7 @@ fn cmd_create(
     let mut sim = create_simulation(data_dir, &format!("world_{}", seed))?;
 
     // Create the world
-    sim.process_command(Command::CreateWorld(CreateWorldCmd {
+    sim.process_command(SimCommand::CreateWorld(CreateWorldCmd {
         name: name.to_string(),
         seed: RngSeed::new(seed),
     }))
@@ -162,12 +161,17 @@ fn cmd_create(
     let world_id = sim.world().unwrap().id().to_string();
     info!("World created with ID: {}", world_id);
 
+    // Persist genesis before population so a crash during initial spawning
+    // still leaves a listable and recoverable world.
+    sim.save_world()
+        .map_err(|e| format!("Failed to save genesis world: {}", e))?;
+
     // Spawn initial entities
     for i in 0..resources {
         let x = (i as i32 % 10) * 10;
         let y = (i as i32 / 10) * 10;
 
-        sim.process_command(Command::SpawnEntity(SpawnEntityCmd {
+        sim.process_command(SimCommand::SpawnEntity(SpawnEntityCmd {
             position: WorldPos::new(ZoneId::ORIGIN, Position::new(x, y, 0)),
             kind: EntityKind::Resource,
             properties: EntityProperties {
@@ -183,7 +187,7 @@ fn cmd_create(
         let x = (i as i32 % 10) * 10 + 5;
         let y = (i as i32 / 10) * 10 + 5;
 
-        sim.process_command(Command::SpawnEntity(SpawnEntityCmd {
+        sim.process_command(SimCommand::SpawnEntity(SpawnEntityCmd {
             position: WorldPos::new(ZoneId::ORIGIN, Position::new(x, y, 0)),
             kind: EntityKind::Creature,
             properties: EntityProperties {
@@ -196,7 +200,7 @@ fn cmd_create(
     }
 
     // Final save
-    sim.process_command(Command::SaveWorld)
+    sim.save_world()
         .map_err(|e| format!("Failed to save world: {}", e))?;
 
     info!(
@@ -220,10 +224,8 @@ fn cmd_run(
     let mut sim = create_simulation(data_dir, world_id)?;
 
     // Load the world
-    sim.process_command(Command::LoadWorld(sy_api::commands::LoadWorldCmd {
-        world_id: world_id.to_string(),
-    }))
-    .map_err(|e| format!("Failed to load world: {}", e))?;
+    sim.load_world(world_id)
+        .map_err(|e| format!("Failed to load world: {}", e))?;
 
     let start_tick = sim.current_tick();
     info!("World loaded at tick {}", start_tick);
@@ -243,7 +245,7 @@ fn cmd_run(
 
         // Run one tick
         let events = sim
-            .process_command(Command::Tick)
+            .process_command(SimCommand::Tick)
             .map_err(|e| format!("Tick failed: {}", e))?;
 
         ticks_run += 1;
@@ -263,7 +265,7 @@ fn cmd_run(
         // Auto-save
         if save_interval > 0 && (current_tick.as_u64() - last_save_tick) >= save_interval {
             info!("Auto-saving at tick {}...", current_tick);
-            sim.process_command(Command::SaveWorld)
+            sim.save_world()
                 .map_err(|e| format!("Auto-save failed: {}", e))?;
             last_save_tick = current_tick.as_u64();
         }
@@ -271,7 +273,7 @@ fn cmd_run(
 
     // Final save on shutdown
     info!("Saving world before shutdown...");
-    sim.process_command(Command::Shutdown)
+    sim.save_world()
         .map_err(|e| format!("Shutdown save failed: {}", e))?;
 
     let final_tick = sim.current_tick();
@@ -318,16 +320,18 @@ fn cmd_list(data_dir: &PathBuf) -> Result<(), String> {
 fn create_simulation(
     data_dir: &PathBuf,
     world_id: &str,
-) -> Result<Simulation<Pcg32Rng, UnlimitedClock, FileEventLog, FilesystemStore>, String> {
+) -> Result<PersistentSimulation<Pcg32Rng, UnlimitedClock, FileEventLog, FilesystemStore>, String> {
     let store =
         FilesystemStore::new(data_dir).map_err(|e| format!("Failed to create store: {}", e))?;
 
-    let events_dir = store.events_dir(world_id);
+    let events_dir = store
+        .events_dir(world_id)
+        .map_err(|e| format!("Invalid world id: {}", e))?;
     let event_log =
         FileEventLog::new(&events_dir).map_err(|e| format!("Failed to create event log: {}", e))?;
 
-    let rng = Pcg32Rng::new(RngSeed::new(0)); // Will be set from world seed
+    let rng = Pcg32Rng::uninitialized();
     let clock = UnlimitedClock::new();
 
-    Ok(Simulation::new(rng, clock, event_log, store))
+    Ok(PersistentSimulation::new(rng, clock, event_log, store))
 }

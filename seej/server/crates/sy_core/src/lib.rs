@@ -13,9 +13,9 @@
 //! ## Main types
 //! - `World`: Complete simulation state
 //! - `Simulation`: The engine that processes commands and runs ticks
-//! - `replay`: Event replay for crash recovery
+//! - `replay`: Event replay for state reconstruction
 //! - `determinism`: Determinism verification tools
-//! - `ports::*`: Interfaces for external dependencies
+//! - `ports::*`: Deterministic RNG/clock/hash interfaces
 
 pub mod determinism;
 pub mod ports;
@@ -26,7 +26,7 @@ pub mod world;
 // Re-exports
 pub use determinism::{
     compute_canonical_hash, run_deterministic, verify_determinism, Checkpoint,
-    DeterministicRunConfig, DeterministicRunResult, ScheduledCommand, XxHasher,
+    DeterministicRunConfig, DeterministicRunResult, ScheduledCommand,
 };
 pub use replay::{apply_event, replay_events};
 pub use sim::Simulation;

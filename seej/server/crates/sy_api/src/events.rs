@@ -78,7 +78,8 @@ pub enum EventData {
         sim_time: SimTime,
         entities_processed: u32,
         /// RNG state after processing this tick.
-        /// Optional for backward compatibility with older WAL payloads.
+        /// Optional only so older WAL payloads can deserialize; Phase 1 replay
+        /// refuses missing checkpoints unless an explicit migration rewrites them.
         #[serde(default)]
         rng_state_after: Option<u64>,
     },
@@ -282,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_processed_accepts_missing_rng_state_for_older_wal_payloads() {
+    fn tick_processed_decodes_missing_rng_state_for_legacy_wal_payloads() {
         let json = r#"{
             "TickProcessed": {
                 "tick": 3,

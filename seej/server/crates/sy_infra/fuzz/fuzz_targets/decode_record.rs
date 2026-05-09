@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use sy_core::ports::IEventLog;
+use sy_api::persistence::IEventLog;
 use sy_infra::store::FileEventLog;
 
 fuzz_target!(|data: &[u8]| {

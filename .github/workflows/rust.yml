@@ -229,6 +229,48 @@ jobs:
         run: cargo deny check advisories licenses sources
         working-directory: seej/server
 
+      - name: Check architectural dependency rules
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          import sys
+
+          metadata = json.loads(subprocess.check_output([
+              "cargo", "metadata", "--format-version", "1", "--no-deps"
+          ], text=True))
+          packages = {pkg["name"]: pkg for pkg in metadata["packages"]}
+
+          def deps(name):
+              return {
+                  dep["name"]
+                  for dep in packages[name]["dependencies"]
+                  if dep.get("kind") is None
+              }
+
+          errors = []
+          if deps("sy_core") != {"sy_types", "sy_api"}:
+              errors.append(f"sy_core deps must be exactly sy_types, sy_api; got {sorted(deps('sy_core'))}")
+          for path in [
+              "crates/sy_core/src/ports/event_log.rs",
+              "crates/sy_core/src/ports/store.rs",
+          ]:
+              if pathlib.Path(path).exists():
+                  errors.append(f"sy_core must not own persistence port file: {path}")
+          if "sy_protocol" in deps("sy_api"):
+              errors.append("sy_api must not depend on sy_protocol")
+          if "sy_protocol" in deps("sy_infra"):
+              errors.append("sy_infra must not depend on sy_protocol in Phase 1")
+          for name in packages:
+              if name.startswith("mod_") and "sy_core" in deps(name):
+                  errors.append(f"{name} must not depend on sy_core")
+
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              sys.exit(1)
+          PY
+
   wal-fuzz-build:
     name: WAL fuzz build
     runs-on: ubuntu-latest
@@ -248,7 +290,7 @@ jobs:
         run: cargo-fuzz --version
 
       - name: Build WAL fuzz targets
-        run: cargo +nightly fuzz build --dev
+        run: cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu
         working-directory: seej/server/crates/sy_infra/fuzz
 
   wal-fuzz:
@@ -271,9 +313,9 @@ jobs:
         run: cargo-fuzz --version
 
       - name: Fuzz WAL decoder
-        run: cargo +nightly fuzz run decode_record -- -max_total_time=180
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu decode_record -- -max_total_time=180
         working-directory: seej/server/crates/sy_infra/fuzz
 
       - name: Fuzz WAL round-trip
-        run: cargo +nightly fuzz run wal_round_trip -- -max_total_time=180
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu wal_round_trip -- -max_total_time=180
         working-directory: seej/server/crates/sy_infra/fuzz

@@ -43,7 +43,7 @@ Phase 0 remains the reference baseline for all future decisions.
 
 ## Phase 1 – Minimal Simulation Core (Server Only)
 
-Status: In Progress (advanced)
+Status: Implemented; closure evidence tracked in `seej/docs/phase1/EXIT_CHECKLIST.md`
 
 🎯 **Single (exclusive) objective**
 
@@ -174,10 +174,10 @@ Already implemented:
 - Inspection CLI (`sy_cli`) for status, events, entities, zones, dumps
 - Determinism tooling and tests (canonical hashing and replay checks)
 
-Still to complete before Phase 1 closure:
-- Harden operational scenarios with longer burn-in runs
-- Expand reproducibility test matrix and failure-mode coverage
-- Finalize the strict, measurable Phase 1 exit checklist in CI/docs
+Closure evidence tracked separately:
+- Fast local gates cover formatting, tests, clippy, replay strictness, WAL recovery, and dependency drift.
+- Scheduled/manual ignored gates cover forced-kill recovery and long burn-in runs.
+- The authoritative closure checklist is `seej/docs/phase1/EXIT_CHECKLIST.md`.
 
 Final rule (non-negotiable)
 

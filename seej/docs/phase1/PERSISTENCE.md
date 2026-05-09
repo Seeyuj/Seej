@@ -22,9 +22,14 @@ The `server_d` binary typically creates worlds under ids like `world_<seed>` (e.
 ### Snapshot contents
 
 - `snapshot.json` contains the full serialized `World` state.
-- `meta.json` contains `WorldMeta`, including the crash-recovery cursor:
+- `snapshot.json` is the authoritative crash-recovery unit. Its embedded
+  `WorldMeta` contains the recovery cursor:
   - `snapshot_tick: Tick`
   - `last_event_id: EventId`
+- `meta.json` is an inspectable mirror of the snapshot metadata. Snapshot
+  recovery accepts a missing or stale `meta.json` only when the snapshot embeds a
+  strictly newer coherent cursor for the same world id, seed, creation tick, and
+  format version. Other metadata disagreement fails explicitly.
 
 ### Atomic write strategy
 
@@ -78,7 +83,19 @@ For batch records, the header `EVENT_ID` and `TICK` are the `event_id` and `tick
 ### Event IDs
 
 `FileEventLog` assigns `event_id` on append, starting at 1 and incrementing monotonically.
-The core should treat `event_id` as the durable cursor.
+Infrastructure treats `event_id` as the durable cursor.
+
+New WAL entries are limited to reconstructable state-transition events. Legacy
+`WorldLoaded` events remain replay-compatible no-ops. Legacy `WorldSaved`
+events remain no-ops only when their event tick and payload tick match the
+current recovered world tick; incoherent `WorldSaved` records are rejected during
+replay. The Phase 1 architecture lock no longer writes lifecycle-only events to
+the WAL.
+
+`WorldCreated` is retained as the genesis state-transition event. During replay
+it is idempotent and leaves an already coherent recovered world unchanged; the
+full world state is reconstructed from `snapshot.json`, then advanced by WAL
+events after the snapshot cursor.
 
 ### Snapshot format compatibility
 
@@ -86,21 +103,52 @@ The core should treat `event_id` as the durable cursor.
 
 ## Crash recovery algorithm
 
-Crash recovery is performed during `LoadWorld`:
+Crash recovery is performed by the infrastructure runtime and shared CLI loader:
 
 1. Load `snapshot.json` into an in-memory `World`.
-2. Read WAL events from the log.
-3. Filter the replay set using the snapshot cursor:
-   - replay events where `event.event_id > meta.last_event_id`
-4. Apply each event using the deterministic event applier (core):
+2. Load `meta.json`, when present, and verify it either exactly matches the
+   snapshot metadata or is an older mirror left by a crash between
+   `save_snapshot` and `save_meta`.
+3. Read all valid WAL events and verify the durable tail:
+   - the durable last event matches `event_log.last_event_id()`
+   - the WAL prefix is contiguous from `event_id == 1`
+   - the durable last event covers the snapshot cursor
+   - `durable_last_event_id >= snapshot.last_event_id`
+   - otherwise recovery fails with `CorruptedState`
+4. Filter the replay set using the snapshot cursor:
+   - replay events where `event.event_id > snapshot.last_event_id`
+5. Verify the replay range is contiguous through the durable WAL tail.
+6. Apply each event using the deterministic event applier (core):
    - `sy_core::replay::apply_event(&mut world, &event)`
 
-`WorldSaved` is intentionally replay-safe and must remain a no-op. The snapshot cursor points to the last event included in the snapshot; the `WorldSaved` event emitted after snapshot capture may be replayed and must not alter state.
+`WorldSaved` is intentionally replay-safe and must remain a no-op for old WALs
+only when the record is coherent with the recovered world tick.
+`TickProcessed` replay is also strict: the outer event tick must match the
+payload tick, payload `sim_time` must match `SimTime::from_ticks(tick)`, and
+`rng_state_after` must be present. Legacy WAL records that deserialize without
+an RNG checkpoint are refused in Phase 1 recovery unless an explicit migration
+has already rewritten them.
+The snapshot cursor points to the last state event included in the snapshot.
+If the WAL is absent, truncated, or corrupted before that cursor, Phase 1
+refuses recovery rather than moving the cursor backward. Real compaction needs a
+separate, explicit metadata contract.
+
+Create refuses to reuse incomplete durable storage. If a world directory, orphan
+WAL, `meta.json`, or `snapshot.json` exists without a coherent snapshot/meta
+pair, `CreateWorld` fails explicitly instead of treating the id as free.
 
 This makes recovery robust even if:
 - the snapshot is taken while the WAL already contains events for the same tick,
 - multiple events share the same tick,
 - the process crashes mid-record append.
+
+## Core boundary
+
+`sy_core` does not own snapshot encoding, WAL append, filesystem paths, metadata
+mirroring, or recovery orchestration. It only applies deterministic simulation
+commands and deterministic replay events. The persistent runtime in `sy_infra`
+commits events to the WAL before accepting the corresponding in-memory state and
+rolls the core simulation back if the WAL append fails.
 
 ## Important note: `truncate_after` reassigns IDs
 

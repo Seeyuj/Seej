@@ -14,7 +14,8 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use sy_core::ports::{IWorldStore, WorldSnapshot};
+use sy_api::persistence::{IWorldStore, WorldSnapshot, WorldStorageStatus};
+use sy_api::validation::validate_world_id_result;
 use sy_types::{SimError, SimResult, WorldMeta};
 use tracing::{debug, info, warn};
 
@@ -120,23 +121,24 @@ impl FilesystemStore {
     }
 
     /// Get the directory for a specific world.
-    fn world_dir(&self, world_id: &str) -> PathBuf {
-        self.base_path.join("worlds").join(world_id)
+    fn world_dir(&self, world_id: &str) -> SimResult<PathBuf> {
+        self.validate_world_id(world_id)?;
+        Ok(self.base_path.join("worlds").join(world_id))
     }
 
     /// Get the metadata file path for a world.
-    fn meta_path(&self, world_id: &str) -> PathBuf {
-        self.world_dir(world_id).join("meta.json")
+    fn meta_path(&self, world_id: &str) -> SimResult<PathBuf> {
+        Ok(self.world_dir(world_id)?.join("meta.json"))
     }
 
     /// Get the snapshot file path for a world.
-    fn snapshot_path(&self, world_id: &str) -> PathBuf {
-        self.world_dir(world_id).join("snapshot.json")
+    fn snapshot_path(&self, world_id: &str) -> SimResult<PathBuf> {
+        Ok(self.world_dir(world_id)?.join("snapshot.json"))
     }
 
     /// Ensure the world directory exists.
     fn ensure_world_dir(&self, world_id: &str) -> SimResult<()> {
-        let dir = self.world_dir(world_id);
+        let dir = self.world_dir(world_id)?;
         fs::create_dir_all(&dir).map_err(|e| {
             SimError::PersistenceError(format!("Failed to create world dir: {}", e))
         })?;
@@ -149,14 +151,68 @@ impl FilesystemStore {
     }
 
     /// Get the WAL file path for a world (historically named `events`).
-    pub fn events_dir(&self, world_id: &str) -> PathBuf {
-        self.world_dir(world_id).join("events")
+    pub fn events_dir(&self, world_id: &str) -> SimResult<PathBuf> {
+        Ok(self.world_dir(world_id)?.join("events"))
+    }
+
+    fn validate_world_id(&self, world_id: &str) -> SimResult<()> {
+        validate_world_id_result(world_id)
     }
 }
 
 impl IWorldStore for FilesystemStore {
     fn exists(&self, world_id: &str) -> bool {
-        self.meta_path(world_id).exists()
+        self.meta_path(world_id)
+            .map(|path| path.exists())
+            .unwrap_or(false)
+    }
+
+    fn storage_status(&self, world_id: &str) -> SimResult<WorldStorageStatus> {
+        let dir = self.world_dir(world_id)?;
+
+        if !dir.exists() {
+            return Ok(WorldStorageStatus::Absent);
+        }
+
+        let meta_exists = self.meta_path(world_id)?.exists();
+        let snapshot_exists = self.snapshot_path(world_id)?.exists();
+        let events_path = self.events_dir(world_id)?;
+        let wal_len = match fs::metadata(&events_path) {
+            Ok(metadata) if metadata.is_file() => metadata.len(),
+            Ok(_) => 0,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(e) => {
+                return Err(SimError::PersistenceError(format!(
+                    "Failed to inspect WAL metadata: {}",
+                    e
+                )));
+            }
+        };
+
+        if meta_exists && snapshot_exists {
+            return Ok(WorldStorageStatus::Complete);
+        }
+
+        let mut present = Vec::new();
+        if meta_exists {
+            present.push("meta.json");
+        }
+        if snapshot_exists {
+            present.push("snapshot.json");
+        }
+        if wal_len > 0 {
+            present.push("non-empty WAL");
+        }
+        if present.is_empty() {
+            present.push("world directory");
+        }
+
+        Ok(WorldStorageStatus::Incomplete {
+            reason: format!(
+                "{} present without coherent meta.json and snapshot.json",
+                present.join(", ")
+            ),
+        })
     }
 
     fn list_worlds(&self) -> SimResult<Vec<String>> {
@@ -186,17 +242,16 @@ impl IWorldStore for FilesystemStore {
             }
         }
 
+        worlds.sort();
+
         Ok(worlds)
     }
 
     fn load_meta(&self, world_id: &str) -> SimResult<WorldMeta> {
-        let path = self.meta_path(world_id);
+        let path = self.meta_path(world_id)?;
 
         if !path.exists() {
-            return Err(SimError::PersistenceError(format!(
-                "World not found: {}",
-                world_id
-            )));
+            return Err(SimError::NotFound(world_id.to_string()));
         }
 
         let mut file = File::open(&path)
@@ -216,7 +271,7 @@ impl IWorldStore for FilesystemStore {
     fn save_meta(&mut self, meta: &WorldMeta) -> SimResult<()> {
         self.ensure_world_dir(&meta.world_id)?;
 
-        let path = self.meta_path(&meta.world_id);
+        let path = self.meta_path(&meta.world_id)?;
 
         let contents = serde_json::to_string_pretty(meta)
             .map_err(|e| SimError::PersistenceError(format!("Failed to serialize meta: {}", e)))?;
@@ -242,13 +297,10 @@ impl IWorldStore for FilesystemStore {
     }
 
     fn load_snapshot(&self, world_id: &str) -> SimResult<WorldSnapshot> {
-        let path = self.snapshot_path(world_id);
+        let path = self.snapshot_path(world_id)?;
 
         if !path.exists() {
-            return Err(SimError::PersistenceError(format!(
-                "Snapshot not found: {}",
-                world_id
-            )));
+            return Err(SimError::NotFound(world_id.to_string()));
         }
 
         let mut file = File::open(&path)
@@ -269,7 +321,7 @@ impl IWorldStore for FilesystemStore {
     fn save_snapshot(&mut self, world_id: &str, snapshot: &WorldSnapshot) -> SimResult<()> {
         self.ensure_world_dir(world_id)?;
 
-        let path = self.snapshot_path(world_id);
+        let path = self.snapshot_path(world_id)?;
 
         // Step 1: Write to temp file
         let temp_path = path.with_extension("json.tmp");
@@ -299,7 +351,7 @@ impl IWorldStore for FilesystemStore {
     }
 
     fn delete_world(&mut self, world_id: &str) -> SimResult<()> {
-        let dir = self.world_dir(world_id);
+        let dir = self.world_dir(world_id)?;
 
         if dir.exists() {
             fs::remove_dir_all(&dir).map_err(|e| {
@@ -314,7 +366,9 @@ impl IWorldStore for FilesystemStore {
     }
 
     fn world_path(&self, world_id: &str) -> String {
-        self.world_dir(world_id).to_string_lossy().to_string()
+        self.world_dir(world_id)
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "<invalid world_id>".to_string())
     }
 }
 

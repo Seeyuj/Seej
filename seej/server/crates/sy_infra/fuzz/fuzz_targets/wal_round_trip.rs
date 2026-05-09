@@ -6,7 +6,7 @@ use sy_api::{
     commands::EntityProperties,
     events::{EventData, SimEvent},
 };
-use sy_core::ports::IEventLog;
+use sy_api::persistence::IEventLog;
 use sy_infra::store::FileEventLog;
 use sy_types::{EventId, RngSeed, SimTime, Tick, ZoneId};
 

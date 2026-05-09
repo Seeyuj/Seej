@@ -7,11 +7,11 @@
 //! let sim = TestScenario::empty_world(42).build();
 //! ```
 
-use sy_api::commands::{Command, CreateWorldCmd, EntityProperties, SpawnEntityCmd};
+use sy_api::commands::{CreateWorldCmd, EntityProperties, SimCommand, SpawnEntityCmd};
 use sy_core::Simulation;
 use sy_types::{EntityKind, Position, RngSeed, WorldPos, ZoneId};
 
-use crate::mocks::{MockClock, MockEventLog, MockRng, MockWorldStore};
+use crate::mocks::{MockClock, MockRng};
 
 /// Builder for test scenarios.
 pub struct TestScenario {
@@ -65,16 +65,14 @@ impl TestScenario {
     }
 
     /// Build the simulation and create the world.
-    pub fn build(self) -> Simulation<MockRng, MockClock, MockEventLog, MockWorldStore> {
+    pub fn build(self) -> Simulation<MockRng, MockClock> {
         let rng = MockRng::new(self.seed);
         let clock = MockClock::new();
-        let event_log = MockEventLog::new();
-        let store = MockWorldStore::new();
 
-        let mut sim = Simulation::new(rng, clock, event_log, store);
+        let mut sim = Simulation::new(rng, clock);
 
         // Create the world
-        sim.process_command(Command::CreateWorld(CreateWorldCmd {
+        sim.process_command(SimCommand::CreateWorld(CreateWorldCmd {
             name: self.world_name,
             seed: self.seed,
         }))
@@ -82,7 +80,7 @@ impl TestScenario {
 
         // Spawn entities
         for spawn_cmd in self.entities_to_spawn {
-            sim.process_command(Command::SpawnEntity(spawn_cmd))
+            sim.process_command(SimCommand::SpawnEntity(spawn_cmd))
                 .expect("Failed to spawn entity");
         }
 

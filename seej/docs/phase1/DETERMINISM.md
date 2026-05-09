@@ -43,6 +43,12 @@ Phase 1 includes a canonical state hashing utility to validate determinism by ch
   - write fields in a stable order,
   - avoid non-deterministic sources (e.g. hash map iteration).
 - a fast non-cryptographic hasher (`xxhash64`) is used for tests and diagnostics.
+- `compute_canonical_hash` hashes the complete persistent `World`, including
+  recovery cursor metadata such as `snapshot_tick` and `last_event_id`. Tests
+  that compare a continuous run with a recovered run must normalize persistence
+  cursors first, typically by calling `save_world()` on both sides before hashing.
+  Without that normalization, two worlds can be logically identical but hash
+  differently because one snapshot cursor is newer than the other.
 
 ## Determinism runner (pure runner)
 

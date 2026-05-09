@@ -1,23 +1,18 @@
 //! # Commands
 //!
 //! Intentions/requests from internal systems.
-//! Commands represent "what the system wants to do".
+//! Commands represent deterministic simulation intentions.
 //!
-//! Note: Phase 1 has NO player commands. Only internal/admin commands.
+//! Note: Phase 1 has NO player commands and no persistence/admin commands here.
 
 use serde::{Deserialize, Serialize};
 use sy_types::{EntityId, RngSeed, WorldPos, ZoneId};
 
-/// Commands that can be issued to the simulation.
-/// These are internal commands, not player-facing.
+/// Commands accepted by the pure simulation core.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Command {
+pub enum SimCommand {
     /// Create a new world with the given seed
     CreateWorld(CreateWorldCmd),
-    /// Load an existing world from storage
-    LoadWorld(LoadWorldCmd),
-    /// Save the current world state
-    SaveWorld,
     /// Advance simulation by one tick
     Tick,
     /// Advance simulation by N ticks
@@ -28,8 +23,6 @@ pub enum Command {
     DespawnEntity(EntityId),
     /// Create a new zone
     CreateZone(CreateZoneCmd),
-    /// Shutdown the server gracefully
-    Shutdown,
 }
 
 /// Command to create a new world
@@ -39,13 +32,6 @@ pub struct CreateWorldCmd {
     pub name: String,
     /// RNG seed for deterministic generation
     pub seed: RngSeed,
-}
-
-/// Command to load an existing world
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoadWorldCmd {
-    /// World identifier (path or UUID)
-    pub world_id: String,
 }
 
 /// Command to spawn an entity

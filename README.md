@@ -8,11 +8,11 @@ Clients are rendering-agnostic consumers: they observe and interact through APIs
 In Phase 1, this means: create a world, run ticks, persist state, kill the process, restart it, replay events, and verify identical state.
 
 - GitHub: [https://github.com/Seej/Seej](https://github.com/Seej/Seej)
-- Follow: [https://x.com/Seej](https://x.com/Seej)
+- Follow: [https://x.com/Seeyuj](https://x.com/Seej)
 
 ## What Works Today (Phase 1)
 
-Phase 1 core capabilities are implemented, but the phase is not closed yet and is under active hardening.
+Phase 1 core capabilities are implemented and the closure criteria are explicit in the exit checklist. Fast local gates are expected to pass; ignored operational gates remain scheduled/manual evidence.
 
 Implemented and testable today:
 
@@ -24,11 +24,12 @@ Implemented and testable today:
 - Inspection CLI (`sy_cli`) for status, events, entities, zones, and JSON dumps
 - Determinism validation utilities and tests in `sy_core`
 
-Implemented but being hardened:
+Closure evidence tracked separately:
 
 - Longer burn-in scenarios under operational conditions
 - Expanded reproducibility and failure-mode coverage
-- Explicit CI gating for full Phase 1 closure criteria
+- Scheduled/manual ignored gates for forced-kill recovery and long burn-in
+- Explicit CI gating for the fast Phase 1 criteria
 
 Reference docs:
 
@@ -93,7 +94,7 @@ It is a persistent world kernel: server simulation infrastructure that others ca
 ## Current Status
 
 - **Phase 0** (conceptual foundations): complete
-- **Phase 1** (minimal headless core): core capabilities implemented, phase not closed
+- **Phase 1** (minimal headless core): core capabilities implemented; closure evidence tracked in the exit checklist
 - **Phase 2+** (`sy_protocol`, optional modules, advanced client/network concerns): intentionally deferred
 
 Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)

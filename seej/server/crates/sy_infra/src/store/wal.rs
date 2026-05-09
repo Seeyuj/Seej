@@ -25,7 +25,7 @@ use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 
 use sy_api::events::SimEvent;
-use sy_core::ports::IEventLog;
+use sy_api::persistence::IEventLog;
 use sy_types::{EventId, SimError, SimResult, Tick};
 use tracing::{debug, info, warn};
 
@@ -39,6 +39,8 @@ const RECORD_HEADER_SIZE: usize = 4 + 2 + 4 + 8 + 8; // 26 bytes
 /// CRC size - kept for documentation
 #[allow(dead_code)]
 const CRC_SIZE: usize = 4;
+/// Maximum serialized payload accepted for a single WAL record.
+pub const MAX_WAL_PAYLOAD_LEN: u32 = 16 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -58,19 +60,33 @@ pub struct FileEventLog {
     last_tick: Option<Tick>,
     /// Total valid events
     total_events: usize,
+    /// First corruption observed while opening in read-only inspection mode.
+    read_error: Option<SimError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenMode {
+    Repair,
+    ReadOnly,
 }
 
 impl FileEventLog {
     /// Create or open a WAL file at the given path.
     pub fn new<P: AsRef<Path>>(path: P) -> SimResult<Self> {
-        let path = path.as_ref().to_path_buf();
+        Self::open(path, OpenMode::Repair)
+    }
 
-        // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                SimError::PersistenceError(format!("Failed to create WAL dir: {}", e))
-            })?;
-        }
+    /// Open a WAL file for read-only inspection.
+    ///
+    /// Unlike `new`, this never truncates a corrupt or partial tail. If a corrupt
+    /// record is found, reads fail explicitly so inspection commands cannot
+    /// silently report a repaired prefix.
+    pub fn open_read_only<P: AsRef<Path>>(path: P) -> SimResult<Self> {
+        Self::open(path, OpenMode::ReadOnly)
+    }
+
+    fn open<P: AsRef<Path>>(path: P, mode: OpenMode) -> SimResult<Self> {
+        let path = path.as_ref().to_path_buf();
 
         let mut log = FileEventLog {
             path,
@@ -78,10 +94,11 @@ impl FileEventLog {
             next_event_id: 1,
             last_tick: None,
             total_events: 0,
+            read_error: None,
         };
 
         // Scan existing WAL to recover state
-        log.recover()?;
+        log.recover(mode)?;
 
         info!(
             "Initialized WAL with {} events, next_event_id={}",
@@ -93,7 +110,7 @@ impl FileEventLog {
 
     /// Scan existing WAL file and recover state.
     /// Stops at first invalid/partial record.
-    fn recover(&mut self) -> SimResult<()> {
+    fn recover(&mut self, mode: OpenMode) -> SimResult<()> {
         if !self.path.exists() {
             return Ok(());
         }
@@ -125,6 +142,9 @@ impl FileEventLog {
                 }
                 Err(e) => {
                     warn!("WAL recovery stopped at offset {}: {}", offset, e);
+                    if mode == OpenMode::ReadOnly {
+                        self.read_error = Some(e);
+                    }
                     break;
                 }
             }
@@ -132,7 +152,7 @@ impl FileEventLog {
 
         // If there's garbage at the end, truncate it. This includes offset 0:
         // a corrupt first record must not poison all future appends.
-        if last_valid_offset < file_len {
+        if mode == OpenMode::Repair && last_valid_offset < file_len {
             warn!(
                 "Truncating WAL from {} to {} bytes (removing partial record)",
                 file_len, last_valid_offset
@@ -203,6 +223,30 @@ impl FileEventLog {
             .read_u64::<LittleEndian>()
             .map_err(|e| SimError::PersistenceError(format!("Read tick failed: {}", e)))?;
 
+        if payload_len > MAX_WAL_PAYLOAD_LEN {
+            return Err(SimError::CorruptedState(format!(
+                "WAL payload length {} exceeds max record payload {}",
+                payload_len, MAX_WAL_PAYLOAD_LEN
+            )));
+        }
+
+        let payload_start = reader
+            .stream_position()
+            .map_err(|e| SimError::PersistenceError(format!("Stream position error: {}", e)))?;
+        let file_len = reader
+            .get_ref()
+            .metadata()
+            .map_err(|e| SimError::PersistenceError(format!("Failed to get WAL metadata: {}", e)))?
+            .len();
+        let required_remaining = u64::from(payload_len) + CRC_SIZE as u64;
+        let available_remaining = file_len.saturating_sub(payload_start);
+        if required_remaining > available_remaining {
+            return Err(SimError::PersistenceError(format!(
+                "WAL record length {} exceeds remaining file bytes {}",
+                required_remaining, available_remaining
+            )));
+        }
+
         // Read payload
         let mut payload = vec![0u8; payload_len as usize];
         reader
@@ -270,6 +314,13 @@ impl FileEventLog {
         })
         .map_err(|e| SimError::PersistenceError(format!("Serialize WAL batch failed: {}", e)))?;
 
+        if payload.len() > MAX_WAL_PAYLOAD_LEN as usize {
+            return Err(SimError::PersistenceError(format!(
+                "WAL payload length {} exceeds max record payload {}",
+                payload.len(),
+                MAX_WAL_PAYLOAD_LEN
+            )));
+        }
         let payload_len = payload.len() as u32;
         let event_id = last.event_id.as_u64();
         let tick = last.tick.as_u64();
@@ -301,6 +352,12 @@ impl FileEventLog {
 
     fn ensure_writer(&mut self) -> SimResult<()> {
         if self.writer.is_none() {
+            if let Some(parent) = self.path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    SimError::PersistenceError(format!("Failed to create WAL dir: {}", e))
+                })?;
+            }
+
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -347,6 +404,10 @@ impl FileEventLog {
 
     /// Read all valid events from the WAL file.
     fn read_all_events(&self) -> SimResult<Vec<SimEvent>> {
+        if let Some(err) = &self.read_error {
+            return Err(err.clone());
+        }
+
         if !self.path.exists() {
             return Ok(Vec::new());
         }
@@ -506,7 +567,7 @@ mod tests {
                 tick: Tick(tick),
                 sim_time: sy_types::SimTime { units: tick },
                 entities_processed: 0,
-                rng_state_after: None,
+                rng_state_after: Some(tick),
             },
         )
     }
@@ -736,6 +797,26 @@ mod tests {
     }
 
     #[test]
+    fn read_only_open_reports_corrupt_tail_without_truncating() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        drop(log);
+        let valid_prefix_len = fs::metadata(&path).unwrap().len();
+
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"corrupt-tail").unwrap();
+        file.sync_all().unwrap();
+        let corrupt_len = fs::metadata(&path).unwrap().len();
+        assert!(corrupt_len > valid_prefix_len);
+
+        let log = FileEventLog::open_read_only(&path).unwrap();
+        let err = log.read_all_valid().unwrap_err();
+
+        assert!(err.to_string().contains("Invalid magic"));
+        assert_eq!(fs::metadata(&path).unwrap().len(), corrupt_len);
+    }
+
+    #[test]
     fn recovery_keeps_prefix_before_magic_invalid_tail_record() {
         let (_dir, path, mut log) = temp_wal();
         log.append(tick_event(1)).unwrap();
@@ -751,5 +832,45 @@ mod tests {
         assert_eq!(log.len(), 1);
         assert_eq!(log.last_event_id(), EventId::new(1));
         assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+    }
+
+    #[test]
+    fn recovery_truncates_record_with_payload_length_above_limit_without_allocating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events");
+        let mut record = Vec::new();
+        record.write_u32::<LittleEndian>(WAL_MAGIC).unwrap();
+        record.write_u16::<LittleEndian>(WAL_VERSION).unwrap();
+        record
+            .write_u32::<LittleEndian>(MAX_WAL_PAYLOAD_LEN + 1)
+            .unwrap();
+        record.write_u64::<LittleEndian>(1).unwrap();
+        record.write_u64::<LittleEndian>(1).unwrap();
+        fs::write(&path, record).unwrap();
+
+        let log = FileEventLog::new(&path).unwrap();
+
+        assert_eq!(log.len(), 0);
+        assert_eq!(log.last_event_id(), EventId::ZERO);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn recovery_truncates_record_with_length_beyond_remaining_file_without_allocating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events");
+        let mut record = Vec::new();
+        record.write_u32::<LittleEndian>(WAL_MAGIC).unwrap();
+        record.write_u16::<LittleEndian>(WAL_VERSION).unwrap();
+        record.write_u32::<LittleEndian>(1024).unwrap();
+        record.write_u64::<LittleEndian>(1).unwrap();
+        record.write_u64::<LittleEndian>(1).unwrap();
+        fs::write(&path, record).unwrap();
+
+        let log = FileEventLog::new(&path).unwrap();
+
+        assert_eq!(log.len(), 0);
+        assert_eq!(log.last_event_id(), EventId::ZERO);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
     }
 }

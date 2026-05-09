@@ -13,15 +13,18 @@ cargo +nightly fuzz run wal_round_trip -- -runs=1000
 The scheduled CI job uses time-bounded sessions:
 
 ```text
-cargo +nightly fuzz run decode_record -- -max_total_time=180
-cargo +nightly fuzz run wal_round_trip -- -max_total_time=180
+cargo +nightly fuzz run --target x86_64-unknown-linux-gnu decode_record -- -max_total_time=180
+cargo +nightly fuzz run --target x86_64-unknown-linux-gnu wal_round_trip -- -max_total_time=180
 ```
 
 Pull requests only build the targets:
 
 ```text
-cargo +nightly fuzz build --dev
+cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu
 ```
+
+CI pins the Ubuntu fuzz jobs to the glibc Linux target because AddressSanitizer
+is incompatible with statically linked musl libc.
 
 On Windows MSVC, a fuzz target can compile but fail to start with
 `STATUS_DLL_NOT_FOUND` if the LLVM/libFuzzer runtime DLL is not on `PATH`.

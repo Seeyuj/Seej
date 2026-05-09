@@ -7,7 +7,7 @@ This checklist is the binary closure gate for Phase 1. A criterion is closed onl
 | Headless world creation with mandatory seed | Pass | `server_d create` requires `--seed` and creates `world_<seed>` | `cargo run --bin server_d -- create --name MyWorld --seed 42` |
 | Deterministic tick loop | Pass | canonical hash determinism tests in `sy_core` | `cargo test -p sy_core determinism::tests` |
 | RNG is injected and recoverable | Pass | `restore_seeded_from_fresh_instance` and recovery parity tests | `cargo test -p sy_infra rng::tests::restore_seeded_from_fresh_instance` |
-| Snapshot + WAL recovery cursor | Pass | `snapshot_meta_cursor_points_to_last_event_included_in_snapshot` | `cargo test -p sy_infra --test recovery_determinism snapshot_meta_cursor_points_to_last_event_included_in_snapshot` |
+| Snapshot + WAL recovery cursor | Pass | snapshot cursor parity, interrupted save recovery, plus stale/missing WAL rejection | `cargo test -p sy_infra --test recovery_determinism` |
 | WAL corruption handling | Pass | empty, corrupt-first, truncated-tail, CRC, magic, and partial-batch tests | `cargo test -p sy_infra store::wal::tests` |
 | Replay rejects incoherent events | Pass | strict replay tests in `sy_core::replay` | `cargo test -p sy_core replay::tests` |
 | Clean restart parity | Pass | continuous run hash equals save/load/run hash | `cargo test -p sy_infra --test recovery_determinism clean_restart_matches_continuous_run_hash` |

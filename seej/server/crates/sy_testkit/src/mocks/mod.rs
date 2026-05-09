@@ -6,12 +6,11 @@
 //! - MockStore: In-memory world store
 //! - MockEventLog: In-memory event log
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use sy_api::events::SimEvent;
-use sy_core::ports::{
-    IEventLog, IRng, ISimClock, IStateHasher, IWorldStore, StateHash, WorldSnapshot,
-};
+use sy_api::persistence::{IEventLog, IWorldStore, WorldSnapshot, WorldStorageStatus};
+use sy_core::ports::{IRng, ISimClock, IStateHasher, StateHash};
 use sy_types::{EventId, RngSeed, SimError, SimResult, SimTime, Tick, WorldMeta};
 
 // ============================================================================
@@ -43,6 +42,11 @@ impl IRng for MockRng {
     }
 
     fn restore(&mut self, state: u64) {
+        self.state = state;
+    }
+
+    fn restore_seeded(&mut self, seed: RngSeed, state: u64) {
+        self.seed = seed;
         self.state = state;
     }
 
@@ -196,15 +200,15 @@ impl IEventLog for MockEventLog {
 
 /// In-memory world store for testing.
 pub struct MockWorldStore {
-    metas: HashMap<String, WorldMeta>,
-    snapshots: HashMap<String, WorldSnapshot>,
+    metas: BTreeMap<String, WorldMeta>,
+    snapshots: BTreeMap<String, WorldSnapshot>,
 }
 
 impl MockWorldStore {
     pub fn new() -> Self {
         MockWorldStore {
-            metas: HashMap::new(),
-            snapshots: HashMap::new(),
+            metas: BTreeMap::new(),
+            snapshots: BTreeMap::new(),
         }
     }
 }
@@ -220,6 +224,22 @@ impl IWorldStore for MockWorldStore {
         self.metas.contains_key(world_id)
     }
 
+    fn storage_status(&self, world_id: &str) -> SimResult<WorldStorageStatus> {
+        match (
+            self.metas.contains_key(world_id),
+            self.snapshots.contains_key(world_id),
+        ) {
+            (false, false) => Ok(WorldStorageStatus::Absent),
+            (true, true) => Ok(WorldStorageStatus::Complete),
+            (meta, snapshot) => Ok(WorldStorageStatus::Incomplete {
+                reason: format!(
+                    "mock store has meta={} snapshot={} without coherent pair",
+                    meta, snapshot
+                ),
+            }),
+        }
+    }
+
     fn list_worlds(&self) -> SimResult<Vec<String>> {
         Ok(self.metas.keys().cloned().collect())
     }
@@ -228,7 +248,7 @@ impl IWorldStore for MockWorldStore {
         self.metas
             .get(world_id)
             .cloned()
-            .ok_or_else(|| SimError::PersistenceError(format!("World not found: {}", world_id)))
+            .ok_or_else(|| SimError::NotFound(world_id.to_string()))
     }
 
     fn save_meta(&mut self, meta: &WorldMeta) -> SimResult<()> {
@@ -240,7 +260,7 @@ impl IWorldStore for MockWorldStore {
         self.snapshots
             .get(world_id)
             .cloned()
-            .ok_or_else(|| SimError::PersistenceError(format!("Snapshot not found: {}", world_id)))
+            .ok_or_else(|| SimError::NotFound(world_id.to_string()))
     }
 
     fn save_snapshot(&mut self, world_id: &str, snapshot: &WorldSnapshot) -> SimResult<()> {
@@ -332,9 +352,9 @@ mod tests {
             Tick(1),
             EventData::TickProcessed {
                 tick: Tick(1),
-                sim_time: SimTime::ZERO,
+                sim_time: SimTime::from_ticks(Tick(1)),
                 entities_processed: 0,
-                rng_state_after: None,
+                rng_state_after: Some(1),
             },
         );
 
@@ -357,7 +377,7 @@ mod tests {
                     tick: Tick(i),
                     sim_time: SimTime { units: i },
                     entities_processed: 0,
-                    rng_state_after: None,
+                    rng_state_after: Some(i),
                 },
             );
             log.append(event).unwrap();

@@ -295,7 +295,7 @@ pub enum EntityState {
 /// `last_event_id` is the cursor into the WAL. On recovery:
 /// 1. Load snapshot (which contains state at `last_saved_tick`)
 /// 2. Replay all events with `event_id > last_event_id`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorldMeta {
     /// Unique world identifier (derived from seed)
     pub world_id: String,
@@ -331,6 +331,8 @@ pub type SimResult<T> = Result<T, SimError>;
 /// Errors that can occur in the simulation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimError {
+    /// Requested object was not found
+    NotFound(String),
     /// Entity not found
     EntityNotFound(EntityId),
     /// Zone not found
@@ -346,6 +348,7 @@ pub enum SimError {
 impl std::fmt::Display for SimError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SimError::NotFound(id) => write!(f, "Not found: {}", id),
             SimError::EntityNotFound(id) => write!(f, "Entity not found: {}", id),
             SimError::ZoneNotFound(id) => write!(f, "Zone not found: {}", id),
             SimError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),

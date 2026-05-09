@@ -12,11 +12,11 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use sy_core::ports::IEventLog;
-use sy_core::ports::IWorldStore;
+use sy_api::persistence::IEventLog;
 use sy_core::World;
-use sy_infra::{FileEventLog, FilesystemStore};
-use sy_types::EntityId;
+use sy_infra::snapshot::encode_world;
+use sy_infra::{load_recovered_world, FileEventLog, FilesystemStore};
+use sy_types::{EntityId, SimError};
 
 /// Seej CLI - World inspection and administration
 #[derive(Parser)]
@@ -121,18 +121,32 @@ fn main() {
 
 /// Load world from storage
 fn load_world(data_dir: &PathBuf, world_id: &str) -> Result<World, String> {
+    load_world_with_replayed(data_dir, world_id).map(|(world, _)| world)
+}
+
+fn load_world_with_replayed(
+    data_dir: &PathBuf,
+    world_id: &str,
+) -> Result<(World, Vec<sy_api::events::SimEvent>), String> {
     let store =
         FilesystemStore::new(data_dir).map_err(|e| format!("Failed to open store: {}", e))?;
+    let events_dir = store
+        .events_dir(world_id)
+        .map_err(|e| format!("Invalid world id: {}", e))?;
+    let event_log = FileEventLog::open_read_only(&events_dir)
+        .map_err(|e| format!("Failed to open event log: {}", e))?;
 
-    if !store.exists(world_id) {
-        return Err(format!("World not found: {}", world_id));
-    }
-
-    let snapshot = store
-        .load_snapshot(world_id)
-        .map_err(|e| format!("Failed to load snapshot: {}", e))?;
-
-    World::from_bytes(&snapshot).map_err(|e| format!("Failed to deserialize world: {}", e))
+    load_recovered_world(&store, &event_log, world_id).map_err(|e| {
+        if matches!(e, SimError::NotFound(_)) {
+            return format!("World not found: {}", world_id);
+        }
+        let message = e.to_string();
+        if message.contains("Snapshot not found") || message.contains("World not found") {
+            format!("World not found: {}", world_id)
+        } else {
+            format!("Failed to recover world: {}", message)
+        }
+    })
 }
 
 /// Show world status
@@ -140,16 +154,14 @@ fn cmd_status(data_dir: &PathBuf, world_id: &str) -> Result<(), String> {
     let store =
         FilesystemStore::new(data_dir).map_err(|e| format!("Failed to open store: {}", e))?;
 
-    let meta = store
-        .load_meta(world_id)
-        .map_err(|e| format!("Failed to load metadata: {}", e))?;
-
     let world = load_world(data_dir, world_id)?;
 
     // Get event log info
-    let events_dir = store.events_dir(world_id);
+    let events_dir = store
+        .events_dir(world_id)
+        .map_err(|e| format!("Invalid world id: {}", e))?;
     let wal_event_count = if events_dir.exists() {
-        FileEventLog::new(&events_dir)
+        FileEventLog::open_read_only(&events_dir)
             .map(|log| log.len())
             .unwrap_or(0)
     } else {
@@ -157,16 +169,16 @@ fn cmd_status(data_dir: &PathBuf, world_id: &str) -> Result<(), String> {
     };
 
     println!("=== World Status ===");
-    println!("ID:              {}", meta.world_id);
-    println!("Name:            {}", meta.name);
-    println!("Seed:            {}", meta.seed.as_u64());
-    println!("Current Tick:    {}", meta.current_tick);
-    println!("Sim Time:        {}", meta.sim_time);
-    println!("Created Tick:    {}", meta.created_tick);
+    println!("ID:              {}", world.meta.world_id);
+    println!("Name:            {}", world.meta.name);
+    println!("Seed:            {}", world.meta.seed.as_u64());
+    println!("Current Tick:    {}", world.meta.current_tick);
+    println!("Sim Time:        {}", world.meta.sim_time);
+    println!("Created Tick:    {}", world.meta.created_tick);
     println!();
     println!("=== Crash Recovery Info ===");
-    println!("Snapshot Tick:   {}", meta.snapshot_tick);
-    println!("Last Event ID:   {}", meta.last_event_id);
+    println!("Snapshot Tick:   {}", world.meta.snapshot_tick);
+    println!("Last Event ID:   {}", world.meta.last_event_id);
     println!("WAL Events:      {}", wal_event_count);
     println!();
     println!("=== Statistics ===");
@@ -207,12 +219,24 @@ fn cmd_dump(
     output: Option<PathBuf>,
     pretty: bool,
 ) -> Result<(), String> {
-    let world = load_world(data_dir, world_id)?;
+    let (mut world, replayed) = load_world_with_replayed(data_dir, world_id)?;
+    if let Some(last_event) = replayed.last() {
+        world.meta.last_event_id = last_event.event_id;
+    }
+    world.meta.current_tick = world.current_tick;
+    world.meta.sim_time = world.sim_time;
+    world.meta.snapshot_tick = world.current_tick;
 
+    let bytes = encode_world(&world).map_err(|e| format!("Failed to serialize: {}", e))?;
     let json = if pretty {
-        serde_json::to_string_pretty(&world)
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|e| format!("Failed to format JSON: {}", e))?;
+        serde_json::to_string_pretty(&value)
     } else {
-        serde_json::to_string(&world)
+        serde_json::to_string(
+            &serde_json::from_slice::<serde_json::Value>(&bytes)
+                .map_err(|e| format!("Failed to format JSON: {}", e))?,
+        )
     }
     .map_err(|e| format!("Failed to serialize: {}", e))?;
 
@@ -236,9 +260,11 @@ fn cmd_events(
     let store =
         FilesystemStore::new(data_dir).map_err(|e| format!("Failed to open store: {}", e))?;
 
-    let events_dir = store.events_dir(world_id);
-    let event_log =
-        FileEventLog::new(&events_dir).map_err(|e| format!("Failed to open event log: {}", e))?;
+    let events_dir = store
+        .events_dir(world_id)
+        .map_err(|e| format!("Invalid world id: {}", e))?;
+    let event_log = FileEventLog::open_read_only(&events_dir)
+        .map_err(|e| format!("Failed to open event log: {}", e))?;
 
     let events = event_log
         .read_all_valid()

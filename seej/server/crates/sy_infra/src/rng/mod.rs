@@ -41,6 +41,17 @@ impl Pcg32Rng {
         rng
     }
 
+    /// Create a placeholder RNG for runtime wiring that restores from persisted
+    /// world state before simulation use.
+    pub fn uninitialized() -> Self {
+        let seed = RngSeed::new(0);
+        Pcg32Rng {
+            seed,
+            state: 0,
+            increment: Self::increment_from_seed(seed),
+        }
+    }
+
     /// Advance the internal state
     fn advance(&mut self) {
         self.state = self
@@ -146,6 +157,24 @@ mod tests {
 
         // Fresh RNG intentionally initialized with a different seed.
         let mut recovered = Pcg32Rng::new(RngSeed::new(999));
+        recovered.restore_seeded(seed, checkpoint_state);
+        let actual: Vec<u32> = (0..10).map(|_| recovered.next_u32()).collect();
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn uninitialized_can_restore_seeded_checkpoint() {
+        let seed = RngSeed::new(42);
+
+        let mut source = Pcg32Rng::new(seed);
+        for _ in 0..50 {
+            source.next_u32();
+        }
+        let checkpoint_state = source.state();
+        let expected: Vec<u32> = (0..10).map(|_| source.next_u32()).collect();
+
+        let mut recovered = Pcg32Rng::uninitialized();
         recovered.restore_seeded(seed, checkpoint_state);
         let actual: Vec<u32> = (0..10).map(|_| recovered.next_u32()).collect();
 

@@ -36,13 +36,13 @@ impl ServerConfig {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        if let Ok(dir) = std::env::var("SEEYUJ_DATA_DIR") {
+        if let Ok(dir) = std::env::var("SEEJ_DATA_DIR") {
             config.data_dir = PathBuf::from(dir);
         }
-        if let Ok(level) = std::env::var("SEEYUJ_LOG_LEVEL") {
+        if let Ok(level) = std::env::var("SEEJ_LOG_LEVEL") {
             config.log_level = level;
         }
-        if let Ok(tps) = std::env::var("SEEYUJ_TPS") {
+        if let Ok(tps) = std::env::var("SEEJ_TPS") {
             if let Ok(n) = tps.parse() {
                 config.ticks_per_second = n;
             }

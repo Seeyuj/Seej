@@ -7,11 +7,3 @@ license.workspace = true
 [dependencies]
 sy_types.workspace = true
 sy_api.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-xxhash-rust.workspace = true
-byteorder.workspace = true
-
-[dev-dependencies]
-sy_testkit.workspace = true

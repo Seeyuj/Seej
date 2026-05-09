@@ -1,32 +1,30 @@
 # Data Flow
 
-This document describes how data flows through the See-Yuj platform.
+This document describes how data flows through the Seej platform.
 
 ## Command Processing Flow
 
 ```
-Client Request
+Operator (server_d / sy_cli)
      │
      ▼
 ┌─────────────┐
-│ sy_protocol │  (deserialize wire format)
+│   sy_api    │  (SimCommand build + validation)
 └─────────────┘
      │
      ▼
 ┌─────────────┐
-│   sy_api    │  (validate + sanitize)
+│   sy_core   │  (Simulation: command → SimEvent batch)
 └─────────────┘
      │
      ▼
 ┌─────────────┐
-│   sy_core   │  (apply command → events)
-└─────────────┘
-     │
-     ▼
-┌─────────────┐
-│  sy_infra   │  (persist events, broadcast)
+│  sy_infra   │  (WAL append-batch → state commit | rollback)
 └─────────────┘
 ```
+
+> Phase 2+: a `sy_protocol` step deserializes wire requests into `SimCommand`
+> before `sy_api` validation. Phase 1 has no wire layer.
 
 ## Event Sourcing
 
@@ -39,10 +37,14 @@ Client Request
 
 ```rust
 loop {
-    let tick = clock.next_tick();
-    let commands = collect_pending_commands();
-    let events = core.apply(tick, commands);
-    event_log.append(events);
-    broadcast_to_clients(events);
+    let checkpoint = sim.checkpoint();
+    let events = sim.process_command(cmd)?;       // pure, in-memory
+    match event_log.append_batch(events) {        // WAL durable
+        Ok(persisted) => persisted,               // keep state
+        Err(e) => {
+            sim.restore_checkpoint(checkpoint);
+            return Err(e);
+        }
+    };
 }
 ```

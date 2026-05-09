@@ -3,12 +3,13 @@ use std::process::{Child, Command as StdCommand, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sy_api::commands::{Command as SimCommand, LoadWorldCmd};
-use sy_core::{compute_canonical_hash, Simulation, XxHasher};
-use sy_infra::{FileEventLog, FilesystemStore, Pcg32Rng, UnlimitedClock};
+use sy_core::compute_canonical_hash;
+use sy_infra::{
+    FileEventLog, FilesystemStore, Pcg32Rng, PersistentSimulation, UnlimitedClock, XxHasher,
+};
 use sy_types::{RngSeed, Tick};
 
-type InfraSim = Simulation<Pcg32Rng, UnlimitedClock, FileEventLog, FilesystemStore>;
+type InfraSim = PersistentSimulation<Pcg32Rng, UnlimitedClock, FileEventLog, FilesystemStore>;
 
 fn server_bin() -> &'static str {
     env!("CARGO_BIN_EXE_server_d")
@@ -45,19 +46,18 @@ fn create_world(data_dir: &Path, seed: RngSeed) {
 
 fn make_sim(data_dir: &Path, world_id: &str) -> InfraSim {
     let store = FilesystemStore::new(data_dir).expect("store creation failed");
-    let wal_path = store.events_dir(world_id);
+    let wal_path = store.events_dir(world_id).expect("valid world id");
     let event_log = FileEventLog::new(&wal_path).expect("event log creation failed");
-    let rng = Pcg32Rng::new(RngSeed::new(0));
+    let rng = Pcg32Rng::uninitialized();
     let clock = UnlimitedClock::new();
-    Simulation::new(rng, clock, event_log, store)
+    PersistentSimulation::new(rng, clock, event_log, store)
 }
 
 fn load_hash_and_tick(data_dir: &Path, world_id: &str) -> (u64, Tick) {
     let mut sim = make_sim(data_dir, world_id);
-    sim.process_command(SimCommand::LoadWorld(LoadWorldCmd {
-        world_id: world_id.to_string(),
-    }))
-    .expect("load world failed");
+    sim.load_world(world_id).expect("load world failed");
+    sim.save_world()
+        .expect("normalize recovered snapshot failed");
     let world = sim.world().expect("world must be loaded");
     let mut hasher = XxHasher::new();
     (
@@ -100,7 +100,7 @@ fn forced_process_kill_recovers_to_continuous_run_hash() {
 
     create_world(crashed_dir.path(), seed);
     let store = FilesystemStore::new(crashed_dir.path()).expect("store creation failed");
-    let wal_path = store.events_dir(&wid);
+    let wal_path = store.events_dir(&wid).expect("valid world id");
     let initial_wal_len = std::fs::metadata(&wal_path)
         .expect("WAL must exist after world creation")
         .len();

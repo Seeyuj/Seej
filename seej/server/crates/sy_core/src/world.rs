@@ -12,7 +12,6 @@
 //! Uses BTreeMap (not HashMap) for deterministic iteration order.
 //! This is critical for reproducible hash computation and simulation.
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use sy_api::commands::EntityProperties;
@@ -25,7 +24,7 @@ use sy_types::{
 // ============================================================================
 
 /// A complete entity in the simulation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Entity {
     /// Unique identifier
     pub id: EntityId,
@@ -74,7 +73,7 @@ impl Entity {
 
 /// A zone/region in the world.
 /// Zones are the unit of spatial partitioning.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Zone {
     /// Zone identifier
     pub id: ZoneId,
@@ -117,7 +116,7 @@ impl Zone {
 /// ## Determinism Invariant
 /// Uses BTreeMap to guarantee iteration order by key.
 /// Never use HashMap in simulation state!
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct World {
     /// World metadata
     pub meta: WorldMeta,
@@ -295,28 +294,6 @@ impl World {
         self.meta.current_tick = self.current_tick;
         self.meta.sim_time = self.sim_time;
     }
-
-    // ========================================================================
-    // Serialization
-    // ========================================================================
-
-    /// Serialize to bytes (for snapshots).
-    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        json_serialize(self).map_err(|e| e.to_string())
-    }
-
-    /// Deserialize from bytes.
-    pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
-        json_deserialize(data).map_err(|e| e.to_string())
-    }
-}
-
-fn json_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
-    serde_json::to_vec(value)
-}
-
-fn json_deserialize<T: DeserializeOwned>(data: &[u8]) -> Result<T, serde_json::Error> {
-    serde_json::from_slice(data)
 }
 
 #[cfg(test)]
@@ -349,14 +326,5 @@ mod tests {
 
         world.remove_entity(id);
         assert_eq!(world.entity_count(), 0);
-    }
-
-    #[test]
-    fn world_serialization() {
-        let world = World::new("Serialize Test".to_string(), RngSeed::new(123));
-        let bytes = world.to_bytes().unwrap();
-        let restored = World::from_bytes(&bytes).unwrap();
-        assert_eq!(restored.name(), world.name());
-        assert_eq!(restored.seed().as_u64(), world.seed().as_u64());
     }
 }

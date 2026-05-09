@@ -10,7 +10,7 @@ This is the Rust workspace containing all server-side crates.
 - `tokio` - Async runtime (sy_infra only)
 - `tracing` - Logging and observability
 - `thiserror` - Error types
-- `flatbuffers` - Protocol serialization (sy_protocol only)
+- `flatbuffers` - Protocol serialization (Phase 2+ sy_protocol only; excluded from Phase 1 workspace)
 
 ### Forbidden in sy_core
 
@@ -44,7 +44,7 @@ cargo run --bin server_d -- --config config.toml
 |-------------|-------|--------------------------------------|
 | sy_types    | NIV 0 | Stable primitive types               |
 | sy_config   | NIV 0 | Configuration parsing                |
-| sy_protocol | NIV 1 | Wire protocol (generated code)       |
+| sy_protocol | NIV 1 | Phase 2+ wire protocol (excluded)    |
 | sy_api      | NIV 1 | Internal API (commands/events)       |
 | sy_core     | NIV 2 | Pure simulation logic                |
 | sy_infra    | NIV 3 | I/O implementations                  |
