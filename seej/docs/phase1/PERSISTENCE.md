@@ -44,6 +44,11 @@ This minimizes corrupted snapshots on crash/power loss.
 
 On Windows, `FilesystemStore` uses `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` for the replacement step.
 
+Directory and WAL creation durability is not yet a closed Phase 1 invariant.
+Durable sign-off requires explicit OS-specific semantics for world directory
+creation, WAL file creation, and the first append, including parent directory
+fsync where supported and crashpoint tests around those boundaries.
+
 ## WAL (Write-Ahead Log)
 
 ### Role
@@ -79,6 +84,11 @@ For batch records, the header `EVENT_ID` and `TICK` are the `event_id` and `tick
   - recovery **stops** at the first invalid record,
   - the implementation may **truncate** the file tail (removing the partial record).
 - This makes “torn writes” detectable and avoids replaying corrupted data.
+
+Phase 1 still needs a stricter corruption and repair policy that separates
+expected torn-write tails from suspicious durable evidence. Suspicious evidence
+must fail closed unless an explicit operator repair mode preserves enough
+diagnostic material to explain the mutation.
 
 ### Event IDs
 
@@ -141,6 +151,33 @@ This makes recovery robust even if:
 - the snapshot is taken while the WAL already contains events for the same tick,
 - multiple events share the same tick,
 - the process crashes mid-record append.
+
+## Durable I/O error policy
+
+The current implementation rolls back the in-memory simulation when WAL append
+fails before a command is accepted. Durable Phase 1 sign-off requires injected
+failure tests for non-crash persistence errors such as ENOSPC, EROFS, EIO,
+fsync failure, failed rename, and failed WAL append.
+
+The required policy is fail-closed:
+
+- no accepted in-memory mutation without a durable WAL commit;
+- no future ticks after a critical persistence failure until recovery policy is
+  explicit;
+- no fresh `meta.json` accepted against a missing, partial, or older snapshot;
+- no silent repair of suspicious durable evidence.
+
+Those requirements remain open checklist work until precise `IWorldStore` /
+`IEventLog` failure injection proves rollback or refusal behavior and proves no
+incoherent snapshot/meta/WAL tuple is produced.
+
+## Backup and restore policy
+
+Phase 1 does not yet define a coherent hot-backup mechanism. Until a tested
+backup command exists, the intended operator policy is cold backup only: stop
+the daemon, copy the complete world directory, then restore and run recovery on
+the copied directory. Raw recursive copy while a writer is active is not
+guaranteed safe.
 
 ## Core boundary
 

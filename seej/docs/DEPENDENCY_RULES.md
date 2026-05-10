@@ -26,6 +26,25 @@ This document defines the allowed dependencies between crates to prevent archite
 - **sy_protocol** is Phase 2+ and must remain excluded from the active Phase 1 workspace build
 - `mods/*` are Phase 2+ and must remain excluded from the active Phase 1 workspace build
 
+## Forbidden `sy_core` APIs
+
+`sy_core` is pure simulation. It must not use APIs that make canonical
+transitions depend on host state or nondeterministic runtime behavior. Phase 1
+sign-off requires an automated gate over `crates/sy_core/src/**`; review-only
+enforcement is not sufficient.
+
+The forbidden API set must include at minimum:
+
+- wall-clock time such as `std::time::SystemTime` and `std::time::Instant`;
+- environment access such as `std::env::*`;
+- OS randomness such as `rand::rngs::OsRng`;
+- filesystem APIs;
+- networking APIs;
+- `std::collections::HashMap` in canonical transition paths.
+
+This gate must be reproducible from a clean checkout and run in CI before the
+corresponding Phase 1 checklist item can be closed.
+
 ## Enforcement
 
 CI enforces these rules with both `cargo deny` and a custom metadata check.
@@ -49,6 +68,9 @@ The custom check reads `cargo metadata --no-deps` and fails if:
 - `sy_api` depends on `sy_protocol`
 - `sy_infra` depends on `sy_protocol` in Phase 1
 - any `mod_*` crate depends directly on `sy_core`
+
+The Phase 2 placeholders (`sy_protocol` and `mods/*`) remain excluded from the
+active Phase 1 workspace unless the roadmap explicitly moves to a later phase.
 
 ## Rationale
 

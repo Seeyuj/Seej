@@ -24,6 +24,9 @@ All core time is simulated:
 - `SimTime` is derived from ticks.
 
 The core must not access `std::time::SystemTime`.
+It also must not use wall-clock `Instant`, environment access, filesystem I/O,
+networking, or OS randomness as canonical transition inputs. Phase 1 sign-off
+requires automated gates for this purity rule; human review alone is not enough.
 
 ### Seed is required at world creation
 
@@ -33,6 +36,24 @@ The `server_d` binary requires `--seed <u64>` when creating a world, so genesis 
 
 World collections that matter for reproducibility use deterministic ordering:
 - `BTreeMap` is used for collections like entities/zones in the world state (stable iteration order).
+
+Canonical transition paths must not depend on nondeterministic collection
+iteration such as `HashMap` iteration order.
+
+### Tick-based checkpoints
+
+Checkpoint and snapshot cadence for canonical state must be expressed in
+simulation ticks. Wall-clock timers may throttle process execution outside the
+core, but elapsed real time must not decide which state becomes the canonical
+checkpoint state.
+
+### No floating-point canonical decisions
+
+Canonical persistent state transitions must not depend on `f32` or `f64`
+arithmetic. Random chances, thresholds, rates, and rule decisions should use
+integers, fixed-point values, or explicit rational representations. This is not
+a ban on every float in the repository; it is a determinism rule for persistent
+simulation decisions and replayable state.
 
 ## Canonical hashing
 
@@ -80,4 +101,9 @@ cargo test --workspace
 - Two runs with the same seed and the same scheduled inputs produce identical checkpoint hashes.
 - Different seeds should diverge (different hashes).
 - Canonical hashing is stable across repeated calls in the same process.
+
+Open Phase 1 checklist items still require stronger evidence for automated
+`sy_core` purity gates, tick-based checkpoint cursor parity, no floating-point
+canonical decisions, counter overflow refusal, and cross-platform golden hash
+parity.
 

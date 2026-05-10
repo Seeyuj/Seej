@@ -34,6 +34,12 @@ Operator (server_d / sy_cli)
 4. In-memory state is accepted only after the WAL append succeeds
 5. Recovery loads `snapshot.json` and replays WAL events after the snapshot cursor
 
+If WAL append fails, the transition is refused and the simulation state must be
+rolled back to the pre-command checkpoint. There must be no accepted state
+transition without durable persistence. Durable Phase 1 sign-off still requires
+injected failure tests that prove this behavior for precise append, write,
+flush, fsync, rename, and snapshot/meta boundaries.
+
 Phase 1 does not yet persist canonical external command envelopes. Full
 re-simulation from `GenesisSpec + CommandEnvelope[]` is tracked as Phase 1
 hardening work in `phase1/EXIT_CHECKLIST.md`.

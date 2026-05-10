@@ -47,7 +47,7 @@ Status: implemented as a minimal recovery slice; not yet durable Phase 1
 sign-off. Closure evidence and open engineering gaps are tracked in
 `seej/docs/phase1/EXIT_CHECKLIST.md`.
 
-🎯 **Single (exclusive) objective**
+**Single (exclusive) objective**
 
 Prove that a simulated world can exist, evolve, and persist with **no client, no player, and no graphical interface**.
 
@@ -188,9 +188,24 @@ Closure evidence tracked separately:
 - The authoritative closure checklist is `seej/docs/phase1/EXIT_CHECKLIST.md`.
 
 Phase 1 hardening backlog before durable sign-off:
-- P0: simulation-contract versioning, formal genesis, world identity independent from seed, stable persisted DTOs, canonical command journaling and ordering, world integrity validation, single-writer ownership with fencing, WAL/world contract binding, corruption/repair policy, replay oracle, crashpoint injection, and separation of semantic hashes from storage-layout hashes.
-- P1: snapshot integrity metadata, compatibility fixtures, causality hashes, deterministic flight recorder, read-only world doctor, divergence bisector, stronger validation and limits, limits manifest, adversarial replay tests, and real WAL compaction/checkpointing.
-- P2: operator recovery runbook, structured recovery diagnostics, failure-mode matrix, and an explicit boundary decision log for Phase 1 systemic rules.
+- P0: automated `sy_core` purity gates, tick-based checkpoint cadence,
+  canonical no-float decisions, fail-closed counter overflow,
+  simulation-contract versioning, formal genesis, world identity independent
+  from seed, canonical command journaling and ordering, single-writer
+  ownership, WAL/world/contract binding, world integrity validation,
+  corruption/repair policy, durable I/O failure policy, replay oracle, and
+  crashpoint injection.
+- P1: versioned repository gates, pinned Rust toolchain, cross-platform
+  canonical hash parity, semantic-vs-storage hash separation, compatibility
+  fixtures, explicit event/payload variant versioning, persisted DTOs,
+  snapshot integrity metadata, durable directory/WAL creation semantics,
+  read-only concurrent inspection semantics, adversarial replay tests, stronger
+  validation and limits, limits manifest, systemic-rule boundary hardening,
+  writer fencing, WAL compaction/checkpointing, causality hashes, deterministic
+  flight recorder, read-only world doctor, and divergence bisector.
+- P2: `sy_loader` Phase 1 contract, cold backup/restore procedure, operator
+  recovery runbook, structured recovery diagnostics, failure-mode matrix, and
+  an explicit boundary decision log for Phase 1 systemic rules.
 
 Final rule (non-negotiable)
 
@@ -206,7 +221,7 @@ Status: deferred. `sy_protocol` and `mods/*` directories exist as placeholders
 or future crates, but they are intentionally excluded from the active Phase 1
 workspace.
 
-🎯 **Objective: Enable extension without weakening the core**
+**Objective: Enable extension without weakening the core**
 
 Once the minimal headless slice and Phase 1 hardening backlog are closed, the
 focus shifts to controlled extensibility.
@@ -228,7 +243,7 @@ This phase is critical to:
 
 ## Phase 3 – Advanced Simulation and Scalability
 
-🎯 **Objective: A credible world at large scale**
+**Objective: A credible world at large scale**
 
 The world must be able to:
 - grow
@@ -249,7 +264,7 @@ The focus remains **systemic**, never game-oriented.
 
 ## Phase 4 – Reference Client (Unreal Engine)
 
-🎯 **Objective: Visualize the world, not define it**
+**Objective: Visualize the world, not define it**
 
 An official client based on Unreal Engine is introduced as:
 - reference implementation
@@ -269,7 +284,7 @@ The client **never drives** world evolution.
 
 ## Phase 5 – Tools, SDK, and Community Opening
 
-🎯 **Objective: Make the project a true platform**
+**Objective: Make the project a true platform**
 
 Final structuring phase before maturity:
 
