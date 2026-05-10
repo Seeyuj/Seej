@@ -20,6 +20,20 @@ The codebase is organized into dependency layers (NIV 0 to NIV 4):
 3. **Snapshot + WAL Recovery**: committed state changes are persisted as events, while snapshots bound recovery cost
 4. **Testability**: Every component can be tested in isolation with mocks
 
+## Foundational Target Contracts
+
+The following documents define future architecture contracts needed to close
+known Phase 1 hardening gaps. They are not implemented feature claims and should
+not be treated as completed work:
+
+- [World Specification Contract](simulation/WORLD_SPEC.md): defines the target
+  `WorldSpec` contract for genesis, world identity, simulation rules, ontology,
+  module contracts, limits, persistence compatibility, and replay semantics.
+- [Causal Resolution Policy](simulation/CAUSAL_RESOLUTION.md): defines the
+  target policy for deterministic multi-resolution simulation so persistent
+  worlds can preserve causal reality without simulating everything at full
+  detail all the time.
+
 ## Persistence Ports
 
 Persistence ports (`IEventLog`, `IWorldStore`) live in `sy_api`. They are abstract contracts shared by infrastructure implementers and runtime consumers without coupling `sy_core` to filesystem I/O, WAL storage, or other infrastructure. `sy_core` remains pure simulation logic; `sy_infra` owns concrete persistence, recovery, and storage behavior.

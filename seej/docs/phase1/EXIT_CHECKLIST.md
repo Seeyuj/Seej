@@ -33,6 +33,18 @@ These are architecture-level gaps discovered after the implemented Phase 1
 checks. They should be treated as Phase 1 hardening work, not Phase 2 gameplay or
 network scope.
 
+Architecture references for future hardening:
+
+- [`../simulation/WORLD_SPEC.md`](../simulation/WORLD_SPEC.md) formalizes the
+  target world contract for genesis, world identity, simulation contract,
+  ontology, module contracts, limits, persistence compatibility, and replay.
+- [`../simulation/CAUSAL_RESOLUTION.md`](../simulation/CAUSAL_RESOLUTION.md)
+  formalizes the target deterministic multi-resolution policy needed to preserve
+  persistent causal reality under bounded simulation budgets.
+
+These references do not mark the gaps as completed. They define the contracts
+future implementation work must satisfy.
+
 ### P0 - must close before durable Phase 1 sign-off
 
 - Persist a simulation contract, not only a storage format. `WorldMeta::format_version` gates snapshot shape, but it does not identify the rules that produced the state. Add a persistent `ruleset_version` or `simulation_contract` that covers systemic rules, RNG algorithm, command/event schema assumptions, and replay semantics. Include it in snapshot/meta/WAL compatibility checks and canonical hashing.

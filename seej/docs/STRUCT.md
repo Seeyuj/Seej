@@ -3,6 +3,9 @@ seej/
 │   ├── ARCHITECTURE.md
 │   ├── DATA_FLOW.md
 │   ├── DEPENDENCY_RULES.md
+│   ├── /simulation
+│   │   ├── CAUSAL_RESOLUTION.md
+│   │   └── WORLD_SPEC.md
 │   └── /phase1
 │       ├── README.md
 │       ├── BINARIES.md
