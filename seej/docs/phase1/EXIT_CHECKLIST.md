@@ -72,7 +72,7 @@ same gap without relying on fragile prose matching.
 
 ### P0 - must close before durable Phase 1 sign-off
 
-- [ ] **P0-01: Enforce `sy_core` purity with automated gates.** The docs forbid wall-clock time, environment access, OS randomness, filesystem I/O, networking, and nondeterministic canonical iteration in `sy_core`, but review alone is not enough. Add CI/static checks over `crates/sy_core/src/**` that fail if forbidden APIs are introduced, including at minimum `std::time::SystemTime`, `std::time::Instant`, `std::env::*`, `rand::rngs::OsRng`, filesystem APIs, networking APIs, and `std::collections::HashMap` in canonical transition paths. The gate must be reproducible from a clean checkout and must not rely only on human review.
+- [x] **P0-01: Enforce `sy_core` purity with automated gates.** Gate-covered by `scripts/check_sy_core_purity.py` and the CI job `sy_core purity`, which runs the gate self-test and scans `crates/sy_core/src/**`. The gate fails on forbidden wall-clock time, environment access, OS randomness, filesystem I/O, networking, and nondeterministic hash collections including `std::time::SystemTime`, `std::time::Instant`, `std::env::*`, `rand::rngs::OsRng`, and `std::collections::HashMap`/`HashSet`. Reproduce from `seej/server/` with `python3 scripts/check_sy_core_purity.py --self-test && python3 scripts/check_sy_core_purity.py`.
 
 - [ ] **P0-02: Bind checkpoint cadence to simulated ticks, not wall-clock time.** Snapshot/checkpoint cadence must be deterministic and expressed in simulation ticks, not elapsed seconds. Required evidence: `server_d --save-interval` is documented as tick-based; tests prove two identical scheduled runs produce identical snapshot cursors; no wall-clock timer decides canonical checkpoint state.
 
