@@ -316,7 +316,69 @@ Rust offers an optimal balance for a persistent platform project:
 
 ---
 
-## Decision Evolution
+## D-011 — Contract-First Kernel, Usage-Pulled Hardening
+
+**Status**: Accepted
+
+### Decision
+
+Seej is positioned as a **world kernel**: the kernel owns the invariants
+(time, causality, identity, conservation), and everything else — observation
+tools, agents, netcode, renderers — is userland consuming a **frozen,
+versioned contract**. Phase 1 closure is split into two gates:
+
+- **Gate 1-K — Kernel Contract**: the non-negotiable bar. Frozen contract v0,
+  causal-closure and determinism invariants, single-writer safety, an
+  observation surface, an anchor world, and at least one external consumer.
+- **Gate 1-D — Durability Under Load**: production hardening where every item
+  carries an explicit usage trigger and is not worked on before its trigger
+  exists.
+
+Guarantees are tiered:
+
+1. **Causal closure** — every state mutation enters through the single
+   journaled aperture (commands in, events out). Non-negotiable.
+2. **Deterministic re-execution** — the same binary re-applies the same
+   journal to the same result; crash recovery *is* a replay. Non-negotiable.
+3. **Long-horizon replay** — bit-perfect across binary versions, platforms,
+   and years. An opt-in product guarantee, pulled by demand (e.g.
+   reproducible agent research), not a default obligation.
+
+The operational form of the invariant is: **we do not break replay.**
+
+### Justification
+
+- The kernel's causal model is only falsifiable through replay: "same genesis
+  + same inputs ⇒ same world" is the one empirical test of unbroken
+  causality. Replay is the measurement instrument of determinism, not a
+  feature preference.
+- A kernel becomes a platform the day someone else can build on it without
+  reading its source. That requires a frozen contract and a consumable
+  surface more than it requires exhaustive operational armor.
+- Hardening ahead of usage optimizes blindly: real consumers re-prioritize
+  durability work better than any checklist. Deferred items remain tracked
+  with stable IDs and explicit triggers — deferral is scheduling, not
+  deletion.
+- Historical evidence (documented in the exit checklist discussion): neutral
+  world kernels without consumers stagnate; ecosystems form around an
+  observable anchor and a stable ABI.
+
+### Consequences
+
+- `seej/docs/CONTRACT.md` is the kernel contract; freezing it is gap K-01.
+  After freeze, any change that alters how a persisted journal re-executes is
+  an explicit `contract_version` / `simulation_contract` bump, never a silent
+  edit.
+- `seej/docs/phase1/EXIT_CHECKLIST.md` is restructured into Gate 1-K and
+  Gate 1-D; all stable gap IDs are preserved.
+- Consumer bricks land in order: observation (in Gate 1-K), then agents, then
+  human netcode. Netcode inherits the kernel's tick model, not the reverse.
+- The anchor world and observation surface are Gate 1-K deliverables, not
+  demo optimizations; D-001 (platform, not a game) is unchanged — the anchor
+  world is proof of autonomous systemic life, not default content.
+- Floating-point canonical decisions remain scheduled for removal (P0-03):
+  portable recovery re-applies the journal through a different binary, which
+  makes float determinism a contract concern, not a Tier 3 luxury.
 
 - Any major decision must be added to this document.
 - An existing decision can only be modified with:

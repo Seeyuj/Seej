@@ -55,6 +55,26 @@ Do not optimize for speculative future features.
 
 Optimize for the foundation.
 
+## Current Direction (Decision D-011)
+
+Seej is a **world kernel**: the kernel owns time, causality, identity, and
+conservation; everything else (observers, agents, netcode, renderers) is
+userland consuming a frozen, versioned contract.
+
+- The kernel contract lives in `seej/docs/CONTRACT.md`. Its change policy is:
+  **we do not break replay.** Any change that alters how a persisted journal
+  re-executes is an explicit contract bump, never a silent edit.
+- Phase 1 closes through two gates in `seej/docs/phase1/EXIT_CHECKLIST.md`:
+  Gate 1-K (kernel contract — work on this) and Gate 1-D (durability under
+  load — every item has a usage trigger; do not work on an item before its
+  trigger exists).
+- The observation surface and the anchor world (gaps K-02, K-03) are Gate 1-K
+  deliverables. They are contract evidence, not "impressive demos": a world
+  observably evolving through a read-only stream is the proof of the
+  autonomous-persistence claim.
+- Consumer bricks land in order: observation → agents → human netcode. Do not
+  pull netcode or protocol work forward.
+
 ## Priority Order
 
 When tradeoffs appear, use this order:

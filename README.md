@@ -7,8 +7,8 @@ It focuses on deterministic server execution, explicit persistence, and replayab
 Clients are rendering-agnostic consumers: they observe and interact through APIs, but the server remains authoritative.
 In Phase 1, this means: create a world, run ticks, persist state, kill the process, restart it, replay events, and verify identical state.
 
-- GitHub: [https://github.com/Seej/Seej](https://github.com/Seej/Seej)
-- Follow: [https://x.com/Seeyuj](https://x.com/Seej)
+- GitHub: [https://github.com/Seeyuj/Seej](https://github.com/Seeyuj/Seej)
+- Follow: [https://x.com/Seeyuj](https://x.com/Seeyuj)
 
 ## What Works Today (Phase 1)
 
@@ -27,20 +27,23 @@ Implemented and testable today:
 - Inspection CLI (`sy_cli`) for status, events, entities, zones, and JSON dumps
 - Determinism validation utilities and tests in `sy_core`
 
-Closure and hardening evidence tracked separately:
+Phase 1 closes through two gates (decision D-011):
 
-- Fast CI gates for check/build, format, clippy, tests, rustdoc,
-  supply-chain checks, dependency-boundary checks, and WAL fuzz-target build
-- Scheduled/manual gates for ignored tests, forced-kill recovery, long burn-in,
-  coverage, and WAL fuzz smoke
-- Open hardening gaps for simulation contracts, formal genesis, command
-  journaling, integrity validation, single-writer ownership, compatibility
-  fixtures, compaction, and operator recovery procedures
+- **Gate 1-K — Kernel Contract**: freeze the kernel contract v0, close the
+  contract-integrity gaps (simulation contract, formal genesis, command
+  journaling and ordering, single-writer ownership, WAL/contract binding,
+  replay oracle), ship the observation surface, provide an anchor world, and
+  gain a first external consumer.
+- **Gate 1-D — Durability Under Load**: production hardening (corruption and
+  I/O failure policies, compaction, fencing, limits, operator tooling), where
+  every item carries an explicit usage trigger.
 
 Reference docs:
 
+- [Kernel Contract (draft v0)](seej/docs/CONTRACT.md)
 - [Phase 1 Scope](seej/docs/phase1/README.md)
-- [Phase 1 Exit Checklist and Engineering Gaps](seej/docs/phase1/EXIT_CHECKLIST.md)
+- [Phase 1 Exit Checklist — Gates 1-K and 1-D](seej/docs/phase1/EXIT_CHECKLIST.md)
+- [Observation Slice (first userland brick)](seej/docs/phase1/OBSERVATION_SLICE.md)
 - [Determinism Contract](seej/docs/phase1/DETERMINISM.md)
 - [Persistence and Recovery](seej/docs/phase1/PERSISTENCE.md)
 - [Binary Usage](seej/docs/phase1/BINARIES.md)
@@ -62,6 +65,14 @@ Core principles:
 - **Determinism first**: same genesis + same input stream = same state transitions
 - **Snapshot + WAL persistence**: snapshots are recovered, then WAL events after the snapshot cursor are replayed
 - **Strict decoupling**: simulation logic is independent from rendering technologies
+- **One journaled aperture**: the world is a causally closed system; all
+  mutation enters as commands, all change exits as events, and everything is
+  journaled
+
+Guarantees are tiered (see [CONTRACT.md](seej/docs/CONTRACT.md)): causal
+closure and deterministic re-execution are non-negotiable ("we do not break
+replay"); long-horizon bit-perfect replay across versions and platforms is an
+opt-in guarantee pulled by demand.
 
 Documentation structure:
 
@@ -101,8 +112,12 @@ It is a persistent world kernel: server simulation infrastructure that others ca
 ## Current Status
 
 - **Phase 0** (conceptual foundations): complete
-- **Phase 1** (minimal headless server slice): implemented; durable sign-off blocked by hardening gaps in the exit checklist
-- **Phase 2+** (`sy_protocol`, optional modules, advanced client/network concerns): intentionally deferred
+- **Phase 1** (minimal headless server slice): implemented; closing through
+  Gate 1-K (kernel contract, observation surface, anchor world, external
+  consumer) with Gate 1-D (durability under load) pulled by usage triggers
+- **Phase 2+** (`sy_protocol`, agents brick, human netcode brick, optional
+  modules): intentionally deferred; brick order is observation → agents →
+  human netcode
 
 Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)
 
