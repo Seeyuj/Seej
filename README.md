@@ -86,7 +86,7 @@ See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seej/docs/ARCHITECTURE.md](seej
 Prerequisite: Rust toolchain installed.
 
 ```bash
-git clone https://github.com/Seej/Seej.git
+git clone https://github.com/Seeyuj/Seej.git
 cd Seej/seej/server
 
 cargo build --workspace
@@ -126,7 +126,7 @@ Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)
 If you want to help build robust simulation infrastructure:
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
-2. Check open [Issues](https://github.com/Seej/Seej/issues)
+2. Check open [Issues](https://github.com/Seeyuj/Seej/issues)
 3. Open a PR aligned with architecture and decision documents
 
 Key references:
@@ -134,3 +134,7 @@ Key references:
 - [doc/DECISIONS.md](doc/DECISIONS.md)
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
 - [seej/docs/phase1/README.md](seej/docs/phase1/README.md)
+
+## License
+
+Seej is released under the [MIT License](LICENSE).
