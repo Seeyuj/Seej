@@ -1,6 +1,5 @@
 # Rust
 target/
-Cargo.lock
 
 # Données de persistance
 data/
@@ -12,6 +11,7 @@ data/
 .vscode/
 .vs/
 .claude/
+.omc/
 *.swp
 *.swo
 *~
