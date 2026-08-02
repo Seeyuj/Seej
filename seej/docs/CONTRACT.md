@@ -101,7 +101,7 @@ saturating (P0-04).
 | `RngSeed` | `u64` | mandatory at genesis |
 | `Position` | `{ "x": i32, "y": i32, "z": i32 }` | zone-local |
 | `WorldPos` | `{ "zone": ZoneId, "pos": Position }` | |
-| `EntityKind` | `"Resource" \| "Creature" \| "Item" \| "Structure"` | non-exhaustive: consumers must tolerate unknown kinds |
+| `EntityKind` | `"Resource" \| "Creature" \| "Item" \| "Structure"` | non-exhaustive: future contract versions may add kinds; consumers must refuse unknown kinds with a typed error (section 6), never skip silently |
 | `EntityState` | `"Active" \| "Dormant" \| "Dead"` | |
 | `EntityProperties` | `{ "name": string?, "amount": u32?, "health": u32? }` | |
 
@@ -228,7 +228,7 @@ Per tick, over active entities in ascending `EntityId` order:
 - `events` — the append-only WAL. Binary record layout (little-endian):
 
 ```text
-MAGIC   : u32  0x57414C31 ("WAL1")
+MAGIC   : u32  0x57414C31 ("WAL1"; on-disk little-endian bytes: 31 4C 41 57)
 VERSION : u16  1
 LENGTH  : u32  payload byte length (max 16 MiB)
 EVENT_ID: u64  header cursor = last event of the batch

@@ -1,8 +1,10 @@
 seej/
 ├── /docs                      # Documentation in English
 │   ├── ARCHITECTURE.md
+│   ├── CONTRACT.md
 │   ├── DATA_FLOW.md
 │   ├── DEPENDENCY_RULES.md
+│   ├── STRUCT.md
 │   ├── /simulation
 │   │   ├── CAUSAL_RESOLUTION.md
 │   │   └── WORLD_SPEC.md
@@ -11,6 +13,7 @@ seej/
 │       ├── BINARIES.md
 │       ├── DETERMINISM.md
 │       ├── EXIT_CHECKLIST.md
+│       ├── OBSERVATION_SLICE.md
 │       └── PERSISTENCE.md
 │
 ├── /schemas
@@ -40,7 +43,7 @@ seej/
 │   │   ├── /server_d          # Main daemon
 │   │   └── /sy_cli            # Admin CLI
 │   │
-│   └── /examples
+│   └── /examples              # Phase 1 placeholders (not wired into any build)
 │       ├── minimal_headless.rs
 │       └── replay_demo.rs
 │
