@@ -6,7 +6,7 @@
 - [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - [`DECISIONS.md`](DECISIONS.md)
 - [`ROADMAP.md`](ROADMAP.md)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 
@@ -379,6 +379,10 @@ The operational form of the invariant is: **we do not break replay.**
 - Floating-point canonical decisions remain scheduled for removal (P0-03):
   portable recovery re-applies the journal through a different binary, which
   makes float determinism a contract concern, not a Tier 3 luxury.
+
+---
+
+## Amendment Rules
 
 - Any major decision must be added to this document.
 - An existing decision can only be modified with:
