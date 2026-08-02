@@ -72,6 +72,20 @@ The custom check reads `cargo metadata --no-deps` and fails if:
 The Phase 2 placeholders (`sy_protocol` and `mods/*`) remain excluded from the
 active Phase 1 workspace unless the roadmap explicitly moves to a later phase.
 
+Forbidden `sy_core` APIs are enforced by a separate static gate:
+
+```text
+python3 scripts/check_sy_core_purity.py --self-test
+python3 scripts/check_sy_core_purity.py
+```
+
+The script scans `crates/sy_core/src/**` after masking Rust comments and string
+literals, so documented examples do not satisfy or break the rule. CI runs the
+same commands in the `sy_core purity` job. This API gate complements the
+metadata dependency check: the metadata check prevents impure dependencies from
+entering `sy_core`, while the purity gate prevents direct use of host APIs in
+core source files.
+
 ## Rationale
 
 These rules ensure:

@@ -64,7 +64,7 @@ The WAL is an **append-only** log of persisted simulation events. It is used for
 Each record is:
 
 ```text
-MAGIC   : u32  (little-endian)  0x57414C31  // "WAL1"
+MAGIC   : u32  (little-endian)  0x57414C31  // "WAL1" (on-disk LE bytes: 31 4C 41 57)
 VERSION : u16  (little-endian)  1
 LENGTH  : u32  (little-endian)  payload byte length
 EVENT_ID: u64  (little-endian)  monotonic per WAL

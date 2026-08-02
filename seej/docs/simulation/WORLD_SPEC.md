@@ -16,7 +16,8 @@ without adding gameplay scope.
 
 This document MUST NOT trigger implementation of causal scheduling,
 materialization, aggregation, ontology compression, or module-specific scoring
-until the Phase 1 P0 hardening backlog is closed.
+until Gate 1-K of [the exit checklist](../phase1/EXIT_CHECKLIST.md) is closed
+(Gate 1-D items are usage-pulled and do not gate this boundary).
 
 Allowed Phase 1 work:
 

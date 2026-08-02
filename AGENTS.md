@@ -55,6 +55,26 @@ Do not optimize for speculative future features.
 
 Optimize for the foundation.
 
+## Current Direction (Decision D-011)
+
+Seej is a **world kernel**: the kernel owns time, causality, identity, and
+conservation; everything else (observers, agents, netcode, renderers) is
+userland consuming a frozen, versioned contract.
+
+- The kernel contract lives in `seej/docs/CONTRACT.md`. Its change policy is:
+  **we do not break replay.** Any change that alters how a persisted journal
+  re-executes is an explicit contract bump, never a silent edit.
+- Phase 1 closes through two gates in `seej/docs/phase1/EXIT_CHECKLIST.md`:
+  Gate 1-K (kernel contract — work on this) and Gate 1-D (durability under
+  load — every item has a usage trigger; do not work on an item before its
+  trigger exists).
+- The observation surface and the anchor world (gaps K-02, K-03) are Gate 1-K
+  deliverables. They are contract evidence, not "impressive demos": a world
+  observably evolving through a read-only stream is the proof of the
+  autonomous-persistence claim.
+- Consumer bricks land in order: observation → agents → human netcode. Do not
+  pull netcode or protocol work forward.
+
 ## Priority Order
 
 When tradeoffs appear, use this order:
@@ -138,3 +158,22 @@ world state + input + tick
 Core code must keep transition inputs explicit and ordered. If a change cannot
 be replayed deterministically from those inputs, move it out of the core or
 redesign it before implementation.
+
+### 4. Persistence and Recovery
+
+- Every accepted mutation is journaled (WAL) **before** in-memory state is accepted.
+- The world must survive `kill -9`: recovery is a replay (snapshot + WAL after
+  the cursor), never a reconstruction from memory.
+- No canonical state lives only in memory, logs, or transient caches.
+- Any change that alters how a persisted journal re-executes is an explicit
+  contract bump (`seej/docs/CONTRACT.md`), never a silent edit.
+
+### 5. Architectural Boundaries
+
+- The NIV 0→4 layering is mandatory; allowed edges live in
+  `seej/docs/DEPENDENCY_RULES.md`.
+- `sy_core` depends only on `sy_types` and `sy_api`; the purity gate
+  (`seej/server/scripts/check_sy_core_purity.py`, CI job `sy_core purity`)
+  must stay green.
+- Phase 2+ crates (`sy_protocol`, `mods/*`) stay outside the active workspace.
+- Real I/O lives in `sy_infra`; in Phase 1, `server_d` wires the runtime.

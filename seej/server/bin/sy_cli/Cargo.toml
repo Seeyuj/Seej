@@ -14,7 +14,6 @@ sy_api.workspace = true
 sy_core.workspace = true
 sy_infra.workspace = true
 sy_config.workspace = true
-sy_tools.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true

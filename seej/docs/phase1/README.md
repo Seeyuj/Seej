@@ -13,6 +13,9 @@ repository, what is explicitly out of scope, and what still blocks durable Phase
 - **Strict layering**:
   - `sy_core` must stay pure (no I/O, no system time, no OS RNG).
   - real I/O lives in `sy_infra`.
+- **Consumable kernel** (Gate 1-K): a frozen contract (`../CONTRACT.md`), a
+  read-only observation surface (`OBSERVATION_SLICE.md`), and an anchor world
+  — so a consumer can watch a world evolve without reading the Rust source.
 
 ## Non-goals (Phase 1)
 
@@ -64,20 +67,28 @@ See `DETERMINISM.md`.
 
 See `PERSISTENCE.md` for the exact record layout and recovery algorithm.
 
-## Exit checklist
+## Exit checklist — two gates
 
-Phase 1 closure is tracked in `EXIT_CHECKLIST.md`. The default CI gate covers
-fast checks; scheduled/manual gates cover ignored tests, forced-kill recovery,
-long burn-in, coverage, and WAL fuzz smoke.
+Phase 1 closure is tracked in `EXIT_CHECKLIST.md` and is split into two gates
+(decision `D-011` in `doc/DECISIONS.md`):
 
-The same checklist also tracks open engineering gaps that are not closed by the
-current tests: simulation-contract versioning, formal genesis, stable persisted
-DTOs, canonical command ordering, command journaling, world integrity
-validation, single-writer ownership, WAL/world contract binding, corruption
-policy, replay oracle tooling, crashpoint injection, deterministic flight
-recording, read-only world diagnostics, divergence bisection, compaction, and
-operator recovery procedures. Those gaps must be closed before treating Phase 1
-as durable infrastructure rather than an implemented minimal recovery slice.
+- **Gate 1-K — Kernel Contract** (close first): freeze the kernel contract v0
+  (`../CONTRACT.md`, gap K-01), close the contract-integrity gaps
+  (simulation-contract versioning, formal genesis, world identity, command
+  journaling and canonical ordering, single-writer ownership, WAL/contract
+  binding, minimal integrity validation, replay oracle, persisted DTOs,
+  concurrent read semantics), ship the observation surface
+  (`OBSERVATION_SLICE.md`, gap K-02), provide an anchor world (K-03), and gain
+  a first external consumer (K-04). The operational invariant: **we do not
+  break replay.**
+- **Gate 1-D — Durability Under Load** (usage-pulled): corruption and I/O
+  failure policies, crashpoint matrix, fencing, compaction, limits, adversarial
+  replay, flight recording, divergence bisection, and operator tooling. Every
+  item carries an explicit trigger and is not worked on before its trigger
+  exists.
+
+The default CI gate covers fast checks; scheduled/manual gates cover ignored
+tests, forced-kill recovery, long burn-in, coverage, and WAL fuzz smoke.
 
 ### Observability (minimal)
 

@@ -382,6 +382,22 @@ Core systems must be:
 
 Any logic introducing non-reproducible behaviors must be isolated, documented, and justified.
 
+#### `sy_core` Purity Gate
+
+The simulation core lives under `seej/server/crates/sy_core/src/**`. It must not
+use wall-clock time, environment access, OS randomness, filesystem I/O,
+networking, or nondeterministic hash collections in canonical transition paths.
+
+Before pushing a change that touches `sy_core`, run from `seej/server/`:
+
+```bash
+python3 scripts/check_sy_core_purity.py --self-test
+python3 scripts/check_sy_core_purity.py
+```
+
+CI runs the same gate as `sy_core purity`. Findings are reported as
+`path:line:column: rule_id: reason`.
+
 ### Explicit and Traceable Persistence
 
 Persistent world data must:

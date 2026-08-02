@@ -9,7 +9,7 @@
 - [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - [`DECISIONS.md`](DECISIONS.md)
 - [`ROADMAP.md`](ROADMAP.md)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 
@@ -43,9 +43,11 @@ Phase 0 remains the reference baseline for all future decisions.
 
 ## Phase 1 – Minimal Headless Server Slice
 
-Status: implemented as a minimal recovery slice; not yet durable Phase 1
-sign-off. Closure evidence and open engineering gaps are tracked in
-`seej/docs/phase1/EXIT_CHECKLIST.md`.
+Status: implemented as a minimal recovery slice. Phase 1 now closes through
+two gates (decision D-011): **Gate 1-K (Kernel Contract)** — the non-negotiable
+bar, and **Gate 1-D (Durability Under Load)** — hardening pulled by explicit
+usage triggers. Both are tracked in `seej/docs/phase1/EXIT_CHECKLIST.md`; the
+kernel contract itself is drafted in `seej/docs/CONTRACT.md`.
 
 **Single (exclusive) objective**
 
@@ -157,18 +159,28 @@ Introducing any of these too early invalidates Phase 1 scope discipline.
 
 Validation criteria (measurable)
 
-Durable Phase 1 sign-off is closed only if:
+Gate 1-K (Kernel Contract) is closed only if:
 - the server can run alone indefinitely
 - the world evolves without human interaction
 - a restart destroys nothing
 - two runs with the same inputs produce the same world
 - the server has zero graphical dependencies
+- the kernel contract is frozen (`seej/docs/CONTRACT.md`, gap K-01)
+- a world's event stream is observable by external tools (gap K-02)
+- an anchor world proves visible, reproducible systemic life (gap K-03)
+- at least one consumer not maintained by the author builds on the contract
+  (gap K-04)
 
-The current repository satisfies the minimal implementation proof, but the
-durable infrastructure bar is higher: world identity, command journaling,
-simulation-contract versioning, compatibility fixtures, integrity validation,
-single-writer ownership, corruption policy, compaction, and operator recovery
-procedures remain Phase 1 hardening work.
+The operational invariant of Gate 1-K is: **we do not break replay.** Causal
+closure (every mutation enters through the journaled aperture) and
+deterministic re-execution (recovery is a replay) are non-negotiable.
+Long-horizon bit-perfect replay across versions and platforms is an opt-in
+Tier 3 guarantee, pulled by demand.
+
+The current repository satisfies the minimal implementation proof. Gate 1-D
+(Durability Under Load) tracks the production-hardening bar — corruption
+policy, I/O failure policy, compaction, fencing, limits, operator tooling —
+with explicit usage triggers per item.
 
 Phase 1 implementation status (current repository)
 
@@ -183,29 +195,32 @@ Already implemented:
 - Determinism tooling and tests (canonical hashing and replay checks)
 
 Closure evidence tracked separately:
-- Fast CI gates cover check/build, formatting, tests, clippy, rustdoc, supply-chain checks, dependency-boundary checks, and WAL fuzz-target build.
+- Fast CI gates cover `sy_core` purity, check/build, formatting, tests, clippy, rustdoc, supply-chain checks, dependency-boundary checks, and WAL fuzz-target build.
 - Scheduled/manual gates cover ignored Phase 1 tests, forced-kill recovery, long burn-in runs, coverage, and WAL fuzz smoke.
 - The authoritative closure checklist is `seej/docs/phase1/EXIT_CHECKLIST.md`.
 
-Phase 1 hardening backlog before durable sign-off:
-- P0: automated `sy_core` purity gates, tick-based checkpoint cadence,
-  canonical no-float decisions, fail-closed counter overflow,
+Phase 1 backlog, restructured by gate (D-011):
+- **Gate 1-K — Kernel Contract (do first).** Kernel deliverables: frozen
+  contract v0 (K-01), observation surface (K-02, spec in
+  `seej/docs/phase1/OBSERVATION_SLICE.md`), anchor world (K-03), first
+  external consumer (K-04). Contract integrity: no-float canonical decisions,
   simulation-contract versioning, formal genesis, world identity independent
   from seed, canonical command journaling and ordering, single-writer
-  ownership, WAL/world/contract binding, world integrity validation,
-  corruption/repair policy, durable I/O failure policy, replay oracle, and
-  crashpoint injection.
-- P1: versioned repository gates, pinned Rust toolchain, cross-platform
-  canonical hash parity, semantic-vs-storage hash separation, compatibility
-  fixtures, explicit event/payload variant versioning, persisted DTOs,
-  snapshot integrity metadata, durable directory/WAL creation semantics,
-  read-only concurrent inspection semantics, adversarial replay tests, stronger
-  validation and limits, limits manifest, systemic-rule boundary hardening,
-  writer fencing, WAL compaction/checkpointing, causality hashes, deterministic
-  flight recorder, read-only world doctor, and divergence bisector.
-- P2: `sy_loader` Phase 1 contract, cold backup/restore procedure, operator
-  recovery runbook, structured recovery diagnostics, failure-mode matrix, and
-  an explicit boundary decision log for Phase 1 systemic rules.
+  ownership, WAL/world/contract binding, minimal integrity validation, replay
+  oracle, persisted DTOs, minimal snapshot integrity metadata, concurrent
+  read semantics. Plus cheap hygiene done in passing (purity gate ✅, pinned
+  toolchain ✅, versioned CI gates ✅, tick-based cadence evidence, fail-closed
+  counters, `sy_loader` policy, rules decision log).
+- **Gate 1-D — Durability Under Load (usage-pulled; each item has an explicit
+  trigger).** Corruption/repair policy, durable I/O failure policy, crashpoint
+  matrix, creation durability, adversarial replay, writer fencing, compaction
+  — triggered by a world under real load. Validation, limits, limits manifest
+  — triggered by external input producers. Cross-platform hash parity,
+  semantic-vs-storage hash separation, golden fixtures, variant versioning —
+  triggered by claiming the Tier 3 replay guarantee. Causality hashes, flight
+  recorder, divergence bisector — triggered by the first divergence bug or
+  reproducible-research demand. Doctor, backup/restore, runbook, diagnostics,
+  failure-mode matrix — triggered by operators other than the author.
 
 Final rule (non-negotiable)
 
@@ -223,11 +238,22 @@ workspace.
 
 **Objective: Enable extension without weakening the core**
 
-Once the minimal headless slice and Phase 1 hardening backlog are closed, the
-focus shifts to controlled extensibility.
+Once Gate 1-K is closed, the focus shifts to controlled extensibility.
+
+Consumer bricks land in a deliberate order:
+
+1. **Observation brick** (read-only event stream) — part of Gate 1-K itself
+   (K-02), because every consumer starts by watching.
+2. **Agents brick** (command injection for programmatic actors) — the first
+   write-capable consumer; requires the durable command journal and canonical
+   ordering (P0-08, P0-09) plus the validation/limits items its trigger pulls
+   from Gate 1-D.
+3. **Human netcode brick** — the hardest consumer (latency, prediction,
+   interest management); intentionally last, and constrained by the kernel's
+   tick model rather than the other way around.
 
 Main axes:
-- Definition of versioned public APIs
+- Definition of versioned public APIs (grounded in the frozen kernel contract)
 - Optional module system
 - Module loading / activation / deactivation
 - Strict isolation between core and extensions

@@ -25,8 +25,9 @@ All core time is simulated:
 
 The core must not access `std::time::SystemTime`.
 It also must not use wall-clock `Instant`, environment access, filesystem I/O,
-networking, or OS randomness as canonical transition inputs. Phase 1 sign-off
-requires automated gates for this purity rule; human review alone is not enough.
+networking, or OS randomness as canonical transition inputs. Phase 1 enforces
+this with the CI job `sy_core purity`, backed by
+`scripts/check_sy_core_purity.py`.
 
 ### Seed is required at world creation
 
@@ -96,14 +97,20 @@ If you want all workspace tests:
 cargo test --workspace
 ```
 
+Run the `sy_core` purity gate exactly as CI does:
+
+```bash
+python3 scripts/check_sy_core_purity.py --self-test
+python3 scripts/check_sy_core_purity.py
+```
+
 ## What the tests guarantee (Phase 1)
 
 - Two runs with the same seed and the same scheduled inputs produce identical checkpoint hashes.
 - Different seeds should diverge (different hashes).
 - Canonical hashing is stable across repeated calls in the same process.
 
-Open Phase 1 checklist items still require stronger evidence for automated
-`sy_core` purity gates, tick-based checkpoint cursor parity, no floating-point
-canonical decisions, counter overflow refusal, and cross-platform golden hash
-parity.
+Open Phase 1 checklist items still require stronger evidence for tick-based
+checkpoint cursor parity, no floating-point canonical decisions, counter
+overflow refusal, and cross-platform golden hash parity.
 
