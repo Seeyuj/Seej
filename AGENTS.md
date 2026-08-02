@@ -158,3 +158,22 @@ world state + input + tick
 Core code must keep transition inputs explicit and ordered. If a change cannot
 be replayed deterministically from those inputs, move it out of the core or
 redesign it before implementation.
+
+### 4. Persistence and Recovery
+
+- Every accepted mutation is journaled (WAL) **before** in-memory state is accepted.
+- The world must survive `kill -9`: recovery is a replay (snapshot + WAL after
+  the cursor), never a reconstruction from memory.
+- No canonical state lives only in memory, logs, or transient caches.
+- Any change that alters how a persisted journal re-executes is an explicit
+  contract bump (`seej/docs/CONTRACT.md`), never a silent edit.
+
+### 5. Architectural Boundaries
+
+- The NIV 0→4 layering is mandatory; allowed edges live in
+  `seej/docs/DEPENDENCY_RULES.md`.
+- `sy_core` depends only on `sy_types` and `sy_api`; the purity gate
+  (`seej/server/scripts/check_sy_core_purity.py`, CI job `sy_core purity`)
+  must stay green.
+- Phase 2+ crates (`sy_protocol`, `mods/*`) stay outside the active workspace.
+- Real I/O lives in `sy_infra`; in Phase 1, `server_d` wires the runtime.
