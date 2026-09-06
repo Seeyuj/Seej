@@ -163,7 +163,8 @@ or artifacts were deliberately removed.
 Only cold backup is currently supportable as an operator procedure: stop the
 writer, copy the complete world directory, restore it elsewhere, and run
 ordinary recovery. A raw copy while the writer is active is not guaranteed
-coherent. Hot backup remains unclaimed until a tested protocol exists.
+coherent. This procedure does not yet have the restore evidence required by
+`P2-02`. Hot backup remains unclaimed until a tested protocol exists.
 
 ## Boundaries
 

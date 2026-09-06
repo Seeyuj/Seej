@@ -86,10 +86,12 @@ data.
 
 Admission rules:
 
-- a command for an already completed tick is refused;
+- only a generation opened for the producer by a confirmed kernel operation is
+  valid;
 - retrying the same identifier with the same fingerprint returns its durable
-  status without repeating effects;
+  status without repeating effects, even when its target tick has since closed;
 - the same identifier with a different fingerprint is a conflict;
+- a new command for an already completed tick is refused;
 - a timeout is not a terminal status;
 - after the declared status-retention window, the identifier is recognized as
   expired and cannot be reused as a new command.

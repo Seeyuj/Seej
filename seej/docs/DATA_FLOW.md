@@ -74,8 +74,9 @@ reply, the durable resolution is returned without reapplying effects.
 
 ## Command retry flow
 
-1. Validate the kernel-issued generation and look up the full command identity
-   in the durable admission namespace.
+1. Verify that a confirmed `OpenGeneration` operation issued the generation to
+   this producer, then look up the full command identity in the durable
+   admission namespace.
 2. If its generation is at or below the durable closed-generation floor,
    return `Expired`; never execute it as new.
 3. If an admitted entry exists and its fingerprint matches, return its durable

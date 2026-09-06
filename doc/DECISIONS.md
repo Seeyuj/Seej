@@ -564,10 +564,11 @@ after activation.
 
 The first stable contract uses these operational semantics:
 
-- A command has a kernel-issued identity namespace. A confirmed Admission
-  creates durable `Pending` state without application effects. A confirmed
-  Resolution atomically records `Succeeded` or `Refused`, events, and the state
-  transition. Recovery resumes pending work and never reapplies a resolution.
+- A command has a kernel-issued identity namespace opened by a confirmed
+  operation. A confirmed Admission creates durable `Pending` state without
+  application effects. A confirmed Resolution atomically records `Succeeded`
+  or `Refused`, events, and the state transition. Recovery resumes pending work
+  and never reapplies a resolution.
 - Status retention is measured in canonical ticks. Pending commands never
   expire. Confirmed closure of kernel-issued generations creates durable
   non-reusable expired namespaces without retaining every terminal result.
@@ -631,6 +632,29 @@ These statements are target contracts. D-013 closes no implementation gap.
 | First-stable requirements placed in Gate 1-D | `EXIT_CHECKLIST.md` Gate 1-K | P1-20, P2-02, P2-03 |
 | Official application capabilities implied | `ROADMAP.md` optional ecosystem; Phase 1 scope | Documentation status review |
 | Lost evidence traceability | `EXIT_CHECKLIST.md` implemented evidence table | Named paths and reproduction commands |
+
+### Documentation review coverage
+
+The D-013 correction pass reviewed all 27 Markdown files changed by the D-012
+realignment.
+
+- **Corrected for D-013:** `AGENTS.md`, `CONTRIBUTING.md`, `README.md`,
+  `doc/ARCHITECTURE.md`, `doc/DECISIONS.md`, `doc/ROADMAP.md`,
+  `doc/SECURITY.md`, `seej/docs/ARCHITECTURE.md`, `seej/docs/CONTRACT.md`,
+  `seej/docs/DATA_FLOW.md`, `seej/docs/DEPENDENCY_RULES.md`,
+  `seej/docs/NODE_NETWORK.md`, `seej/docs/PLUGIN_CONTRACT.md`,
+  `seej/docs/phase1/BINARIES.md`, `seej/docs/phase1/EXIT_CHECKLIST.md`,
+  `seej/docs/phase1/OBSERVATION_SLICE.md`,
+  `seej/docs/phase1/PERSISTENCE.md`, `seej/docs/phase1/README.md`,
+  `seej/docs/simulation/CAUSAL_RESOLUTION.md`,
+  `seej/docs/simulation/WORLD_SPEC.md`, and `seej/schemas/README.md`.
+- **Reviewed with no D-013 follow-up needed:** `doc/CODE_OF_CONDUCT.md`,
+  `doc/readme.md`, `seej/docs/STRUCT.md`,
+  `seej/docs/phase1/DETERMINISM.md`, `seej/server/README.md`, and
+  `seej/server/crates/sy_infra/fuzz/README.md`.
+
+This coverage record is a documentation review result, not implementation
+evidence for an unchecked gap.
 
 The [Phase 1 exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md) remains the
 authority for implementation status. The [root kernel contract](../seej/docs/CONTRACT.md),

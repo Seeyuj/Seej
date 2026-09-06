@@ -75,7 +75,7 @@ cargo run --bin sy_cli -- events world_42 --count 50
 cargo run --bin sy_cli -- events world_42 --from-tick 1000 --count 50
 ```
 
-Dump the current snapshot:
+Dump the recovered world state (snapshot plus valid later WAL events):
 
 ```bash
 cargo run --bin sy_cli -- dump world_42 --pretty
@@ -90,7 +90,8 @@ cargo run --bin sy_cli -- entity world_42 1
 cargo run --bin sy_cli -- zones world_42
 ```
 
-`sy_cli` is read-only, but its current coherent-read policy still needs the
+`sy_cli` does not mutate the world store. The `dump --output` option may write
+the requested export file. Its current coherent-read policy still needs the
 P1-11 evidence when `server_d` writes concurrently. It is not the K-02
 confirmed network observation API.
 
@@ -99,4 +100,3 @@ confirmed network observation API.
 Distributed, provider, migration, and plugin commands are documented here only
 after their binaries and help output exist. Architecture examples elsewhere
 are conceptual and must not be copied as runnable commands.
-

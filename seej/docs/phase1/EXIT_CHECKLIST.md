@@ -81,7 +81,7 @@ Every item in this section blocks the first stable contract.
   terminal resolution. Prove recovery before admission, between admission and
   resolution, and after resolution before reply; also prove retry without
   duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
-  generation closure, and non-reusable expired IDs.
+  confirmed generation opening/closure, and non-reusable expired IDs.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
   preparation, activation commit, pre-activation abort, post-activation

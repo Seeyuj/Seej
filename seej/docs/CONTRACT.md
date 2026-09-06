@@ -139,7 +139,7 @@ A target `CommandEnvelope` contains at least:
 
 - a stable command identity composed of `world_id`, a kernel-issued
   `admission_generation`, a `producer_id`, and a producer-local sequence;
-- `world_id` and target tick;
+- target tick;
 - payload plus an immutable fingerprint over the complete intention: world,
   target tick, owner contract and version, and canonical payload;
 - owning command contract and version;
@@ -149,7 +149,10 @@ A target `CommandEnvelope` contains at least:
 Correlation and transport metadata that do not change the intention are not
 part of the fingerprint. Every producer, including an internal scheduler, uses
 a kernel-issued generation. A generation is distinct from a node authority
-epoch and cannot be invented from network discovery.
+term and cannot be invented from network discovery. It becomes valid only when
+a confirmed `OpenGeneration` operation binds it to the producer and advances
+that producer's monotonic generation sequence. An unconfirmed issuance cannot
+admit commands after failover.
 
 Command handling has two durable logical records in the confirmed history:
 
@@ -202,8 +205,9 @@ queries, fingerprint conflicts, late refusal, and non-reusable expired IDs.
 
 ## 6. Events and causal history
 
-An admitted command eventually resolves with zero or more versioned events plus
-a durable decision. Events identify the world, command, tick, resolution
+An admitted command resolves with zero or more versioned events plus a durable
+decision when the required execution profile is available. Until then it
+remains `Pending`. Events identify the world, command, tick, resolution
 position, owner, schema version, and stable event position. Unknown mandatory
 variants are refused rather than silently skipped.
 
