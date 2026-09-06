@@ -60,10 +60,10 @@ move into the active architecture when implemented. Ingame netcode remains an
 application plugin. Current exclusion of `sy_protocol` and `mods/*` is a
 repository fact, not a rule that they must stay deferred forever.
 
-`sy_cli` opens the current store for inspection without a mutating world API.
-Its explicit `dump --output` path is not yet guarded against resolving into or
-aliasing the data directory; that limitation is tracked by P1-11 in the exit
-checklist.
+`sy_cli` has no mutating world API and opens the WAL read-only, but constructing
+its `FilesystemStore` may create `<data-dir>/worlds`. Its explicit
+`dump --output` path is also not guarded against resolving into or aliasing the
+data directory. Both limitations are tracked by P1-11 in the exit checklist.
 
 ## `sy_core` boundary
 

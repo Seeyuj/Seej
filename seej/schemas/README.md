@@ -6,9 +6,11 @@ dump of internal Rust serialization shapes.
 Schema families planned before the first stable contract include:
 
 - world identity, genesis, and execution profile;
-- command-generation open/seal/close operations and limits, command envelope,
-  payload fingerprint, exact result-expiration tick, non-reuse tombstone, and
+- bounded producer-slot activation/retirement and incarnation high-water mark,
+  command-generation open/seal/close operations and limits, command envelope,
+  intention fingerprint, exact result-expiration tick, non-reuse tombstone, and
   durable admission/resolution state;
+- non-admitting request results such as `WorldPaused`;
 - event envelope, confirmed-history cursor, checkpoint cursor, applied cursor,
   and their causal semantic-hash bindings;
 - owner-domain envelope for structured or opaque plugin data;

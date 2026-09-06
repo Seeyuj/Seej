@@ -79,26 +79,29 @@ Every item in this section blocks the first stable contract.
   catch-up, joint membership change, full restart, current-read barriers,
   compatibility refusal, and local-storage failure containment.
 - [ ] **K-08: Durable command lifecycle.** Persist full command identity,
-  intention fingerprint, target tick, admission order, `Pending` admission, and
-  terminal resolution. Prove recovery before admission, between admission and
-  resolution, and after resolution before reply; also prove retry without
-  duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
-  authorized cancellation, a cancellation/execution race with one durable
-  winner, exact status expiry, confirmed generation opening/sealing/closure,
-  continuous producer activity, non-reusable expired IDs, and suffix
+  producer slot/incarnation, intention fingerprint, target tick, positive
+  status window, admission order, `Pending` admission, and terminal resolution.
+  Prove recovery before admission, between admission and resolution, and after
+  resolution before reply; also prove retry without duplicate effects,
+  ID/payload conflict, tick closure, uncertain timeout, authorized cancellation
+  using the same bounded identity rules, a cancellation/execution race with one
+  durable winner, checked exact status expiry, confirmed generation
+  opening/sealing/closure, producer retirement and slot reassignment, continuous
+  producer activity and churn, non-reusable expired IDs, and suffix
   materialization without command re-execution.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
-  preparation, pending-command drain or cancellation, a final source-state
-  barrier, activation commit, pre-activation abort, post-activation recovery,
-  refusal of mixed profiles, stable membership during migration, and
-  missing/incompatible plugin blocking.
+  preparation, complete old-profile application-command drain or cancellation,
+  a final source-state barrier that freezes every world tick and application
+  mutation, activation commit, pre-activation abort, post-activation recovery,
+  typed `WorldPaused` responses without admission, refusal of mixed profiles,
+  stable membership during migration, and missing/incompatible plugin blocking.
 - [ ] **K-10: Retention and recovery points.** Implement a declared bounded
   retention policy preserving current state, obligations, recovery, stable
   command-ID expiration, semantic continuity, and observer resynchronization.
-  Prove terminal-result tombstones, per-producer closed-generation floors, and
-  finite growth under continuous producer activity. Full archival remains
-  optional.
+  Prove terminal-result tombstones, per-incarnation closed-generation floors,
+  per-slot incarnation high-water marks, and finite growth under continuous
+  producer activity and producer churn. Full archival remains optional.
 
 ### Existing gaps incorporated into the stable gate
 
@@ -109,8 +112,9 @@ Every item in this section blocks the first stable contract.
   depend on unconstrained `f32` or `f64`; use explicit deterministic
   representations and fixtures.
 - [ ] **P0-04: Fail-closed canonical counters.** Tick, event, entity/domain,
-  command/generation sequence, authority term, and configuration version cannot
-  wrap or saturate ambiguously.
+  command/generation sequence, producer incarnation, expiration arithmetic,
+  authority term, and configuration version cannot wrap or saturate
+  ambiguously.
 - [ ] **P0-05: Persist the simulation contract.** State and history identify
   the complete replay-affecting contract, not only a physical format.
 - [ ] **P0-06: Formalize genesis.** Persist and hash a versioned `GenesisSpec`
@@ -151,8 +155,9 @@ Every item in this section blocks the first stable contract.
   mismatched snapshot, manifest, confirmed-log, and authority data.
 - [ ] **P1-10: Define durable world creation.** Test directory/store creation,
   manifest creation, initial confirmation, and first checkpoint boundaries.
-- [ ] **P1-11: Define concurrent read behavior.** Inspection never mutates
-  durable files and never presents a partial local tail as confirmed state.
+- [ ] **P1-11: Define concurrent read behavior.** Opening an inspector never
+  creates directories or mutates durable files and never presents a partial
+  local tail as confirmed state.
   An explicit export must reject any resolved destination inside the canonical
   data directory or aliasing an existing store file, including normalized,
   symlink/junction, and hard-link aliases supported by the platform.
@@ -163,8 +168,9 @@ Every item in this section blocks the first stable contract.
   when required and reject malformed data before pure execution.
 - [ ] **P1-14: Enforce size and cardinality limits.** Bound commands, opaque
   payloads, events, transactions, snapshots, replication messages, and replay
-  batches. Also bound non-closed generations, pending commands, retained
-  terminal results, tombstones, and their bytes per producer and per world.
+  batches. Also bound producer slots, non-closed generations, pending commands,
+  retained terminal results, tombstones, and their bytes per producer and per
+  world.
 - [ ] **P1-15: Persist the limits profile.** Recovery and peers know which
   limits accepted prior data, sealed a generation, and fixed result expiry.
 - [ ] **P1-16: Remove application rules from the kernel.** Resource and
@@ -176,8 +182,9 @@ Every item in this section blocks the first stable contract.
   an explicit operator recovery mechanism until K-10 compaction replaces it.
 - [ ] **P1-19: Implement retention-aware compaction.** Preserve stable cursors,
   checkpoints, obligations, causal linkage, per-command tombstones until
-  generation closure, and expired command identities through the durable
-  per-producer floor.
+  generation closure, expired command identities through the durable
+  per-incarnation generation floor, and retired incarnations through a bounded
+  per-slot high-water mark.
 - [ ] **P1-20: Add the minimum causal chain.** Link admission, resolution,
   events, active contracts, predecessor/result cursors, and before/after
   semantic hashes. Persist distinct confirmed, checkpoint, and applied cursor
@@ -211,7 +218,7 @@ Every item in this section blocks the first stable contract.
 | Capability boundary | Required proof through an alternative public implementation |
 | --- | --- |
 | State storage and recovery | Durable ordering, coherent checkpoint recovery, integrity refusal, and injected write/sync/replace failures. |
-| Command admission and status | Identity, ordering, retry, cancellation, generation lifecycle, exact expiry, non-reuse, and bounds. |
+| Command admission and status | Producer incarnation, identity, ordering, retry, cancellation, generation lifecycle, exact expiry, non-reuse, and bounds. |
 | Tick scheduling | Equal canonical ticks from equal explicit scheduling input; no ambient-time dependency. |
 | Deterministic validation | Equal typed results and enforcement for equal state, command, tick, and contracts. |
 | Transaction coordination | Atomic multi-owner result, complete-candidate validation, and stale-base recomputation. |
@@ -282,6 +289,8 @@ The reference distributed test matrix must include:
 | Command remains blocked during migration | An authorized confirmed cancellation resolves only the still-pending command and permits the final migration barrier. |
 | Cancellation races normal execution | Confirmed order yields exactly one terminal decision and retries return it. |
 | Command finishes after migration preparation | Its effects precede and are included in the confirmed source-state barrier. |
+| New application command arrives after preparation | After prior-ID lookup it receives `WorldPaused` with migration identity/phase and creates no Admission; retry after completion follows normal compatibility and late-tick rules. |
+| Application command or tick arrives after the source barrier | It cannot confirm until activation or abort; the migrated candidate cannot overwrite post-barrier world state. |
 | Migration activation reply is lost | Confirmed history decides whether old or new profile is authoritative. |
 | Node fails after migration activation | Recovery finishes on the confirmed new profile; no implicit rollback occurs. |
 | Configured voter is absent during activation | Its configured role and quorum weight remain; participation resumes only after compatibility and catch-up, or changes through explicit joint reconfiguration. |
@@ -295,7 +304,8 @@ The reference distributed test matrix must include:
 | Result expires while generation remains sealed | Detailed result may compact to a non-reuse tombstone; retry remains `Expired`. |
 | Admission races `SealGeneration` | Confirmed order either admits the command before the seal or returns `GenerationSealed` after it. |
 | Producer submits continuously | Finite generation bounds force rotation or `LimitExceeded`; retained terminal data remains bounded. |
-| Closed generation records are compacted | The per-producer floor rejects every old ID before any removed generation record is consulted. |
+| Producer identities churn continuously | Finite slots force retirement/reassignment or `LimitExceeded`; per-slot incarnation high-water marks keep metadata bounded and old IDs expired. |
+| Closed generation records are compacted | The current incarnation's generation floor rejects every old ID before any removed generation record is consulted. |
 | Sealed generation contains a pending command | The command and required execution profile remain retained; limits prevent unlimited additional admission. |
 | Checkpoint is at cursor 100 and history is confirmed through 110 | Recovery materializes records 101–110 into a new state instance without re-evaluating their resolved commands. |
 | Materialization sees a cursor gap or wrong predecessor hash | Recovery fails closed and does not advance the applied cursor. |

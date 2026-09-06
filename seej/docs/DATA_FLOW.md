@@ -19,12 +19,12 @@ local validation -> sy_core transition -> SimEvent batch
                                   optional snapshot
 ```
 
-Today `server_d` is the mutating world ingress. `sy_cli` opens local durable
-data through read-only store and WAL paths for inspection. Its explicit
-`dump --output` option separately writes an operator-selected export file and
-does not yet prevent that path from aliasing the world store. The local WAL
-stores resulting events rather than a complete durable external-command
-lifecycle.
+Today `server_d` is the mutating world ingress. `sy_cli` reads existing world
+artifacts and opens the WAL read-only, but constructing `FilesystemStore` may
+create `<data-dir>/worlds`. Its explicit `dump --output` option separately
+writes an operator-selected export file and does not yet prevent that path from
+aliasing the world store. The local WAL stores resulting events rather than a
+complete durable external-command lifecycle.
 
 The FileStore flow is described exactly in
 [phase1/PERSISTENCE.md](phase1/PERSISTENCE.md). It must not be generalized into
@@ -35,7 +35,7 @@ a distributed success guarantee.
 ```text
 producer
   |
-  | command ID, payload fingerprint, target tick
+  | command ID, intention_fingerprint, target tick, status window
   v
 receiving node
   |
@@ -93,47 +93,63 @@ application effects and cannot erase obligations or already confirmed state.
 
 ## Command retry flow
 
-1. Authenticate the producer and check its durable per-producer
-   closed-generation floor before consulting generation records that compaction
-   may have removed. At or below the floor, return `Expired`.
-2. Verify the retained generation state and its confirmed issuance to this
-   producer, then look up the full command identity.
-3. If an admitted command is terminal and the confirmed tick has reached its
+1. Authenticate the external principal and verify that the kernel-issued
+   producer slot still has the command identity's incarnation. An older
+   incarnation returns `Expired` before compacted producer records are read.
+2. Check the current incarnation's durable closed-generation floor before
+   consulting generation records that compaction may have removed. At or below
+   the floor, return `Expired`.
+3. Verify the retained generation state and its confirmed issuance to this
+   producer incarnation, then look up the full command identity.
+4. If an admitted command is terminal and the confirmed tick has reached its
    recorded `expiration_tick`, return `Expired` before fingerprint comparison.
-4. If an unexpired admitted entry exists and its fingerprint matches, return
+5. If an unexpired admitted entry exists and its fingerprint matches, return
    its durable state before evaluating whether the target tick is late.
-5. If an unexpired admitted entry exists and its fingerprint differs, return
+6. If an unexpired admitted entry exists and its fingerprint differs, return
    `Conflict`.
-6. If no entry exists in an `Open` valid generation, continue normal admission;
+7. If application admission is paused by confirmed migration state, return
+   `WorldPaused` with its migration identity and phase without creating an
+   Admission. A retry after activation or abort re-enters normal admission.
+8. If no entry exists in an `Open` valid generation, continue normal admission;
    a status query for that unused ID returns `NotFound`.
-7. If no entry exists in a `Sealed` generation, a submission returns
-   `GenerationSealed`; after generation closure, step 1 returns `Expired`.
-8. If the authority group cannot answer safely, return `Unavailable` without
+9. If no entry exists in a `Sealed` generation, a submission returns
+   `GenerationSealed`; after generation closure, step 2 returns `Expired`.
+10. If the authority group cannot answer safely, return `Unavailable` without
    fabricating a terminal status.
 
 A producer may submit a new command with a new ID and future target tick after
 an explicit late refusal.
 
-## Generation and retention flow
+## Producer, generation, and retention flow
 
-1. Confirmed `OpenGeneration` creates the next monotonic generation for a
-   producer and atomically seals its prior open generation.
-2. A finite count, byte, or canonical-tick-age limit can also confirm
+1. Confirmed producer activation assigns a free bounded world-local slot and
+   advances its monotonic incarnation. Old incarnations of that slot remain
+   expired command namespaces.
+2. Confirmed `OpenGeneration` creates the next monotonic generation for the
+   active producer incarnation and atomically seals its prior open generation.
+3. A finite count, byte, or canonical-tick-age limit can also confirm
    `SealGeneration`. Commands ordered before the seal may be admitted; commands
    ordered after it are not.
-3. A terminal resolution records its exact `expiration_tick`. Until that tick,
-   its detailed status remains queryable.
-4. At that tick, the status becomes `Expired` and compaction may retain only a
+4. A terminal resolution at tick `R` uses checked arithmetic to record
+   `expiration_tick = R + status_window_ticks`, where the positive finite window
+   was fixed at admission. Until that tick, its detailed status remains
+   queryable.
+5. At that tick, the status becomes `Expired` and compaction may retain only a
    tombstone proving that the ID cannot be reused.
-5. Once every command in a sealed generation is terminal and expired, confirmed
-   `CloseGeneration` advances the per-producer floor and allows its individual
-   records and tombstones to be removed.
+6. Once every command in a sealed generation is terminal and expired, confirmed
+   `CloseGeneration` advances the active incarnation's generation floor and
+   allows its individual records and tombstones to be removed.
+7. Once all generations for a retiring producer incarnation are closed,
+   confirmed retirement frees its slot. A later assignment advances the slot's
+   incarnation; one durable high-water mark replaces the retired producer's
+   generation metadata.
 
-Finite per-producer and per-world bounds on non-closed generations, pending
-commands, retained results, tombstones, and their bytes return `LimitExceeded`
-before creating a generation or Admission when capacity is unavailable. A
-later retry may succeed after closure frees capacity. No limit handling drops
-pending work or extends status promises.
+Finite per-world producer slots and per-producer and per-world bounds on
+non-closed generations, pending commands, retained results, tombstones, and
+their bytes return `LimitExceeded` before creating a producer, generation, or
+Admission when capacity is unavailable. A later retry may succeed after
+retirement or closure frees capacity. No limit handling drops pending work or
+extends status promises; counter overflow fails closed.
 
 ## Cross-owner transaction
 
@@ -188,15 +204,18 @@ canonical simulation.
 ## Migration flow
 
 1. A confirmed `MigrationPrepare` identifies the old and target execution
-   profiles, affected capabilities, conversion steps, required artifacts, and
-   active membership configuration. It pauses new affected application
-   admissions but does not yet select the conversion state.
-2. Commands already admitted under the old profile reach `Succeeded`,
-   `Refused`, or an explicitly authorized `Cancelled` decision. Application
-   failure alone never manufactures a terminal result.
+   profiles, converted capabilities, conversion steps, required artifacts, and
+   active membership configuration. It pauses every new application admission
+   for the world but does not yet select the conversion state. After deduping
+   previously admitted IDs, nodes answer a new application submission with
+   `WorldPaused` and create no Admission.
+2. Every application command already admitted under the old profile reaches
+   `Succeeded`, `Refused`, or an explicitly authorized `Cancelled` decision.
+   Application failure alone never manufactures a terminal result.
 3. A confirmed `MigrationBarrier` fixes the final old-profile source cursor and
-   semantic state after every affected command is terminal. Affected ticks and
-   application transitions cannot pass that barrier.
+   semantic state after the complete drain. No world tick or application
+   transition can pass that barrier; observation, elections, and bounded
+   migration-control operations remain available.
 4. The quorum required by the unchanged active configuration verifies target
    artifacts and derives the same migrated candidate and semantic hash from the
    barrier.

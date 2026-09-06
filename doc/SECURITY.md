@@ -42,12 +42,21 @@ by the operator at startup. Isolated application-plugin execution is later.
 Until it exists, native plugins have process-level privileges and must not be
 described as sandboxed.
 
+The current `sy_cli` opens the WAL read-only, but constructing its
+`FilesystemStore` may create `<data-dir>/worlds`. Its `dump --output` path also
+does not reject a destination inside or aliasing the world store. Until P1-11
+closes both gaps, operators must inspect an already existing
+`<data-dir>/worlds` tree and export outside canonical storage.
+
 ## Assets and invariants
 
 Protect at least:
 
 - one confirmed history and stable identity per world;
-- command identity, order, status, and non-reuse after expiration;
+- command identity, bounded producer incarnation, order, status, and non-reuse
+  after expiration or producer retirement;
+- authorization and idempotency of kernel control operations such as command
+  cancellation;
 - checkpoint, retained history, active obligations, and migration metadata;
 - authority membership/configuration and monotonic election terms;
 - component manifests, versions, and artifact fingerprints;
@@ -110,10 +119,12 @@ Contributions affecting a trust boundary must consider:
 - denial of service and backpressure;
 - duplicate, delayed, reordered, and replayed messages;
 - command retry and timeout ambiguity;
+- cancellation races and bounded producer-slot, incarnation, and
+  command-generation exhaustion;
 - stale authority and split-brain resistance;
 - storage failure and crash consistency;
-- migration abort before activation, recovery after activation, and
-  mixed-version refusal;
+- complete old-profile drain, world-wide migration barrier, abort before
+  activation, recovery after activation, and mixed-version refusal;
 - dependency and artifact provenance;
 - secret handling and diagnostic redaction.
 
@@ -182,6 +193,7 @@ Operators must:
 
 - [Decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel)
 - [Decision D-013](DECISIONS.md#d-013--operational-failure-semantics)
+- [Decision D-014](DECISIONS.md#d-014--first-stable-boundary-semantics)
 - [Node-network contract](../seej/docs/NODE_NETWORK.md)
 - [Plugin contract](../seej/docs/PLUGIN_CONTRACT.md)
 - [Persistence behavior](../seej/docs/phase1/PERSISTENCE.md)

@@ -1,7 +1,7 @@
 # Seej Kernel Contract
 
 ```text
-contract_version: 0.2.0-draft
+contract_version: 0.3.0-draft
 status:           DRAFT — NOT FROZEN
 ```
 
@@ -138,22 +138,27 @@ time.
 A target `CommandEnvelope` contains at least:
 
 - a stable command identity composed of `world_id`, a kernel-issued
-  `admission_generation`, a `producer_id`, and a producer-local sequence;
+  `producer_id`, an `admission_generation`, and a producer-local sequence;
 - target tick;
-- payload plus an immutable fingerprint over the complete intention: world,
-  target tick, owner contract and version, and canonical payload;
+- a positive finite `status_window_ticks` fixed at admission;
+- payload plus an immutable `intention_fingerprint` over the complete
+  intention: world, target tick, status window, owner contract and version,
+  canonical payload, and any authorization context that changes validation;
 - owning command contract and version;
 - canonical admission sequence once accepted;
 - authorized source and correlation metadata when present.
 
 Correlation and transport metadata that do not change the intention are not
-part of the fingerprint. Every producer, including an internal scheduler, uses
+part of the fingerprint. A `producer_id` is the active incarnation of one
+kernel-issued world-local producer slot; it contains the bounded slot identity
+and that slot's monotonic incarnation. It is separate from the authenticated
+external principal. Every producer, including an internal scheduler, then uses
 a kernel-issued generation. A generation is distinct from a node authority
 term and cannot be invented from network discovery. It becomes valid only when
-a confirmed `OpenGeneration` operation binds it to the producer and advances
-that producer's monotonic generation sequence. Opening a new generation
-atomically seals that producer's previous open generation. An unconfirmed
-issuance cannot admit commands after failover.
+a confirmed `OpenGeneration` operation binds it to the active producer
+incarnation and advances that incarnation's monotonic generation sequence.
+Opening a new generation atomically seals that producer's previous open
+generation. An unconfirmed issuance cannot admit commands after failover.
 
 Command handling has two durable logical records in the confirmed history:
 
@@ -181,21 +186,30 @@ or discharge an application obligation.
 The authority group keeps this bounded control path available when application
 execution is blocked, provided authorization, quorum, compatibility of the
 kernel control contract, limits, and persistence remain available. A plugin is
-never allowed to authorize its own administrative cancellation implicitly.
+never allowed to authorize its own administrative cancellation implicitly. The
+control operation itself uses the same bounded identity, fingerprint, retry,
+and status-retention rules as other admitted operations.
 
 New commands execute by target tick and then admission sequence. Closing a tick
 is itself confirmed; after that boundary, a new command targeting that tick is
 resolved as refused and is never silently moved. Deduplication precedes this
 late check, so retrying an older command returns its existing result.
 
+Deduplication and status lookup also precede an active migration pause. Once a
+confirmed `MigrationPrepare` has paused application admission, a genuinely new
+application command returns `WorldPaused` with the migration identity and phase
+and creates no Admission record. After activation or abort, the producer may
+retry it; normal compatibility and late-tick rules then decide the request.
+
 For one command namespace:
 
 - before expiration, same ID and same fingerprint returns the durable status
   without repeating effects;
 - before expiration, same ID and different fingerprint returns a conflict;
-- a terminal resolution at canonical tick `R` records an `expiration_tick`
-  computed from the status window bound at admission; its detailed status is
-  returned while the confirmed world tick is lower than `expiration_tick`;
+- a terminal resolution at canonical tick `R` records
+  `expiration_tick = R + status_window_ticks` using checked canonical
+  arithmetic; its detailed status is returned while the confirmed world tick
+  is lower than `expiration_tick`;
 - at `expiration_tick` and afterward, submission or query returns `Expired`,
   including when the supplied fingerprint differs from the original;
 - a `Pending` command never expires and cannot be removed by compaction;
@@ -209,7 +223,8 @@ Each generation has one durable lifecycle state:
 - **Sealed:** no new identity may be admitted, while already admitted commands
   continue toward a terminal result and remain queryable under their window;
 - **Closed:** every admitted command is terminal and expired. A confirmed close
-  advances the per-producer closed-generation floor in increasing order.
+  advances the active incarnation's closed-generation floor in increasing
+  order.
 
 Sealing occurs through confirmed order. It happens when the next generation
 opens or when the finite command-count, byte-count, or canonical-tick-age limit
@@ -219,27 +234,42 @@ also a confirmed operation. The durable closed-generation floor then makes
 every identifier in that generation `Expired` without retaining its individual
 tombstone or original `OpenGeneration` record.
 
-Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
-`Conflict`, `Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`, and
-`Unavailable` are submission, control, or query results and do not replace a
-stored command state. `Unavailable` means the authority group cannot answer
-safely; it is never a fabricated terminal result.
+The limits profile defines a finite number of world-local producer slots. A
+confirmed producer retirement requires all of that incarnation's generations
+to be closed. Reassigning the slot confirms a strictly greater incarnation and
+resets only its new generation sequence; the durable per-slot incarnation
+high-water mark makes requests for every older incarnation `Expired` before
+any compacted generation metadata is consulted. Producer slots and
+incarnations are kernel-issued and cannot be selected by an external caller.
 
-The persisted limits profile supplies finite bounds per producer and per world
-for non-closed generations, admitted command count and bytes per generation,
-pending command count and bytes, and retained terminal-result or tombstone
-count and bytes. Reaching a per-generation count, byte, or age bound confirms a
-seal. If opening a generation or admitting a command would exceed a producer or
-world bound, no generation or Admission record is created and the request
-returns `LimitExceeded`; a later retry may succeed after closure frees capacity.
-The authority group does not evict pending commands, extend a promised status
-window, or manufacture a refusal.
+Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
+`Conflict`, `Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`,
+`Unavailable`, and `WorldPaused` are submission, control, or query results and
+do not replace a stored command state. `Unavailable` means the authority group
+cannot answer safely; it is never a fabricated terminal result. `WorldPaused`
+means a confirmed lifecycle barrier rejected new application admission; it is
+not a business-law refusal.
+
+The persisted limits profile supplies finite bounds per world for producer
+slots and per producer and world for non-closed generations, admitted command
+count and bytes per generation, pending command count and bytes, and retained
+terminal-result or tombstone count and bytes. Reaching a per-generation count,
+byte, or age bound confirms a seal. If producer activation, opening a
+generation, or admitting a command would exceed a bound, no producer,
+generation, or Admission record is created and the request returns
+`LimitExceeded`; a later retry may succeed after retirement or closure frees
+capacity. The authority group does not evict pending commands, extend a
+promised status window, or manufacture a refusal. Arithmetic overflow in an
+expiration, sequence, incarnation, or limit counter fails closed under P0-04
+without fabricating a terminal command result.
 
 **Implemented:** local commands and ticks exist, but no durable command journal,
 deduplication contract, or network admission order exists.
 
 **Target (P0-08, P0-09, K-08):** durable envelopes, canonical ordering, status
-queries, fingerprint conflicts, late refusal, and non-reusable expired IDs.
+queries, authorized cancellation, fingerprint conflicts, late refusal,
+open/sealed/closed generations, bounded producer incarnations, exact expiry,
+finite limits, and non-reusable expired IDs.
 
 ## 6. Events and causal history
 
@@ -326,11 +356,14 @@ component is missing. Operators retain plugin artifacts; Seej records their
 references and cryptographic fingerprints.
 
 Migration preparation, draining, a final base barrier, and activation are
-separate confirmed phases. Preparation pauses affected application admissions.
-Commands admitted under the old profile then reach a normal terminal decision
-or an authorized `Cancelled` decision. A confirmed `MigrationBarrier` records
-the exact old-profile state and cursor after that drain and prevents further
-affected application transitions. Nodes derive and verify the migrated
+separate confirmed phases. The first-stable migration protocol pauses all new
+application admissions for the world. Every application command admitted under
+the old profile then reaches a normal terminal decision or an authorized
+`Cancelled` decision. A confirmed `MigrationBarrier` records the exact
+old-profile state and cursor after that complete drain. From the barrier through
+activation or abort, no world tick or application transition can confirm.
+Read-only inspection, authority elections, and migration-control operations may
+continue under their own contracts. Nodes derive and verify the migrated
 candidate only from this barrier.
 
 Confirmation of the new profile and migrated state against that barrier is the
@@ -367,8 +400,9 @@ At a terminal command's recorded `expiration_tick`, compaction may replace its
 detailed result with a non-reuse tombstone even while its generation remains
 sealed but not closed. After all commands in a sealed generation are terminal
 and expired, confirmed closure may replace those tombstones and generation
-records with the per-producer closed-generation floor. Compaction never removes
-a pending admission, reopens a generation, or changes an expiration tick.
+records with the active incarnation's closed-generation floor. Compaction never
+removes a pending admission, reopens a generation, or changes an expiration
+tick.
 
 Full history archival is optional. Genesis re-simulation is possible only when
 the full required history and artifacts were retained.
@@ -385,9 +419,10 @@ Observing is semantically neutral. Reader presence, speed, or identity cannot
 change canonical fidelity, rules, ordering, or outcomes. The runtime may rate
 limit or refuse observation under load.
 
-**Implemented:** `sy_cli` opens the local WAL read-only for inspection. Its
-explicit `dump --output` destination is not yet protected from aliasing the
-world store, so P1-11 remains open. It is not yet a concurrent network
+**Implemented:** `sy_cli` opens the local WAL read-only, but
+`FilesystemStore::new` may create `<data-dir>/worlds` before inspection. Its
+explicit `dump --output` destination is also not protected from aliasing the
+world store. P1-11 therefore remains open; this CLI is not a concurrent network
 observation surface.
 
 **Target (K-02, K-10):** confirmed stream, retention, resynchronization, and

@@ -5,8 +5,8 @@ status: LOCAL PROTOTYPE IMPLEMENTED; STABLE KERNEL GATE OPEN
 ```
 
 Phase 1 now closes the first stable distributed kernel contract established by
-D-012. The existing local recovery slice is retained as evidence inside that
-larger goal.
+D-012, with boundary semantics refined by D-013 and D-014. The existing local
+recovery slice is retained as evidence inside that larger goal.
 
 ## Implemented local slice
 
@@ -17,7 +17,8 @@ The current repository can:
 - run current resource/creature degradation rules;
 - write a local snapshot, metadata, and event WAL;
 - recover by replaying WAL events after the snapshot cursor;
-- inspect durable state through `sy_cli`;
+- inspect durable state through `sy_cli`, with its current directory-creation
+  and export-path limitations documented in `BINARIES.md`;
 - run deterministic, forced-kill, burn-in, and WAL fuzz checks.
 
 The current world identity, zones, entity kinds, float properties, event-only
@@ -29,9 +30,12 @@ frozen target contract.
 Phase 1 must produce:
 
 - an empty or extension-defined world without mandatory space or entity kinds;
-- replaceable fundamental providers and trusted startup extensions;
-- durable command lifecycle and atomic cross-owner transitions;
+- replaceable fundamental providers, with substitution evidence for every
+  capability boundary, and trusted startup extensions;
+- durable command admission, cancellation, bounded producer incarnations and
+  generations, exact expiry, and atomic cross-owner transitions;
 - causal binding between resolutions, events, and before/after state;
+- recovery materialization distinguished from historical re-simulation;
 - fail-closed behavior for common local-storage failures;
 - the same world contract on one or three authorized nodes;
 - one confirmed history under coordinator failure and network partition;

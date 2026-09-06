@@ -2,10 +2,11 @@
 
 Seej is open-source infrastructure for deterministic, persistent sandbox
 worlds. Decision D-012 defines it as a distributed, extensible world kernel;
-D-013 fixes its operational failure semantics. The kernel runs on one or more
-authorized nodes and coordinates replaceable providers for its fundamental
-capabilities. Ingame netcode, agents, rendering, economies, spatial models, and
-multiresolution engines remain userland.
+D-013 fixes its operational failure semantics, and D-014 closes the remaining
+first-stable command, migration, recovery, and provider-proof ambiguities. The
+kernel runs on one or more authorized nodes and coordinates replaceable
+providers for its fundamental capabilities. Ingame netcode, agents, rendering,
+economies, spatial models, and multiresolution engines remain userland.
 
 Resolve tradeoffs in this order: architectural durability, correctness,
 determinism, persistence and recovery, maintainability, testability,
@@ -30,6 +31,9 @@ observability, performance, then implementation speed.
   required durable confirmation. A local WAL append is not a distributed
   commit. On critical persistence failure, fail closed; on loss of quorum,
   pause mutations while permitting explicitly stale, read-only inspection.
+  Pending commands remain durable until normal resolution or an authorized
+  confirmed cancellation; bounded producer incarnations and expiry never
+  permit identifier reuse.
 - **Extensibility:** world data has declared owners and is changed through
   public commands. Cross-owner changes inside one world are atomic. The kernel
   enforces declared validators without imposing application laws, spatial
@@ -37,7 +41,9 @@ observability, performance, then implementation speed.
 - **Compatibility:** replay-affecting changes require explicit contract
   versions. Stable kernel-owned data always has a documented migration path.
   Plugins own their data migrations and incompatible components block
-  activation rather than being silently skipped.
+  activation rather than being silently skipped. Migration drains all old
+  profile application commands, freezes world mutation at a confirmed barrier,
+  and never changes membership implicitly.
 - **Architecture:** preserve the documented dependency direction. `sy_core`
   depends only on `sy_types` and `sy_api` and must pass the purity gate. Real
   I/O belongs outside the pure transition engine.
@@ -65,7 +71,7 @@ Read the documents relevant to the affected boundary:
 
 | Subject | Authority |
 | --- | --- |
-| Direction and supersession | [D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel) and [D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) |
+| Direction and supersession | [D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel), [D-013](doc/DECISIONS.md#d-013--operational-failure-semantics), and [D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics) |
 | Public guarantees and statuses | [Kernel contract](seej/docs/CONTRACT.md) |
 | Inter-node authority | [Node-network contract](seej/docs/NODE_NETWORK.md) |
 | Providers and world extensions | [Plugin contract](seej/docs/PLUGIN_CONTRACT.md) |

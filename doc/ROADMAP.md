@@ -2,9 +2,11 @@
 
 ## Status model
 
-Decision D-012 reopened the project foundation and D-013 fixed the operational
-failure semantics. The earlier local Phase 1 slice remains implemented
-evidence, but it is not the first stable kernel contract.
+Decision D-012 reopened the project foundation, D-013 fixed the operational
+failure semantics, and D-014 closed the remaining first-stable command,
+migration, recovery, and provider-proof ambiguities. The earlier local Phase 1
+slice remains implemented evidence, but it is not the first stable kernel
+contract.
 
 Roadmap labels mean:
 
@@ -49,8 +51,9 @@ Required work:
 
 - separate `world_id`, seed, genesis hash, and node identity;
 - formalize generic owner domains and structured or opaque payload envelopes;
-- define durable command IDs, fingerprints, ordering, statuses, late refusal,
-  and expiration;
+- define durable command IDs, fingerprints, ordering, statuses, authorized
+  cancellation, late refusal, generation lifecycle, exact expiration, and
+  finite producer slots and world limits;
 - define deterministic validation and atomic transactions across owners;
 - move spatial entities and degradation rules into example/test extensions;
 - provide replaceable fundamental providers loaded at startup;
@@ -103,9 +106,13 @@ Required work:
   synchronization, and rename;
 - distinguish torn-tail recovery from suspicious corruption;
 - preserve coherent snapshot, manifest, confirmed log, and authority metadata;
-- implement bounded retention without command-ID reuse or broken recovery;
+- implement bounded retention through open/sealed/closed producer generations
+  and reusable slots with monotonic producer incarnations, without command-ID
+  reuse, pending-command loss, or unbounded tombstones;
 - maintain migrations for kernel-owned data from every stable version;
-- coordinate migration activation across the authority group;
+- coordinate migration preparation, complete old-profile application-command
+  drain, world-wide source barrier, activation, and abort across a fixed
+  authority membership configuration;
 - require plugin-owned migration paths and exact historical component
   fingerprints;
 - publish conformance fixtures for accepted and refused versions;
@@ -123,7 +130,8 @@ are complete. It includes:
 - trusted operator-approved providers loaded at startup;
 - distributed operation on the reference three-node profile;
 - common storage-failure safety;
-- command status and retention;
+- command status, authorized cancellation, bounded producer incarnations and
+  generations, and retention;
 - confirmed causal linkage;
 - read-only confirmed observation and resynchronization;
 - stable kernel data migrations;

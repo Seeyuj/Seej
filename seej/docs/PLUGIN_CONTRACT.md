@@ -1,7 +1,7 @@
 # Plugin and Provider Contract
 
 ```text
-contract_version: 0.1.0-draft
+contract_version: 0.2.0-draft
 status:           DRAFT — PARTLY IMPLEMENTED
 ```
 
@@ -78,33 +78,41 @@ concepts and their laws.
 ## 4. Commands and transactions
 
 A command envelope contains the stable command identity (`world_id`,
-kernel-issued admission generation, producer identity, and producer sequence),
-target tick, canonical order after admission, source metadata, payload
-fingerprint, owning command contract and version, and correlation metadata. The
-fingerprint binds the complete intention but excludes transport-only correlation
-data.
+kernel-issued producer slot and incarnation, admission generation, and producer
+sequence), target tick, a positive finite status window, canonical order after
+admission, source metadata, `intention_fingerprint`, owning command contract and
+version, and correlation metadata. The fingerprint binds the complete intention
+but excludes transport-only correlation data. The producer incarnation is a
+bounded command namespace, distinct from the authenticated external principal.
 
 Admission rules:
 
 - only a generation opened for the producer by a confirmed kernel operation is
   valid;
+- a request for an older incarnation of a reassigned producer slot returns
+  `Expired` before compacted generation records are consulted;
 - retrying a pending or unexpired identifier with the same fingerprint returns
   its durable status without repeating effects, even when its target tick has
   since closed;
 - a pending or unexpired identifier with a different fingerprint is a conflict;
 - a new command for an already completed tick is refused;
 - a timeout is not a terminal status;
+- after lookup of previously admitted IDs, a new application submission during
+  a confirmed migration admission pause returns `WorldPaused` without creating
+  an Admission;
 - a terminal result remains queryable only while the confirmed world tick is
-  below its recorded `expiration_tick`; at that tick and afterward, the
-  identifier returns `Expired` and cannot be reused as a new command.
+  below its recorded
+  `expiration_tick = resolution_tick + status_window_ticks`, calculated with
+  checked canonical arithmetic; at that tick and afterward, the identifier
+  returns `Expired` and cannot be reused as a new command.
 
 Admission creates durable `Pending` state without application effects.
 Resolution records `Succeeded`, `Refused`, or `Cancelled`; a successful
 resolution confirms all events and state effects together. `Conflict`,
-`Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`, and `Unavailable`
-are request results rather than stored terminal states. A pending command is
-retained until resolution. Closed kernel-issued generations preserve non-reuse
-after individual terminal results are compacted.
+`Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`, `Unavailable`, and
+`WorldPaused` are request results rather than stored terminal states. A pending
+command is retained until resolution. Closed kernel-issued generations preserve
+non-reuse after individual terminal results are compacted.
 
 A producer generation is `Open`, `Sealed`, or `Closed`. Opening the next
 generation seals the previous open one; declared finite command-count,
@@ -112,13 +120,20 @@ byte-count, or canonical-tick-age limits can also seal it through confirmed
 order. Sealed generations accept no new identities but keep resolving admitted
 commands. Expired terminal details become non-reuse tombstones. A generation
 closes only after it is sealed and all commands are terminal and expired, after
-which the per-producer closed-generation floor is sufficient. An unused ID in a
-sealed generation returns `GenerationSealed` on submission; any ID in a closed
-generation returns `Expired` before fingerprint comparison.
+which the active incarnation's closed-generation floor is sufficient. An unused
+ID in a sealed generation returns `GenerationSealed` on submission; any ID in a
+closed generation returns `Expired` before fingerprint comparison.
 
-If opening or admission would exceed a persisted producer or world bound, the
-kernel creates no generation or Admission record and returns `LimitExceeded`.
-The producer may retry after older generations close; the kernel never frees
+Each world exposes a finite number of kernel-issued producer slots. Retiring a
+producer incarnation requires all its generations to be closed. Reusing that
+slot confirms a strictly greater incarnation; a durable per-slot high-water
+mark rejects every earlier incarnation without retaining its individual
+generation floors. External callers cannot choose slots or incarnation values.
+
+If producer activation, generation opening, or admission would exceed a
+persisted producer or world bound, the kernel creates no producer, generation,
+or Admission record and returns `LimitExceeded`. The producer may retry after
+an incarnation retires or older generations close; the kernel never frees
 capacity by dropping pending work or extending an expiration promise.
 
 An authorized operator can request a confirmed `CancelCommand` kernel control
@@ -129,7 +144,8 @@ execution and cancellation race only through confirmed order: the first
 terminal resolution wins, and retrying either request returns the durable
 outcome. The kernel control path remains usable when application code is
 unavailable, subject to its own authorization, quorum, limits, compatibility,
-and persistence requirements.
+and persistence requirements. Its envelope follows the same bounded identity,
+fingerprint, retry, and result-retention rules.
 
 One in-world transaction may call commands owned by multiple plugins. The
 transaction binds to one confirmed base cursor and gives owner sub-commands a
@@ -171,12 +187,14 @@ Startup activation verifies manifests, permissions, fingerprints,
 dependencies, data versions, and execution compatibility before mutation is
 allowed.
 
-Migration first pauses affected application admissions, then lets commands
-already admitted under the old profile reach a normal terminal result or an
-authorized cancellation. A confirmed barrier fixes the exact source state and
-cursor before conversion. No old-profile application transition may pass that
-barrier. The migrated candidate and target execution profile activate together
-or the old profile remains authoritative.
+The first-stable migration protocol pauses every new application admission for
+the world, then lets every application command already admitted under the old
+profile reach a normal terminal result or an authorized cancellation. A
+confirmed barrier fixes the exact source state and cursor before conversion. No
+world tick or application transition may pass that barrier; inspection,
+authority elections, and migration-control operations remain available. The
+migrated candidate and target execution profile activate together or the old
+profile remains authoritative.
 
 A component with owned data or active obligations cannot be removed merely by
 unregistering code. Removal or replacement migrates its owned data and either
@@ -224,7 +242,7 @@ below needs independent success and failure evidence:
 | Capability boundary | Minimum substitution evidence |
 | --- | --- |
 | State storage and recovery | Replace the bundled provider; preserve durable ordering, checkpoint recovery, integrity checks, and fail-closed injected I/O failures. |
-| Command admission and status | Preserve identity, deduplication, ordering, terminal states, cancellation, generation lifecycle, expiry, and limits. |
+| Command admission and status | Preserve producer incarnation, identity, deduplication, ordering, terminal states, cancellation, generation lifecycle, expiry, and limits. |
 | Tick scheduling | Advance explicit canonical ticks without making wall-clock or local scheduling order a transition input. |
 | Deterministic validation | Produce the same typed decisions from the same explicit state, command, tick, and contract without bypassing owner rules. |
 | Transaction coordination | Preserve ordered candidate construction, final cross-domain validation, stale-base recomputation, and atomic confirmation. |

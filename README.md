@@ -22,7 +22,9 @@ kernel infrastructure; player-facing netcode is not.
 The distributed architecture is the target established by
 [decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel),
 with operational failure semantics fixed by
-[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics).
+[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) and the
+remaining first-stable ambiguities closed by
+[D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics).
 It is **not implemented or frozen yet**. The public
 [kernel contract](seej/docs/CONTRACT.md),
 [node-network contract](seej/docs/NODE_NETWORK.md), and
@@ -59,9 +61,11 @@ generic plugin-owned data, a stable public extension ABI, hot loading, or
 plugin isolation. The current zone/entity types and systemic rules are
 prototype behavior, not the future universal world model.
 
-`sy_cli dump --output` writes to the operator-supplied destination and does not
-yet reject a path that aliases the canonical data directory. Until gap P1-11 is
-closed, exports must be directed outside the world store.
+`sy_cli` opens the WAL read-only, but initializing its current `FilesystemStore`
+may create `<data-dir>/worlds`. In addition, `dump --output` writes to the
+operator-supplied destination without rejecting a path that aliases canonical
+storage. Until gap P1-11 is closed, inspection needs an already existing
+`<data-dir>/worlds` tree and exports must be directed outside the world store.
 
 ## Target Architecture
 

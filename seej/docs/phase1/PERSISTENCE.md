@@ -132,11 +132,12 @@ durability and fencing behavior for that rule.
 
 Confirmed admission and resolution records bind world identity, genesis,
 execution profile, authority term, configuration version, full command identity
-and fingerprint, order, decision, events, and state/checkpoint cursor. An
-authorized cancellation additionally binds its stable control-operation
-identity, requester, reason, and target command. Recovery resumes a confirmed
-pending admission and never recomputes a confirmed terminal decision as new
-work.
+and fingerprint, producer slot/incarnation, status window, order, decision,
+expiration tick, events, and state/checkpoint cursor. An authorized cancellation
+additionally binds its stable control-operation identity, requester, reason,
+and target command, and uses the same bounded identity and retention rules.
+Recovery resumes a confirmed pending admission and never recomputes a confirmed
+terminal decision as new work.
 
 The target persists or derives three distinct cursors:
 
@@ -174,20 +175,27 @@ K-10/P1-19 replace it with retention-aware checkpointing that preserves:
 - a coherent recovery point;
 - migration and compatibility metadata.
 
-Every terminal resolution records the exact canonical `expiration_tick` fixed
-by the status window bound at admission. At that tick, its public result becomes
-`Expired` and compaction may replace the details with a per-command non-reuse
-tombstone. A generation moves through confirmed `Open`, `Sealed`, and `Closed`
-states. Opening a new one or reaching a finite bound seals the current one; a
-sealed generation admits no new IDs but retains pending admissions.
+Every terminal resolution at tick `R` records the exact canonical
+`expiration_tick = R + status_window_ticks` using checked arithmetic and the
+positive finite window fixed at admission. At that tick, its public result
+becomes `Expired` and compaction may replace the details with a per-command
+non-reuse tombstone. A generation moves through confirmed `Open`, `Sealed`, and
+`Closed` states. Opening a new one or reaching a finite bound seals the current
+one; a sealed generation admits no new IDs but retains pending admissions.
 
 After every command in a sealed generation is terminal and expired, confirmed
-closure advances a durable per-producer closed-generation floor. Command
+closure advances a durable per-incarnation closed-generation floor. Command
 lookup checks that floor before generation records, allowing old generation
 metadata and tombstones to be deleted safely. Pending admissions and their
 required execution profile are never removed. The persisted limits profile
-bounds non-closed generations, commands, retained results, tombstones, and
-their bytes per producer and per world.
+bounds world-local producer slots plus non-closed generations, commands,
+retained results, tombstones, and their bytes per producer and per world.
+
+Each producer slot stores a monotonic incarnation high-water mark. Retirement
+requires every generation in the current incarnation to be closed. Reassigning
+the slot confirms a greater incarnation, and command lookup rejects an older
+incarnation before consulting metadata that compaction may have removed. This
+keeps producer churn bounded without making an old command identity reusable.
 
 Full archival is optional. Genesis replay is unavailable when required history
 or artifacts were deliberately removed.

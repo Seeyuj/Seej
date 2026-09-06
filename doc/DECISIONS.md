@@ -73,17 +73,21 @@ A "game"-oriented positioning imposes compromises incompatible with these object
 
 ---
 
-## D-002 — Simulation Before Narration
+## D-002 — Narrative Policy Outside the Kernel
 
 **Status**: Accepted, scope amended by D-012
 
 ### Decision
 
-**Systemic simulation** takes priority over any form of narration.
+The Seej kernel defines deterministic world mechanics and does not prescribe a
+narrative model. A world extension may implement authored, procedural, or
+emergent narration through its declared data, commands, and laws.
 
 ### Justification
 
-Credible persistent worlds produce their own stories through:
+Keeping narrative policy outside the kernel prevents one application style
+from becoming a universal world rule. Persistent worlds can produce stories
+through:
 
 - time;
 - resources;
@@ -91,13 +95,15 @@ Credible persistent worlds produce their own stories through:
 - conflicts;
 - interactions.
 
-Imposed narration weakens the system's coherence and credibility.
+Extensions can also author narrative progression explicitly. Once it affects
+canonical state, it follows the same admission, validation, persistence, and
+ownership contracts as every other application capability.
 
 ### Consequences
 
-- No scenario, quest, or narrative progression in the core.
-- Any story is emergent.
-- Systems always precede the narrative.
+- No scenario, quest, or narrative progression is mandatory in the kernel.
+- Authored and emergent stories are both valid extension policies.
+- Narrative effects cannot bypass world laws or kernel guarantees.
 
 ---
 
@@ -128,8 +134,9 @@ A credible world does not need human presence to function.
 
 ### Decision
 
-The server-side kernel is the sole authority on world state. D-012 replaces
-the implied single process with an explicitly authorized node group.
+The explicitly authorized world-kernel group is the sole canonical authority
+for that world's state. A deployment with one node follows the same authority
+contract as a deployment with several nodes.
 
 ### Justification
 
@@ -137,11 +144,10 @@ Coherence, security, and persistence require a single source of truth.
 
 ### Consequences
 
-- No critical logic on the client side.
-- Explicit persistence to disk.
+- Clients and ingame sessions hold no independent canonical authority.
+- Canonical state is durably persisted under the active provider contract.
 - Traceable, inspectable, and replayable states.
-- Solo mode = local server.
-- Multiplayer mode = identical remote server.
+- Deployment topology and optional player count do not change world semantics.
 
 ---
 
@@ -162,7 +168,7 @@ Linking the core to a graphics engine would compromise portability and longevity
 
 ### Consequences
 
-- No graphics engine on the server side.
+- No graphics engine is a required kernel or node-runtime dependency.
 - No rendering code in the core.
 - The simulated world can be consumed by:
   - a real-time 3D client,
@@ -390,11 +396,21 @@ The operational form of the invariant is: **we do not break replay.**
   portable recovery re-applies the journal through a different binary, which
   makes float determinism a contract concern, not a Tier 3 luxury.
 
+### Supersession note
+
+D-012 retains the contract-first principle but replaces the single-writer
+scope, anchor-world delivery, application-capability sequence, and implied
+universal conservation law. The kernel enforces laws declared by each world;
+it does not define conservation itself. D-013 and D-014 also distinguish
+ordinary recovery materialization from historical re-simulation. Agents and
+ingame netcode are optional community capabilities rather than ordered Seej
+deliverables.
+
 ---
 
 ## D-012 — Distributed Extensible World Kernel
 
-**Status**: Accepted, operational semantics clarified by D-013
+**Status**: Accepted, operational semantics clarified by D-013 and D-014
 
 ### Decision
 
@@ -476,15 +492,16 @@ plugin concern.
 
 ### Commands, observation, and retention
 
-- Commands carry a durable identifier, payload fingerprint, target tick, and
-  canonical per-world order. A late command is refused rather than silently
-  retargeted.
+- Commands carry a durable identifier, intention fingerprint, target tick,
+  positive finite status window, and canonical per-world order. A late command
+  is refused rather than silently retargeted.
 - Retrying the same identifier and payload returns its durable status without
   applying effects twice. Reusing the identifier with different content is a
   conflict.
 - A response timeout does not prove refusal. The producer queries a durable
-  status that may be pending, succeeded, refused, or unavailable while the
-  authority group cannot answer safely.
+  status that may be `Pending`, `Succeeded`, `Refused`, or `Cancelled`.
+  `Unavailable` is a response when the authority group cannot answer safely,
+  not a durable command state.
 - A terminal result expires at the exact canonical tick derived from the status
   window bound at admission. From that tick onward, the identifier returns
   `Expired` and remains non-reusable rather than executing as new.
@@ -513,10 +530,15 @@ plugin concern.
 
 The first stable contract requires:
 
-- generic extension-owned data and trusted startup providers;
+- generic extension-owned data and trusted startup providers, with
+  public-interface substitution evidence for every fundamental capability;
 - fail-closed behavior for common storage failures;
-- durable command identity, status, ordering, and retention semantics;
+- durable command identity, status, ordering, authorized cancellation,
+  bounded producer incarnations and generations, exact expiry, and retention
+  semantics;
 - causal linkage between resolutions, events, and before/after state;
+- recovery that materializes recorded transitions without re-deciding resolved
+  commands or directly repeating external effects;
 - three-node distributed evidence with quorum, partition, fencing, catch-up,
   and compatible migration scenarios;
 - a read-only confirmed observation surface;
@@ -548,7 +570,7 @@ D-011's rule that all protocol work waits until a later phase.
 
 ## D-013 — Operational Failure Semantics
 
-**Status**: Accepted
+**Status**: Accepted, amended by D-014
 
 ### Context
 
@@ -603,17 +625,18 @@ These statements are target contracts. D-013 closes no implementation gap.
 
 ### Amendment by D-014
 
-D-014 defines the authorized cancellation escape path, fixes the migration
-source at a post-drain barrier, and forbids implicit voter demotion during
-migration. Those clauses replace the less specific D-013 wording above where
-they overlap.
+D-014 defines the authorized cancellation escape path, exact bounded command
+retention, recovery cursors and materialization, the post-drain migration
+barrier, fixed membership during migration, provider-by-provider substitution
+proof, and the remaining CLI inspection limitation. Its clauses replace the
+less specific D-013 wording above where they overlap.
 
 ### Decision coverage
 
 | Decision | Normative home | Release evidence |
 | --- | --- | --- |
 | D-001 — platform, not game | Kernel boundary and roadmap ecosystem section | K-01 contract review |
-| D-002 — simulation before narration | World laws and plugin contract | K-06 extension fixture |
+| D-002 — narrative policy outside the kernel | World laws and plugin contract | K-06 extension fixture |
 | D-003 — autonomous world | Headless kernel and observer-neutral world model | K-03 deterministic fixtures |
 | D-004 — authority and persistence | Node-network confirmed history | K-07 distributed proof |
 | D-005 — rendering separation | Kernel/plugin boundary | K-01 and dependency checks |
@@ -625,7 +648,7 @@ they overlap.
 | D-011 — contract-first kernel | Superseded scheduling retained in D-012 | K-01 and Gate 1-K |
 | D-012 — distributed extensible kernel | Root, node, plugin, and world contracts | K-01 through K-10 |
 | D-013 — operational failure semantics | Command, transaction, network, migration, and retention clauses | K-02, K-06 through K-10, P1-20, P2-02, P2-03 |
-| D-014 — cancellation and migration barriers | Kernel control, migration, and membership clauses | K-07, K-08, K-09 |
+| D-014 — first-stable boundary semantics | Command, retention, migration, recovery, provider, and inspection clauses | P0-04, K-05, K-07 through K-10, P1-11, P1-14, P1-19, P1-20 |
 
 ### Audit-correction traceability
 
@@ -641,11 +664,23 @@ they overlap.
 | First-stable requirements placed in Gate 1-D | `EXIT_CHECKLIST.md` Gate 1-K | P1-20, P2-02, P2-03 |
 | Official application capabilities implied | `ROADMAP.md` optional ecosystem; Phase 1 scope | Documentation status review |
 | Lost evidence traceability | `EXIT_CHECKLIST.md` implemented evidence table | Named paths and reproduction commands |
+| No escape from an indefinitely pending command | `CONTRACT.md` cancellation; `DATA_FLOW.md`; `PLUGIN_CONTRACT.md` lifecycle | K-08 cancellation and K-09 migration fixtures |
+| Migration source changed while admitted work drained | `NODE_NETWORK.md` migration barrier; `DATA_FLOW.md` | K-09 prepare/barrier/activate fixtures |
+| New submissions during migration had no defined response | `CONTRACT.md` `WorldPaused`; `DATA_FLOW.md` retry order | K-09 pause and retry fixtures |
+| Missing voter treated as implicitly demoted | `NODE_NETWORK.md` compatibility and migration | K-07 and K-09 fixed-membership fixtures |
+| Bounded retention left results and tombstones unbounded within active producers | `CONTRACT.md` generations and limits; `PERSISTENCE.md` compaction | K-08 and K-10 continuous-producer fixtures |
+| Producer churn left one durable floor per retired identity | `CONTRACT.md` producer slots/incarnations; `PERSISTENCE.md` compaction | K-08 and K-10 producer-churn fixtures |
+| Expiry instant and conflicting retry were ambiguous | `CONTRACT.md` exact expiry; `PLUGIN_CONTRACT.md` identity | K-08 boundary-tick fixtures |
+| Recovery replay could be read as command re-execution | `CONTRACT.md` cursor model; `PERSISTENCE.md`; `DETERMINISM.md` | P1-20 materialization and effect-redelivery fixtures |
+| One substituted provider was generalized to all providers | `PLUGIN_CONTRACT.md` capability matrix; `DEPENDENCY_RULES.md` | K-05 evidence for every matrix row |
+| CLI inspection was described as wholly read-only despite directory creation and export writes | `BINARIES.md`; `CONTRACT.md` observation status | P1-11 non-mutating-open, path-alias, and concurrent-read fixtures |
 
 ### Documentation review coverage
 
-The D-013 correction pass reviewed all 27 Markdown files changed by the D-012
-realignment.
+The D-013 correction pass and the D-014 boundary-semantics pass each reviewed
+all 27 Markdown files changed by the D-012 realignment. The lists below
+distinguish documents that required a contract correction from documents
+re-read without a follow-up edit.
 
 - **Corrected for D-013:** `AGENTS.md`, `CONTRIBUTING.md`, `README.md`,
   `doc/ARCHITECTURE.md`, `doc/DECISIONS.md`, `doc/ROADMAP.md`,
@@ -660,6 +695,21 @@ realignment.
 - **Reviewed with no D-013 follow-up needed:** `doc/CODE_OF_CONDUCT.md`,
   `doc/readme.md`, `seej/docs/STRUCT.md`,
   `seej/docs/phase1/DETERMINISM.md`, `seej/server/README.md`, and
+  `seej/server/crates/sy_infra/fuzz/README.md`.
+- **Corrected for D-014:** `AGENTS.md`, `CONTRIBUTING.md`, `README.md`,
+  `doc/ARCHITECTURE.md`, `doc/DECISIONS.md`, `doc/ROADMAP.md`,
+  `doc/SECURITY.md`, `seej/docs/ARCHITECTURE.md`, `seej/docs/CONTRACT.md`,
+  `seej/docs/DATA_FLOW.md`, `seej/docs/DEPENDENCY_RULES.md`,
+  `seej/docs/NODE_NETWORK.md`, `seej/docs/PLUGIN_CONTRACT.md`,
+  `seej/docs/STRUCT.md`, `seej/docs/phase1/BINARIES.md`,
+  `seej/docs/phase1/DETERMINISM.md`,
+  `seej/docs/phase1/EXIT_CHECKLIST.md`,
+  `seej/docs/phase1/OBSERVATION_SLICE.md`,
+  `seej/docs/phase1/PERSISTENCE.md`, `seej/docs/phase1/README.md`,
+  `seej/docs/simulation/WORLD_SPEC.md`, `seej/schemas/README.md`, and
+  `seej/server/README.md`.
+- **Reviewed with no D-014 follow-up needed:** `doc/CODE_OF_CONDUCT.md`,
+  `doc/readme.md`, `seej/docs/simulation/CAUSAL_RESOLUTION.md`, and
   `seej/server/crates/sy_infra/fuzz/README.md`.
 
 This coverage record is a documentation review result, not implementation
@@ -677,23 +727,27 @@ behavior.
   from RPC success or local storage.
 - Provider replaceability is tested against observable failure semantics,
   including membership, reads, recovery, and compaction.
-- No checklist item is complete because D-013 exists; executable evidence is
-  still required before contract freeze.
+- No checklist item becomes complete because a decision or contract paragraph
+  exists; executable evidence is still required before contract freeze.
 
 ---
 
-## D-014 — Command Cancellation and Migration Barriers
+## D-014 — First-Stable Boundary Semantics
 
 **Status**: Accepted
 
 ### Context
 
-A plugin can fail indefinitely after one of its commands becomes durably
-`Pending`. Requiring every pending command to resolve before replacing that
-plugin creates a recovery deadlock. Migration preparation also cannot name its
-final source state before already admitted work finishes, and an unavailable
-configured voter cannot silently become a learner without changing quorum
-semantics.
+A second consistency review found several clauses that still admitted
+incompatible implementations. A failed plugin could leave a command durably
+`Pending` with no kernel-level escape path. Migration preparation could not name
+its final source state while admitted work was still draining. An unavailable
+configured voter could be mistaken for a learner. Retention was described as
+bounded without bounding producer metadata, recovery still blurred applying a
+recorded transition with re-executing its command, and one replacement fixture
+was too weak to prove that every fundamental capability was actually
+replaceable. The current CLI wording also overstated canonical-store safety for
+operator-selected export paths.
 
 ### Decision
 
@@ -703,10 +757,17 @@ semantics.
   effects or settle application obligations.
 - Normal execution and cancellation race through confirmed order. The first
   terminal resolution wins; retries return the durable outcome.
-- Migration prepares and pauses new affected admissions, drains normal work or
-  uses explicit cancellation, then confirms a `MigrationBarrier` containing the
-  exact final old-profile cursor and state. Conversion begins only from that
-  barrier.
+- Migration preparation pauses all new application admissions for the world,
+  drains every application command admitted under the old profile through
+  normal resolution or explicit cancellation, then confirms a
+  `MigrationBarrier` containing the exact final old-profile cursor and state.
+  The barrier freezes all world ticks and application transitions until
+  activation or abort. Observation, elections, and migration-control operations
+  remain available.
+- Lookup of an already admitted identity precedes the migration pause. A new
+  application submission during the pause returns `WorldPaused` with migration
+  identity and phase, creates no Admission, and can be retried after activation
+  or abort under normal compatibility and late-tick rules.
 - Migration and membership changes are serialized. Authority terms may advance
   through elections, but the configuration version remains fixed until
   activation or abort.
@@ -720,9 +781,16 @@ semantics.
 - A terminal resolution records its exact canonical expiration tick. At that
   tick its detailed status becomes `Expired`, even for a conflicting retry, and
   a tombstone preserves non-reuse until confirmed generation closure advances
-  the per-producer floor.
+  the active incarnation's generation floor.
 - Persisted finite limits per producer and per world bound non-closed
   generations, pending commands, retained results, tombstones, and bytes.
+- A world has finitely many kernel-issued producer slots. Retiring an
+  incarnation requires all its generations to close; reassignment advances a
+  durable per-slot incarnation high-water mark so producer churn stays bounded
+  without reviving old command identities.
+- The positive finite status window is fixed at admission. A terminal result at
+  tick `R` records `R + status_window_ticks` through checked arithmetic;
+  overflow fails closed rather than changing the expiry promise.
 - The canonical confirmed cursor, a checkpoint's atomically bound cursor, and a
   state instance's applied cursor are distinct. Recovery materializes recorded
   confirmed transitions after the checkpoint; re-simulation alone recomputes
@@ -734,6 +802,12 @@ semantics.
   fixture against bundled and alternative implementations. Test-only
   alternatives are sufficient; duplicate production implementations are not a
   release requirement.
+- A local inspector may claim read-only canonical-store safety only when store
+  initialization and inspection perform no filesystem mutation and every
+  explicit export destination is proven not to resolve inside or alias
+  canonical storage. Current `sy_cli` opens the WAL read-only, but
+  `FilesystemStore::new` may create `<data-dir>/worlds` and the export-path
+  check is absent. Both remain open under P1-11.
 
 ### Consequences
 
@@ -742,17 +816,22 @@ semantics.
 - A broken application component cannot force the kernel to invent a business
   refusal or make its own replacement impossible.
 - Migration evidence must cover cancellation races, mutations between prepare
-  and barrier, stable membership, activation, abort, and recovery.
+  and barrier, complete drain, typed pause responses, world-wide mutation pause,
+  stable membership, activation, abort, and recovery.
 - Retention evidence must cover exact expiry, sealing races, compaction before
-  generation closure, and continuous producers without unbounded result growth.
+  generation closure, slot reassignment, and continuous producer activity and
+  churn without unbounded metadata growth.
 - Recovery evidence must cover a confirmed suffix after an older checkpoint,
   cursor/hash mismatch, and external-effect redelivery without re-execution.
 - Provider evidence must cover every fundamental boundary's normal and failure
   semantics rather than infer universal replaceability from one substituted
   provider.
-- Current `sy_cli` inspection opens the store read-only, but its explicit export
-  destination remains unguarded. P1-11 requires rejecting paths inside or
-  aliasing canonical storage before the CLI can promise store-safe export.
+- P1-11 remains open until `sy_cli` initializes without creating storage,
+  supports coherent concurrent reads, and rejects export destinations inside
+  or aliasing canonical storage.
+- The root kernel draft advances to `0.3.0-draft`; the node-network and plugin
+  drafts advance to `0.2.0-draft`. These versions identify this semantic
+  alignment but remain unfrozen and provide no stable compatibility claim.
 - These are target semantics. D-014 closes no implementation gap.
 
 ---

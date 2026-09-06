@@ -1,7 +1,7 @@
 # Node-Network Contract
 
 ```text
-contract_version: 0.1.0-draft
+contract_version: 0.2.0-draft
 status:           DRAFT — TARGET, NOT IMPLEMENTED
 ```
 
@@ -173,17 +173,20 @@ An incompatible node cannot vote, confirm mutations, or claim a current read.
 
 A coordinated migration has explicit confirmed phases:
 
-1. `MigrationPrepare` identifies the old and target profiles, affected
+1. `MigrationPrepare` identifies the old and target profiles, converted
    capabilities, conversion steps, required artifacts, and active configuration
-   version under the old profile. New affected application admissions pause.
+   version under the old profile. Every new application admission for the world
+   pauses. After prior-ID lookup, a genuinely new application submission gets
+   `WorldPaused` with this migration identity and phase and creates no Admission.
    The prepare record does not yet choose the source state for conversion.
-2. Every pending command bound to the affected old profile reaches
+2. Every application command admitted under the old profile reaches
    `Succeeded`, `Refused`, or an explicitly authorized `Cancelled` resolution.
    Cancellation is a confirmed kernel control operation and never an inferred
    result of plugin failure.
 3. `MigrationBarrier` fixes the exact old-profile state, semantic hash, and
-   confirmed cursor after the drain. Affected ticks and application transitions
-   cannot pass this barrier.
+   confirmed cursor after the complete drain. No world tick or application
+   transition can pass this barrier. Observation, elections, and
+   migration-control operations remain available under their own contracts.
 4. Nodes needed for the active configuration's quorum verify the target
    artifacts and deterministically derive the same candidate state and semantic
    hash from that barrier.

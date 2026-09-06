@@ -9,6 +9,7 @@ Start with:
 - [project overview](README.md);
 - [decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel);
 - [decision D-013](doc/DECISIONS.md#d-013--operational-failure-semantics);
+- [decision D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics);
 - [architecture](doc/ARCHITECTURE.md);
 - [kernel contract](seej/docs/CONTRACT.md);
 - [exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md);
@@ -77,6 +78,8 @@ the first stable distributed kernel gate:
 - generic owner domains and commands;
 - trusted startup providers and provider conformance;
 - durable command identity, ordering, status, and retention;
+- explicit cancellation, bounded producer incarnations and generations, and
+  exact expiry;
 - causal binding of resolutions, events, and before/after state;
 - common storage-failure safety;
 - one- and three-node authority evidence;
@@ -101,6 +104,7 @@ High-value contributions include:
 - injected storage and distributed-failure tests;
 - public schema and compatibility tooling;
 - provider conformance harnesses;
+- cancellation, generation-retention, and migration-barrier fixtures;
 - read-only diagnostics and confirmed observation;
 - bounded input, resource, and persistence limits;
 - backup, recovery, and incident documentation;

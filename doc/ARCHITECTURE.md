@@ -5,7 +5,9 @@
 This document explains the durable project architecture established by
 [decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel) and
 the operational semantics fixed by
-[D-013](DECISIONS.md#d-013--operational-failure-semantics).
+[D-013](DECISIONS.md#d-013--operational-failure-semantics) and completed for
+the first stable gate by
+[D-014](DECISIONS.md#d-014--first-stable-boundary-semantics).
 The normative behavior is defined by the contracts under `seej/docs/`.
 The roadmap schedules that work, and the Phase 1 documents describe the
 prototype and its evidence.
@@ -156,9 +158,13 @@ Every stable version of kernel-owned data has a supported migration path to the
 current stable version, possibly through intermediate versions. Plugin authors
 own their data migrations. Activation occurs at a confirmed transition
 boundary and fails closed when required code or data conversion is missing.
-Preparation can be abandoned under the old profile; once profile and migrated
-state are confirmed together, recovery continues from the new state and any
-return is another explicit migration.
+Preparation stops new application admissions and drains every application
+command admitted under the old profile. The confirmed source barrier then
+freezes every world tick and application mutation while observation, authority
+elections, and migration-control operations remain available. Preparation can
+be abandoned under the old profile; once profile and migrated state are
+confirmed together, recovery continues from the new state and any return is
+another explicit migration.
 
 The first stable contract permits only operator-approved trusted providers
 loaded at startup. Hot loading, safe hot replacement, and isolated application

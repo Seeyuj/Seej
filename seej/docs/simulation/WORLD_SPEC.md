@@ -103,8 +103,8 @@ presence, or an unrecorded external service result.
 ## 6. Commands, transactions, and events
 
 Commands express intentions against an owner domain at a target tick. Admission
-binds them to a stable identity, payload fingerprint, active contracts, and a
-canonical order.
+binds them to a stable identity, intention fingerprint, positive finite status
+window, active contracts, and a canonical order.
 
 A transaction can contain commands for several owners. It binds to one
 confirmed base cursor and gives its owner sub-commands a canonical order. Each
@@ -179,12 +179,15 @@ and component artifacts are retained. Compaction must preserve a coherent
 recovery point, current state, active obligations, command-ID expiration
 safety, and migration metadata.
 
-Command-result expiry is an exact canonical tick recorded with the terminal
-resolution. Detailed status is unavailable from that tick onward, while a
-compact tombstone or closed-generation floor continues to prevent ID reuse.
-Finite producer and world limits force confirmed generation rotation or
-admission backpressure so an active producer cannot make retained terminal
-results grow without bound.
+Command-result expiry is the terminal resolution tick plus the positive finite
+status window fixed at admission, calculated with checked canonical arithmetic
+and recorded as an exact tick. Detailed status is unavailable from that tick
+onward, while a compact tombstone or closed-generation floor continues to
+prevent ID reuse. Finite world-local producer slots use monotonic incarnations,
+so retired producer metadata can compact to one high-water mark per slot.
+Finite producer and world limits force confirmed generation rotation,
+incarnation retirement, or admission backpressure so activity and producer
+churn cannot make retained command metadata grow without bound.
 
 An obligation is durable lifecycle state whose owner cannot disappear without
 a declared outcome. Examples include debts, scheduled effects, references held
@@ -214,9 +217,12 @@ plugins cannot claim authority.
   state.
 - **Recover:** load a retained compatible checkpoint and confirmed suffix.
 - **Replicate:** add an authorized copy of the same world through catch-up.
-- **Migrate:** drain or explicitly cancel affected pending commands, fix the
-  exact source state at a confirmed barrier, and transform explicit data
-  versions for atomic activation.
+- **Migrate:** pause new application admission, drain or explicitly cancel
+  every application command admitted under the old profile, freeze world
+  mutation at an exact confirmed source-state barrier, and transform explicit
+  data versions for atomic activation. A new application submission observes
+  `WorldPaused` without becoming admitted; an older admitted identity still
+  returns its durable status.
 - **Re-simulate:** recompute retained transitions with exact components.
 - **Clone:** create a new identity from an exported state.
 - **Archive:** preserve state without requiring it to remain executable; an
