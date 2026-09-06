@@ -40,16 +40,16 @@ receiving node
   v
 authority group proposes and confirms canonical order
   |
-  | confirmed command envelope + authority epoch
+  | confirmed Admission: envelope + sequence + Pending
   v
 pure transition engine
   |
   | deterministic validation and events
   v
-authority group durably confirms complete transition
+authority group confirms one Resolution record
   |
-  +--> durable command status
-  +--> apply confirmed state
+  +--> Succeeded or Refused + complete events/transition
+  +--> apply a successful confirmed transition once
   +--> publish confirmed events/cursor/freshness
 ```
 
@@ -59,16 +59,31 @@ must preserve these boundaries:
 - receipt is not admission;
 - local append is not distributed confirmation;
 - computation is not canonical application;
+- a confirmed admission is durable `Pending`, not a confirmed application
+  effect;
+- resolution is the single commit point for the decision, events, and state
+  transition;
 - a response timeout is not proof of refusal;
 - observers see only a confirmed prefix.
 
+If a node fails after admission and before resolution, the next coordinator
+finds `Pending` in confirmed history and recomputes from the same confirmed
+predecessor and execution profile. If it fails after resolution and before the
+reply, the durable resolution is returned without reapplying effects.
+
 ## Command retry flow
 
-1. Look up the command ID in the durable admission namespace.
-2. If the fingerprint matches, return the known status or pending result.
-3. If the fingerprint differs, return `Conflict`.
-4. If the status window elapsed, return `Expired`; never execute it as new.
-5. If the authority group cannot answer safely, return `Unavailable` without
+1. Validate the kernel-issued generation and look up the full command identity
+   in the durable admission namespace.
+2. If its generation is at or below the durable closed-generation floor,
+   return `Expired`; never execute it as new.
+3. If an admitted entry exists and its fingerprint matches, return its durable
+   state or pending result before evaluating whether the target tick is late.
+4. If an admitted entry exists and its fingerprint differs, return `Conflict`.
+5. If no entry exists in an open valid generation, continue normal admission;
+   an identifier in an open generation that was never used is `NotFound` only
+   for a status query.
+6. If the authority group cannot answer safely, return `Unavailable` without
    fabricating a terminal status.
 
 A producer may submit a new command with a new ID and future target tick after
@@ -81,7 +96,7 @@ command
   -> resolve participating owners
   -> validate all parts against one immutable pre-state
   -> produce one complete transition
-  -> confirm command + events + status atomically
+  -> confirm one Resolution: decision + events + state atomically
   -> expose all effects together
 ```
 
@@ -91,9 +106,10 @@ effects. External systems and other worlds are coordinated asynchronously.
 ## Tick flow
 
 A canonical tick is a confirmed input for one world. Commands scheduled for
-the tick are ordered by their admitted sequence, then the active rules run in
-a deterministic order. The resulting tick and state are confirmed once for the
-authority group.
+the tick are ordered by their admitted sequence. A confirmed tick-closing
+boundary prevents further admission for that tick, then the active rules run
+in a deterministic order. Each command resolution and the resulting tick state
+occupy an unambiguous confirmed order for the authority group.
 
 Wall-clock cadence is orchestration input, never an implicit transition input.
 A replica or observer cannot advance the tick independently.

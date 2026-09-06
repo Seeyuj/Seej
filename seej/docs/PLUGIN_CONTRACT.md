@@ -77,9 +77,12 @@ concepts and their laws.
 
 ## 4. Commands and transactions
 
-A command envelope contains the stable command identifier, world, target tick,
-canonical order after admission, source metadata when authorized, payload
-fingerprint, owning command contract, and correlation metadata.
+A command envelope contains the stable command identity (`world_id`,
+kernel-issued admission generation, producer identity, and producer sequence),
+target tick, canonical order after admission, source metadata, payload
+fingerprint, owning command contract and version, and correlation metadata. The
+fingerprint binds the complete intention but excludes transport-only correlation
+data.
 
 Admission rules:
 
@@ -90,6 +93,13 @@ Admission rules:
 - a timeout is not a terminal status;
 - after the declared status-retention window, the identifier is recognized as
   expired and cannot be reused as a new command.
+
+Admission creates durable `Pending` state without application effects.
+Resolution records `Succeeded` or `Refused`; a successful resolution confirms
+all events and state effects together. `Conflict`, `Expired`, `NotFound`, and
+`Unavailable` are request results rather than stored terminal states. A pending
+command is retained until resolution. Closed kernel-issued generations preserve
+non-reuse after individual terminal results are compacted.
 
 One in-world transaction may call commands owned by multiple plugins. All
 participants validate against one immutable input state. The kernel confirms

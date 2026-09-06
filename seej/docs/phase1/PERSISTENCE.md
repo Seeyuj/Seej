@@ -118,18 +118,21 @@ The target distinguishes:
 
 1. received proposal;
 2. local durable staging;
-3. authority-group confirmation;
-4. deterministic state application;
-5. public event and command-status publication.
+3. confirmed admission with canonical sequence and `Pending` state;
+4. deterministic resolution computation from the confirmed predecessor;
+5. confirmed resolution containing decision, events, and complete transition;
+6. one-time state application and public event/status publication.
 
 A local WAL append does not prove distributed confirmation. The authority
 provider defines the quorum rule under
 [NODE_NETWORK.md](../NODE_NETWORK.md). Storage providers expose sufficient
 durability and fencing behavior for that rule.
 
-The confirmed record binds world identity, genesis, execution profile,
-authority epoch, command ID and fingerprint, order, decision, events, and
-state/checkpoint cursor.
+Confirmed admission and resolution records bind world identity, genesis,
+execution profile, authority epoch, full command identity and fingerprint,
+order, decision, events, and state/checkpoint cursor. Recovery resumes a
+confirmed pending admission and never applies an already confirmed resolution
+twice.
 
 ## Retention and compaction
 
@@ -145,6 +148,12 @@ K-10/P1-19 replace it with retention-aware checkpointing that preserves:
 - confirmed causal linkage;
 - a coherent recovery point;
 - migration and compatibility metadata.
+
+Terminal command results may be summarized only after their tick-based status
+windows expire and their kernel-issued generation closes through a confirmed
+operation. A durable per-producer closed-generation floor then rejects the
+entire old namespace. Pending admissions, open generations, and their required
+execution profile are never removed.
 
 Full archival is optional. Genesis replay is unavailable when required history
 or artifacts were deliberately removed.
@@ -162,4 +171,3 @@ coherent. Hot backup remains unclaimed until a tested protocol exists.
 JSON, WAL encoding, network replication, snapshots, or backup. FileStore is the
 current `sy_infra` reference provider. Future providers can change bytes and
 layout while preserving the root contract.
-

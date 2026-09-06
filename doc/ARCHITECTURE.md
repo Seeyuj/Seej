@@ -107,9 +107,10 @@ The durable model separates:
 
 1. a proposed command;
 2. local staging or WAL append;
-3. authority-group confirmation;
-4. deterministic application;
-5. publication to observers.
+3. confirmed admission and durable `Pending` state;
+4. deterministic resolution computation;
+5. confirmed resolution containing decision, events, and transition;
+6. one-time application and publication to observers.
 
 A local append is sufficient for parts of the current one-node prototype but
 is not a distributed commit. The distributed contract reports success and

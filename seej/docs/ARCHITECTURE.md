@@ -94,18 +94,19 @@ sequenceDiagram
     Producer->>Node: command id + payload + target tick
     Node->>Node: authenticate, bound, deduplicate
     Node->>Group: propose canonical admission
-    Group->>Group: confirm order and authority epoch
+    Group->>Group: confirm Admission + Pending
     Group->>Engine: prior state + ordered input + contracts
     Engine-->>Group: validation result + transition events
-    Group->>Store: confirm durable transition
+    Group->>Store: confirm Resolution + events + transition
     Store-->>Group: durable confirmation
     Group-->>Producer: durable status
     Group-->>Observer: confirmed events + cursor + freshness
 ```
 
-An implementation may optimize the internal sequence, but it cannot publish a
-canonical success before the required durable confirmation or let replicas
-derive different transitions.
+An implementation may optimize the internal sequence, but admission alone has
+no application effect. The confirmed Resolution is the single commit point for
+the decision, events, and transition. A runtime cannot publish canonical
+success before that confirmation or let replicas derive different transitions.
 
 ## Current repository mapping
 

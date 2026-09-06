@@ -126,29 +126,62 @@ time.
 
 A target `CommandEnvelope` contains at least:
 
-- stable `command_id`;
+- a stable command identity composed of `world_id`, a kernel-issued
+  `admission_generation`, a `producer_id`, and a producer-local sequence;
 - `world_id` and target tick;
-- payload plus immutable fingerprint;
+- payload plus an immutable fingerprint over the complete intention: world,
+  target tick, owner contract and version, and canonical payload;
 - owning command contract and version;
 - canonical admission sequence once accepted;
 - authorized source and correlation metadata when present.
 
-A command targeting an already completed tick is refused. It is never silently
-moved to a later tick.
+Correlation and transport metadata that do not change the intention are not
+part of the fingerprint. Every producer, including an internal scheduler, uses
+a kernel-issued generation. A generation is distinct from a node authority
+epoch and cannot be invented from network discovery.
+
+Command handling has two durable logical records in the confirmed history:
+
+1. **Admission** binds the envelope to a per-world admission sequence and
+   creates durable `Pending` state. Admission alone has no application effect.
+2. **Resolution** records `Succeeded` or `Refused` together with the complete
+   event set and state transition. Applying this confirmed record once is the
+   only way command effects become canonical.
+
+An implementation may confirm admission and resolution in one storage or
+consensus transaction, but the two logical states and their recovery behavior
+remain observable. After recovery, an admitted command without a resolution is
+still `Pending` and is deterministically resumed from its confirmed predecessor.
+A confirmed resolution is never executed again.
+
+New commands execute by target tick and then admission sequence. Closing a tick
+is itself confirmed; after that boundary, a new command targeting that tick is
+resolved as refused and is never silently moved. Deduplication precedes this
+late check, so retrying an older command returns its existing result.
 
 For one command namespace:
 
 - same ID and same fingerprint returns the durable status without repeating
   effects;
 - same ID and different fingerprint returns a conflict;
-- after its declared status window, the ID is expired and cannot be admitted
-  as new;
+- an admitted command remains queryable at least through its declared status
+  window, measured in canonical world ticks from its terminal resolution;
+- a `Pending` command never expires and cannot be removed by compaction;
+- generations close in increasing order through a confirmed operation only
+  after every admitted command is terminal and its status window has elapsed;
+- the durable closed-generation floor preserves non-reuse without retaining
+  every individual result: any identifier in a closed generation is expired
+  and cannot be admitted as new;
 - a timeout or unavailable authority result is not a refusal.
 
-Durable statuses are `Pending`, `Succeeded`, `Refused`, `Conflict`, and
-`Expired`. A query may be temporarily `Unavailable` when the authority group
-cannot safely answer; `Unavailable` is an observation condition, not a stored
-terminal result.
+Durable command states are `Pending`, `Succeeded`, and `Refused`. `Conflict`,
+`Expired`, `NotFound`, and `Unavailable` are submission or query results and do
+not replace a stored command state. `Unavailable` means the authority group
+cannot answer safely; it is never a fabricated terminal result.
+
+The persisted limits profile bounds open generations and pending commands. At
+a bound, the authority group limits new admission with a typed non-terminal
+response; it does not evict pending commands or manufacture a refusal.
 
 **Implemented:** local commands and ticks exist, but no durable command journal,
 deduplication contract, or network admission order exists.
@@ -158,10 +191,10 @@ queries, fingerprint conflicts, late refusal, and non-reusable expired IDs.
 
 ## 6. Events and causal history
 
-An accepted command produces zero or more versioned events plus a durable
-decision. Events identify the world, command, tick, canonical order, owner,
-schema version, and stable event position. Unknown mandatory variants are
-refused rather than silently skipped.
+An admitted command eventually resolves with zero or more versioned events plus
+a durable decision. Events identify the world, command, tick, resolution
+position, owner, schema version, and stable event position. Unknown mandatory
+variants are refused rather than silently skipped.
 
 A confirmed causal chain binds command, resulting events, active execution
 profile, and semantic state transition. Diagnostic logs are never canonical
@@ -230,6 +263,10 @@ events only while preserving:
 - active obligations;
 - stable command-ID expiration safety;
 - required migration and integrity metadata.
+
+Compaction may replace terminal per-command results with a confirmed
+closed-generation floor only after their status windows expire. It never
+removes a pending admission or reopens a generation.
 
 Full history archival is optional. Genesis re-simulation is possible only when
 the full required history and artifacts were retained.
