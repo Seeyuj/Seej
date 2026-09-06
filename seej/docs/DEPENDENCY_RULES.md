@@ -1,95 +1,109 @@
 # Dependency Rules
 
-This document defines the allowed dependencies between crates to prevent architectural drift.
+This document distinguishes the dependency rules enforced in the current Rust
+workspace from the target provider boundaries. Target architecture does not
+silently change today's Cargo graph.
 
-## Dependency Matrix
+## Current enforced matrix
 
-| Crate        | Can depend on                                      |
-|--------------|---------------------------------------------------|
-| sy_types     | (none - leaf crate)                               |
-| sy_config    | (none - leaf crate)                               |
-| sy_protocol  | sy_types (Phase 2+, outside active Phase 1 build) |
-| sy_api       | sy_types                                          |
-| sy_core      | sy_types, sy_api                                  |
-| sy_infra     | sy_types, sy_config, sy_api, sy_core             |
-| sy_loader    | ALL crates (Phase 1 placeholder; no active wiring) |
-| sy_tools     | sy_types, sy_config, sy_api, sy_core              |
-| sy_testkit   | sy_types, sy_api, sy_core                         |
-| mod_*        | sy_types, sy_api (when modules enter the active workspace) |
+| Crate | May depend on |
+| --- | --- |
+| `sy_types` | no Seej crate |
+| `sy_config` | no Seej crate |
+| `sy_api` | `sy_types` |
+| `sy_core` | `sy_types`, `sy_api` |
+| `sy_infra` | `sy_types`, `sy_config`, `sy_api`, `sy_core` |
+| `sy_tools` | `sy_types`, `sy_config`, `sy_api`, `sy_core` |
+| `sy_testkit` | `sy_types`, `sy_api`, `sy_core` |
+| `sy_loader` | placeholder; no active runtime responsibility |
+| `server_d` and `sy_cli` | compose allowed lower-level crates |
 
-## Forbidden Dependencies
+`sy_protocol` and `mods/*` are currently outside the active workspace. This
+is a fact about the prototype, not a permanent rule that all networking or
+plugins must remain deferred.
 
-- **sy_core** MUST NOT depend on sy_infra or sy_protocol
-- **sy_api** MUST NOT depend on sy_protocol (protocol is wire format only)
-- **sy_infra** MUST NOT depend on sy_protocol in the active Phase 1 workspace
-- **mod_*** MUST NOT depend on sy_core directly (only via sy_api)
-- **sy_protocol** is Phase 2+ and must remain excluded from the active Phase 1 workspace build
-- `mods/*` are Phase 2+ and must remain excluded from the active Phase 1 workspace build
+## Pure-engine boundary
 
-## Forbidden `sy_core` APIs
+`sy_core` must not depend on:
 
-`sy_core` is pure simulation. It must not use APIs that make canonical
-transitions depend on host state or nondeterministic runtime behavior. Phase 1
-sign-off requires an automated gate over `crates/sy_core/src/**`; review-only
-enforcement is not sufficient.
+- infrastructure, storage, protocol, loaders, or binaries;
+- wall-clock or process time;
+- filesystem, sockets, environment variables, OS randomness, or process APIs;
+- nondeterministic hash collections or iteration;
+- concrete provider implementations.
 
-The forbidden API set must include at minimum:
+The purity script and CI job enforce the current subset of these rules.
+Transition inputs arrive through explicit `sy_api` types and traits.
 
-- wall-clock time such as `std::time::SystemTime` and `std::time::Instant`;
-- environment access such as `std::env::*`;
-- OS randomness such as `rand::rngs::OsRng`;
-- filesystem APIs;
-- networking APIs;
-- `std::collections::HashMap` in canonical transition paths.
+## Target dependency direction
 
-This gate must be reproducible from a clean checkout and run in CI before the
-corresponding Phase 1 checklist item can be closed.
+```text
+stable primitives
+      ^
+public contracts and ports
+      ^
+pure transition engine
+      ^
+infrastructure/provider adapters
+      ^
+node runtime composition
+```
+
+An application plugin depends on public contract packages, not on `sy_core`,
+`sy_infra`, another plugin's internals, or a node runtime. Cross-plugin
+coordination uses owned commands and kernel transactions.
+
+A fundamental provider implements one public capability contract. It can use
+lower-level primitives and approved external libraries but cannot call back
+into application internals or redefine public semantics.
+
+The future inter-node protocol belongs outside `sy_core` and may be used by
+node infrastructure/runtime components. Ingame netcode remains an application
+plugin and cannot become a dependency of kernel replication.
+
+## Provider boundaries
+
+The target public capability set includes at least:
+
+- state storage and recovery;
+- command admission/status storage;
+- tick scheduling;
+- deterministic validation;
+- transaction coordination;
+- membership and authority epochs;
+- consensus/replication;
+- observation and retained-cursor access;
+- component loading and compatibility checks.
+
+This list specifies responsibilities, not future crate names. A Rust
+reorganization must be proposed and validated when implementation begins.
+
+## Forbidden shortcuts
+
+- No provider-specific storage layout in pure domain types.
+- No direct plugin mutation of another owner's data.
+- No client or observer dependency in canonical transition code.
+- No use of network arrival order as deterministic command order.
+- No public contract defined only by serde output of internal Rust enums.
+- No plugin granted authority because it is locally installed or discoverable.
+- No mixed compatible/incompatible provider set advancing one world.
 
 ## Enforcement
 
-CI enforces these rules with both `cargo deny` and a custom metadata check.
-The supply-chain job runs the quiet `cargo deny` checks that are meaningful for
-Phase 1:
+Current checks:
 
-```text
-cargo deny check advisories licenses sources
-```
+- `python3 scripts/check_sy_core_purity.py --self-test`;
+- `python3 scripts/check_sy_core_purity.py`;
+- `cargo metadata --no-deps`;
+- workspace build, test, clippy, rustdoc, and supply-chain jobs described by CI.
 
-`cargo deny check bans` is intentionally not part of CI in Phase 1 because the
-current manifests use internal `workspace = true` dependencies and cargo-deny
-emits noisy `unresolved-workspace-dependency` diagnostics while still exiting
-successfully. Internal dependency boundaries are enforced by the metadata check
-below instead.
+Target checks before contract freeze:
 
-The custom check reads `cargo metadata --no-deps` and fails if:
+- dependency tests for public contract packages;
+- a third-party extension built without internal dependencies;
+- at least one replacement fundamental provider;
+- protocol and ingame-netcode separation;
+- three-node compatibility and authority tests.
 
-- `sy_core` direct dependencies are anything other than `sy_types` and `sy_api`
-- `sy_core` owns persistence port files such as `event_log.rs` or `store.rs`
-- `sy_api` depends on `sy_protocol`
-- `sy_infra` depends on `sy_protocol` in Phase 1
-- any `mod_*` crate depends directly on `sy_core`
-
-The Phase 2 placeholders (`sy_protocol` and `mods/*`) remain excluded from the
-active Phase 1 workspace unless the roadmap explicitly moves to a later phase.
-
-Forbidden `sy_core` APIs are enforced by a separate static gate:
-
-```text
-python3 scripts/check_sy_core_purity.py --self-test
-python3 scripts/check_sy_core_purity.py
-```
-
-The script scans `crates/sy_core/src/**` after masking Rust comments and string
-literals, so documented examples do not satisfy or break the rule. CI runs the
-same commands in the `sy_core purity` job. This API gate complements the
-metadata dependency check: the metadata check prevents impure dependencies from
-entering `sy_core`, while the purity gate prevents direct use of host APIs in
-core source files.
-
-## Rationale
-
-These rules ensure:
-1. The simulation core remains pure and testable
-2. Protocol changes don't leak into business logic
-3. Modules are loosely coupled and can evolve independently
-4. Phase 1 remains a minimal deterministic persistence build without an active wire protocol
+The [exit checklist](phase1/EXIT_CHECKLIST.md) is authoritative for whether
+these target checks exist and pass.
