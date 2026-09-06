@@ -485,9 +485,9 @@ plugin concern.
 - A response timeout does not prove refusal. The producer queries a durable
   status that may be pending, succeeded, refused, or unavailable while the
   authority group cannot answer safely.
-- A declared status-retention window may expire. After it does, the identifier
-  remains in an expired namespace and is refused forever rather than executed
-  as new.
+- A terminal result expires at the exact canonical tick derived from the status
+  window bound at admission. From that tick onward, the identifier returns
+  `Expired` and remains non-reusable rather than executing as new.
 - Observation reads a confirmed prefix and reports freshness. It never changes
   simulation rules, fidelity, priority, or history. Readers may be limited or
   refused under load.
@@ -713,6 +713,16 @@ semantics.
 - An absent or incompatible configured voter retains its configured role and
   quorum weight. It cannot participate until compatible and caught up. Removal
   or demotion requires a confirmed membership transition.
+- A producer generation moves through confirmed `Open`, `Sealed`, and `Closed`
+  states. Opening the next generation or reaching a finite declared bound seals
+  the current one. Sealed generations resolve admitted commands but accept no
+  new identities.
+- A terminal resolution records its exact canonical expiration tick. At that
+  tick its detailed status becomes `Expired`, even for a conflicting retry, and
+  a tombstone preserves non-reuse until confirmed generation closure advances
+  the per-producer floor.
+- Persisted finite limits per producer and per world bound non-closed
+  generations, pending commands, retained results, tombstones, and bytes.
 
 ### Consequences
 
@@ -722,6 +732,8 @@ semantics.
   refusal or make its own replacement impossible.
 - Migration evidence must cover cancellation races, mutations between prepare
   and barrier, stable membership, activation, abort, and recovery.
+- Retention evidence must cover exact expiry, sealing races, compaction before
+  generation closure, and continuous producers without unbounded result growth.
 - These are target semantics. D-014 closes no implementation gap.
 
 ---

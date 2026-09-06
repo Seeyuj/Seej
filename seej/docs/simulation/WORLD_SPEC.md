@@ -165,6 +165,13 @@ and component artifacts are retained. Compaction must preserve a coherent
 recovery point, current state, active obligations, command-ID expiration
 safety, and migration metadata.
 
+Command-result expiry is an exact canonical tick recorded with the terminal
+resolution. Detailed status is unavailable from that tick onward, while a
+compact tombstone or closed-generation floor continues to prevent ID reuse.
+Finite producer and world limits force confirmed generation rotation or
+admission backpressure so an active producer cannot make retained terminal
+results grow without bound.
+
 An obligation is durable lifecycle state whose owner cannot disappear without
 a declared outcome. Examples include debts, scheduled effects, references held
 by another domain, and pending cross-domain transactions. Its envelope must be

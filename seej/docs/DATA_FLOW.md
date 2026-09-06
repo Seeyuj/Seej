@@ -80,22 +80,47 @@ application effects and cannot erase obligations or already confirmed state.
 
 ## Command retry flow
 
-1. Verify that a confirmed `OpenGeneration` operation issued the generation to
-   this producer, then look up the full command identity in the durable
-   admission namespace.
-2. If its generation is at or below the durable closed-generation floor,
-   return `Expired`; never execute it as new.
-3. If an admitted entry exists and its fingerprint matches, return its durable
-   state or pending result before evaluating whether the target tick is late.
-4. If an admitted entry exists and its fingerprint differs, return `Conflict`.
-5. If no entry exists in an open valid generation, continue normal admission;
-   an identifier in an open generation that was never used is `NotFound` only
-   for a status query.
-6. If the authority group cannot answer safely, return `Unavailable` without
+1. Authenticate the producer and check its durable per-producer
+   closed-generation floor before consulting generation records that compaction
+   may have removed. At or below the floor, return `Expired`.
+2. Verify the retained generation state and its confirmed issuance to this
+   producer, then look up the full command identity.
+3. If an admitted command is terminal and the confirmed tick has reached its
+   recorded `expiration_tick`, return `Expired` before fingerprint comparison.
+4. If an unexpired admitted entry exists and its fingerprint matches, return
+   its durable state before evaluating whether the target tick is late.
+5. If an unexpired admitted entry exists and its fingerprint differs, return
+   `Conflict`.
+6. If no entry exists in an `Open` valid generation, continue normal admission;
+   a status query for that unused ID returns `NotFound`.
+7. If no entry exists in a `Sealed` generation, a submission returns
+   `GenerationSealed`; after generation closure, step 1 returns `Expired`.
+8. If the authority group cannot answer safely, return `Unavailable` without
    fabricating a terminal status.
 
 A producer may submit a new command with a new ID and future target tick after
 an explicit late refusal.
+
+## Generation and retention flow
+
+1. Confirmed `OpenGeneration` creates the next monotonic generation for a
+   producer and atomically seals its prior open generation.
+2. A finite count, byte, or canonical-tick-age limit can also confirm
+   `SealGeneration`. Commands ordered before the seal may be admitted; commands
+   ordered after it are not.
+3. A terminal resolution records its exact `expiration_tick`. Until that tick,
+   its detailed status remains queryable.
+4. At that tick, the status becomes `Expired` and compaction may retain only a
+   tombstone proving that the ID cannot be reused.
+5. Once every command in a sealed generation is terminal and expired, confirmed
+   `CloseGeneration` advances the per-producer floor and allows its individual
+   records and tombstones to be removed.
+
+Finite per-producer and per-world bounds on non-closed generations, pending
+commands, retained results, tombstones, and their bytes return `LimitExceeded`
+before creating a generation or Admission when capacity is unavailable. A
+later retry may succeed after closure frees capacity. No limit handling drops
+pending work or extends status promises.
 
 ## Cross-owner transaction
 

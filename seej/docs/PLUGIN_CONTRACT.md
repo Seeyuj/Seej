@@ -88,21 +88,38 @@ Admission rules:
 
 - only a generation opened for the producer by a confirmed kernel operation is
   valid;
-- retrying the same identifier with the same fingerprint returns its durable
-  status without repeating effects, even when its target tick has since closed;
-- the same identifier with a different fingerprint is a conflict;
+- retrying a pending or unexpired identifier with the same fingerprint returns
+  its durable status without repeating effects, even when its target tick has
+  since closed;
+- a pending or unexpired identifier with a different fingerprint is a conflict;
 - a new command for an already completed tick is refused;
 - a timeout is not a terminal status;
-- after the declared status-retention window, the identifier is recognized as
-  expired and cannot be reused as a new command.
+- a terminal result remains queryable only while the confirmed world tick is
+  below its recorded `expiration_tick`; at that tick and afterward, the
+  identifier returns `Expired` and cannot be reused as a new command.
 
 Admission creates durable `Pending` state without application effects.
 Resolution records `Succeeded`, `Refused`, or `Cancelled`; a successful
 resolution confirms all events and state effects together. `Conflict`,
-`Expired`, `NotFound`, and `Unavailable` are request results rather than stored
-terminal states. A pending command is retained until resolution. Closed
-kernel-issued generations preserve non-reuse after individual terminal results
-are compacted.
+`Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`, and `Unavailable`
+are request results rather than stored terminal states. A pending command is
+retained until resolution. Closed kernel-issued generations preserve non-reuse
+after individual terminal results are compacted.
+
+A producer generation is `Open`, `Sealed`, or `Closed`. Opening the next
+generation seals the previous open one; declared finite command-count,
+byte-count, or canonical-tick-age limits can also seal it through confirmed
+order. Sealed generations accept no new identities but keep resolving admitted
+commands. Expired terminal details become non-reuse tombstones. A generation
+closes only after it is sealed and all commands are terminal and expired, after
+which the per-producer closed-generation floor is sufficient. An unused ID in a
+sealed generation returns `GenerationSealed` on submission; any ID in a closed
+generation returns `Expired` before fingerprint comparison.
+
+If opening or admission would exceed a persisted producer or world bound, the
+kernel creates no generation or Admission record and returns `LimitExceeded`.
+The producer may retry after older generations close; the kernel never frees
+capacity by dropping pending work or extending an expiration promise.
 
 An authorized operator can request a confirmed `CancelCommand` kernel control
 operation for a command that is still `Pending`. It records the target,

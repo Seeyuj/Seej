@@ -151,8 +151,9 @@ part of the fingerprint. Every producer, including an internal scheduler, uses
 a kernel-issued generation. A generation is distinct from a node authority
 term and cannot be invented from network discovery. It becomes valid only when
 a confirmed `OpenGeneration` operation binds it to the producer and advances
-that producer's monotonic generation sequence. An unconfirmed issuance cannot
-admit commands after failover.
+that producer's monotonic generation sequence. Opening a new generation
+atomically seals that producer's previous open generation. An unconfirmed
+issuance cannot admit commands after failover.
 
 Command handling has two durable logical records in the confirmed history:
 
@@ -189,27 +190,50 @@ late check, so retrying an older command returns its existing result.
 
 For one command namespace:
 
-- same ID and same fingerprint returns the durable status without repeating
-  effects;
-- same ID and different fingerprint returns a conflict;
-- an admitted command remains queryable at least through its declared status
-  window, measured in canonical world ticks from its terminal resolution;
+- before expiration, same ID and same fingerprint returns the durable status
+  without repeating effects;
+- before expiration, same ID and different fingerprint returns a conflict;
+- a terminal resolution at canonical tick `R` records an `expiration_tick`
+  computed from the status window bound at admission; its detailed status is
+  returned while the confirmed world tick is lower than `expiration_tick`;
+- at `expiration_tick` and afterward, submission or query returns `Expired`,
+  including when the supplied fingerprint differs from the original;
 - a `Pending` command never expires and cannot be removed by compaction;
-- generations close in increasing order through a confirmed operation only
-  after every admitted command is terminal and its status window has elapsed;
-- the durable closed-generation floor preserves non-reuse without retaining
-  every individual result: any identifier in a closed generation is expired
-  and cannot be admitted as new;
+- after a terminal result expires, a compact per-command tombstone preserves
+  non-reuse until the whole generation closes;
 - a timeout or unavailable authority result is not a refusal.
 
-Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
-`Conflict`, `Expired`, `NotFound`, and `Unavailable` are submission or query
-results and do not replace a stored command state. `Unavailable` means the
-authority group cannot answer safely; it is never a fabricated terminal result.
+Each generation has one durable lifecycle state:
 
-The persisted limits profile bounds open generations and pending commands. At
-a bound, the authority group limits new admission with a typed non-terminal
-response; it does not evict pending commands or manufacture a refusal.
+- **Open:** new command identities may be admitted;
+- **Sealed:** no new identity may be admitted, while already admitted commands
+  continue toward a terminal result and remain queryable under their window;
+- **Closed:** every admitted command is terminal and expired. A confirmed close
+  advances the per-producer closed-generation floor in increasing order.
+
+Sealing occurs through confirmed order. It happens when the next generation
+opens or when the finite command-count, byte-count, or canonical-tick-age limit
+bound to the generation is reached. A submission ordered after sealing returns
+`GenerationSealed`; a submission ordered before it may be admitted. Closing is
+also a confirmed operation. The durable closed-generation floor then makes
+every identifier in that generation `Expired` without retaining its individual
+tombstone or original `OpenGeneration` record.
+
+Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
+`Conflict`, `Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`, and
+`Unavailable` are submission, control, or query results and do not replace a
+stored command state. `Unavailable` means the authority group cannot answer
+safely; it is never a fabricated terminal result.
+
+The persisted limits profile supplies finite bounds per producer and per world
+for non-closed generations, admitted command count and bytes per generation,
+pending command count and bytes, and retained terminal-result or tombstone
+count and bytes. Reaching a per-generation count, byte, or age bound confirms a
+seal. If opening a generation or admitting a command would exceed a producer or
+world bound, no generation or Admission record is created and the request
+returns `LimitExceeded`; a later retry may succeed after closure frees capacity.
+The authority group does not evict pending commands, extend a promised status
+window, or manufacture a refusal.
 
 **Implemented:** local commands and ticks exist, but no durable command journal,
 deduplication contract, or network admission order exists.
@@ -312,9 +336,12 @@ events only while preserving:
 - stable command-ID expiration safety;
 - required migration and integrity metadata.
 
-Compaction may replace terminal per-command results with a confirmed
-closed-generation floor only after their status windows expire. It never
-removes a pending admission or reopens a generation.
+At a terminal command's recorded `expiration_tick`, compaction may replace its
+detailed result with a non-reuse tombstone even while its generation remains
+sealed but not closed. After all commands in a sealed generation are terminal
+and expired, confirmed closure may replace those tombstones and generation
+records with the per-producer closed-generation floor. Compaction never removes
+a pending admission, reopens a generation, or changes an expiration tick.
 
 Full history archival is optional. Genesis re-simulation is possible only when
 the full required history and artifacts were retained.

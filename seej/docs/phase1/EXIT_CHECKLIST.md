@@ -82,7 +82,8 @@ Every item in this section blocks the first stable contract.
   resolution, and after resolution before reply; also prove retry without
   duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
   authorized cancellation, a cancellation/execution race with one durable
-  winner, confirmed generation opening/closure, and non-reusable expired IDs.
+  winner, exact status expiry, confirmed generation opening/sealing/closure,
+  continuous producer activity, and non-reusable expired IDs.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
   preparation, pending-command drain or cancellation, a final source-state
@@ -92,7 +93,9 @@ Every item in this section blocks the first stable contract.
 - [ ] **K-10: Retention and recovery points.** Implement a declared bounded
   retention policy preserving current state, obligations, recovery, stable
   command-ID expiration, semantic continuity, and observer resynchronization.
-  Full archival remains optional.
+  Prove terminal-result tombstones, per-producer closed-generation floors, and
+  finite growth under continuous producer activity. Full archival remains
+  optional.
 
 ### Existing gaps incorporated into the stable gate
 
@@ -154,9 +157,10 @@ Every item in this section blocks the first stable contract.
   when required and reject malformed data before pure execution.
 - [ ] **P1-14: Enforce size and cardinality limits.** Bound commands, opaque
   payloads, events, transactions, snapshots, replication messages, and replay
-  batches.
+  batches. Also bound non-closed generations, pending commands, retained
+  terminal results, tombstones, and their bytes per producer and per world.
 - [ ] **P1-15: Persist the limits profile.** Recovery and peers know which
-  limits accepted prior data.
+  limits accepted prior data, sealed a generation, and fixed result expiry.
 - [ ] **P1-16: Remove application rules from the kernel.** Resource and
   creature degradation execute as example/test extensions through the public
   provider boundary before freeze.
@@ -165,7 +169,9 @@ Every item in this section blocks the first stable contract.
 - [ ] **P1-18: Retire automatic WAL rewriting.** `truncate_after` remains only
   an explicit operator recovery mechanism until K-10 compaction replaces it.
 - [ ] **P1-19: Implement retention-aware compaction.** Preserve stable cursors,
-  checkpoints, obligations, causal linkage, and expired command identities.
+  checkpoints, obligations, causal linkage, per-command tombstones until
+  generation closure, and expired command identities through the durable
+  per-producer floor.
 - [ ] **P1-20: Add the minimum causal chain.** Link admission, resolution,
   events, active contracts, and before/after semantic hashes so the first stable
   contract can prove which confirmed operation produced each state.
@@ -254,6 +260,18 @@ The reference distributed test matrix must include:
 | Migration activation reply is lost | Confirmed history decides whether old or new profile is authoritative. |
 | Node fails after migration activation | Recovery finishes on the confirmed new profile; no implicit rollback occurs. |
 | Configured voter is absent during activation | Its configured role and quorum weight remain; participation resumes only after compatibility and catch-up, or changes through explicit joint reconfiguration. |
+
+## Evidence required for K-08 and K-10
+
+| Scenario | Required result |
+| --- | --- |
+| Terminal result at tick `R`, window `100` | Detailed status is returned before `R + 100`; at `R + 100`, the result is `Expired`. |
+| Different fingerprint at or after expiry | Returns `Expired`, never `Conflict` and never a new admission. |
+| Result expires while generation remains sealed | Detailed result may compact to a non-reuse tombstone; retry remains `Expired`. |
+| Admission races `SealGeneration` | Confirmed order either admits the command before the seal or returns `GenerationSealed` after it. |
+| Producer submits continuously | Finite generation bounds force rotation or `LimitExceeded`; retained terminal data remains bounded. |
+| Closed generation records are compacted | The per-producer floor rejects every old ID before any removed generation record is consulted. |
+| Sealed generation contains a pending command | The command and required execution profile remain retained; limits prevent unlimited additional admission. |
 
 ## Platform durability note
 

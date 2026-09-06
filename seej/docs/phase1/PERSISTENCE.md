@@ -152,11 +152,20 @@ K-10/P1-19 replace it with retention-aware checkpointing that preserves:
 - a coherent recovery point;
 - migration and compatibility metadata.
 
-Terminal command results may be summarized only after their tick-based status
-windows expire and their kernel-issued generation closes through a confirmed
-operation. A durable per-producer closed-generation floor then rejects the
-entire old namespace. Pending admissions, open generations, and their required
-execution profile are never removed.
+Every terminal resolution records the exact canonical `expiration_tick` fixed
+by the status window bound at admission. At that tick, its public result becomes
+`Expired` and compaction may replace the details with a per-command non-reuse
+tombstone. A generation moves through confirmed `Open`, `Sealed`, and `Closed`
+states. Opening a new one or reaching a finite bound seals the current one; a
+sealed generation admits no new IDs but retains pending admissions.
+
+After every command in a sealed generation is terminal and expired, confirmed
+closure advances a durable per-producer closed-generation floor. Command
+lookup checks that floor before generation records, allowing old generation
+metadata and tombstones to be deleted safely. Pending admissions and their
+required execution profile are never removed. The persisted limits profile
+bounds non-closed generations, commands, retained results, tombstones, and
+their bytes per producer and per world.
 
 Full archival is optional. Genesis replay is unavailable when required history
 or artifacts were deliberately removed.
