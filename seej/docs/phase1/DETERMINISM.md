@@ -1,116 +1,105 @@
-# Phase 1 — Determinism (contract + validation)
+# Phase 1 — Determinism
 
-This document describes the determinism rules and the verification utilities **as implemented**.
+```text
+status: CURRENT LOCAL EVIDENCE + OPEN GENERIC CONTRACT
+```
 
-## Determinism contract
+## Contract
 
-Given:
+For one declared execution profile:
 
-- the same **genesis** (seed + world config + schema assumptions),
-- the same **input stream** (commands/events injected at the same tick, in the same order),
-- the same **scheduling policy** (stable processing order),
+```text
+same genesis or retained checkpoint
++ same ordered admitted commands
++ same tick schedule
++ same deterministic provider and plugin contracts
+= same transition decisions, events, and semantic state
+```
 
-the simulation must produce:
+Network delivery timing, filesystem order, thread scheduling, observers, and
+wall clock do not become transition inputs unless converted into explicit
+validated persisted commands.
 
-- the same sequence of outputs/events,
-- and the same world state at every checkpoint.
+This guarantee is scoped to advertised execution profiles. Cross-platform or
+cross-version bit identity is not claimed without matching fixtures and CI
+evidence.
 
-## Rules enforced by design
+## Implemented local evidence
 
-### No OS time in the core
+The current prototype provides:
 
-All core time is simulated:
-- `Tick(u64)` is the fundamental step counter.
-- `SimTime` is derived from ticks.
+- `Tick(u64)` and tick-derived `SimTime`;
+- an explicit required `--seed` at creation;
+- seeded and checkpointed RNG state;
+- deterministic `BTreeMap` traversal for current world collections;
+- a pure runner that applies a fixed schedule and compares checkpoints;
+- local recovery-parity and repeated-run tests;
+- a `sy_core` purity gate rejecting known clock, filesystem, network,
+  environment, OS-randomness, and nondeterministic-collection APIs.
 
-The core must not access `std::time::SystemTime`.
-It also must not use wall-clock `Instant`, environment access, filesystem I/O,
-networking, or OS randomness as canonical transition inputs. Phase 1 enforces
-this with the CI job `sy_core purity`, backed by
-`scripts/check_sy_core_purity.py`.
-
-### Seed is required at world creation
-
-The `server_d` binary requires `--seed <u64>` when creating a world, so genesis is never “accidentally random”.
-
-### Stable iteration order
-
-World collections that matter for reproducibility use deterministic ordering:
-- `BTreeMap` is used for collections like entities/zones in the world state (stable iteration order).
-
-Canonical transition paths must not depend on nondeterministic collection
-iteration such as `HashMap` iteration order.
-
-### Tick-based checkpoints
-
-Checkpoint and snapshot cadence for canonical state must be expressed in
-simulation ticks. Wall-clock timers may throttle process execution outside the
-core, but elapsed real time must not decide which state becomes the canonical
-checkpoint state.
-
-### No floating-point canonical decisions
-
-Canonical persistent state transitions must not depend on `f32` or `f64`
-arithmetic. Random chances, thresholds, rates, and rule decisions should use
-integers, fixed-point values, or explicit rational representations. This is not
-a ban on every float in the repository; it is a determinism rule for persistent
-simulation decisions and replayable state.
-
-## Canonical hashing
-
-Phase 1 includes a canonical state hashing utility to validate determinism by checkpoints:
-
-- canonical encoding must:
-  - traverse collections in a stable order,
-  - write fields in a stable order,
-  - avoid non-deterministic sources (e.g. hash map iteration).
-- a fast non-cryptographic hasher (`xxhash64`) is used for tests and diagnostics.
-- `compute_canonical_hash` hashes the complete persistent `World`, including
-  recovery cursor metadata such as `snapshot_tick` and `last_event_id`. Tests
-  that compare a continuous run with a recovered run must normalize persistence
-  cursors first, typically by calling `save_world()` on both sides before hashing.
-  Without that normalization, two worlds can be logically identical but hash
-  differently because one snapshot cursor is newer than the other.
-
-## Determinism runner (pure runner)
-
-Phase 1 includes a runner that:
-- creates a world from a seed,
-- applies a fixed schedule of commands,
-- advances ticks for a fixed number of steps,
-- collects state hashes every N ticks (checkpoints),
-- and compares two runs for byte-for-byte identical checkpoint sequences.
-
-This is implemented under `sy_core` (so it can run without real I/O).
-
-## How to run the determinism tests
-
-From `seej/server/`:
+Run from `seej/server/`:
 
 ```bash
 cargo test -p sy_core
+python3 scripts/check_sy_core_purity.py --self-test
+python3 scripts/check_sy_core_purity.py
 ```
 
-If you want all workspace tests:
+All workspace tests use:
 
 ```bash
 cargo test --workspace
 ```
 
-Run the `sy_core` purity gate exactly as CI does:
+## Known limitations
 
-```bash
-python3 scripts/check_sy_core_purity.py --self-test
-python3 scripts/check_sy_core_purity.py
-```
+The current `compute_canonical_hash` hashes the complete persisted `World`,
+including storage recovery cursors. Tests comparing continuous and recovered
+runs normalize those cursors by saving both worlds. It therefore mixes
+semantic state and storage layout concerns.
 
-## What the tests guarantee (Phase 1)
+The prototype also contains float-valued properties and float-based
+degradation decisions. They remain known blockers for the stable deterministic
+contract.
 
-- Two runs with the same seed and the same scheduled inputs produce identical checkpoint hashes.
-- Different seeds should diverge (different hashes).
-- Canonical hashing is stable across repeated calls in the same process.
+The current runner proves local engine behavior from a fixed schedule. It does
+not prove durable command admission, distributed confirmation, plugin
+compatibility, or migrations.
 
-Open Phase 1 checklist items still require stronger evidence for tick-based
-checkpoint cursor parity, no floating-point canonical decisions, counter
-overflow refusal, and cross-platform golden hash parity.
+## Stable target
+
+Before freeze:
+
+- `P0-02`: checkpoint cadence is based on simulated ticks;
+- `P0-03`: canonical decisions use deterministic numeric representations;
+- `P0-04`: canonical counters fail closed;
+- `P0-05`: history records its complete simulation contract;
+- `P0-09`: concurrent producers receive confirmed per-world ordering;
+- `P0-15`: a replay oracle recomputes retained transitions;
+- `P1-04`: semantic hashes are separate from storage and authority hashes;
+- `P1-05/P1-06`: golden versions and stable persisted variants exist;
+- `K-07`: all compatible replicas reach the same semantic state;
+- `K-09`: coordinated migrations produce a single declared result.
+
+A deterministic plugin receives only explicit inputs and capabilities. An LLM,
+external service, real-time clock, or sensor can influence the world only
+through a validated persisted command result.
+
+## Randomness
+
+A randomness provider declares its algorithm and contract version. Its seed and
+state, or the chosen result required for replay, are canonical. Replacing the
+algorithm changes the simulation contract and requires migration or a new
+world transition boundary.
+
+## Observation and approximation
+
+Observer activity is never a deterministic input. A world can explicitly
+command a new approximation policy, but an observer cannot cause
+materialization by looking at a region.
+
+A multiresolution plugin may lead to a future different from a hypothetical
+fully detailed run when the active world contract permits it. Determinism means
+the declared approximation produces the same transition for the same explicit
+inputs; it does not mean all allowed simulation policies share one future.
 

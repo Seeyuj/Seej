@@ -1,84 +1,87 @@
-# Phase 1 — How to run the code (binaries)
+# Phase 1 — Current Binaries
 
-All commands below assume you are in:
+```text
+status: IMPLEMENTED LOCAL PROTOTYPE COMMANDS
+```
+
+All commands below run from:
 
 ```bash
 cd seej/server
 ```
 
-## Build / test
+They operate on the current local FileStore. No cluster, node-admission,
+provider-loading, migration, or network-observation command exists yet.
+
+## Build and test
 
 ```bash
 cargo build --workspace
 cargo test --workspace
 ```
 
-## `server_d` — headless daemon
+## `server_d`
 
-### Create a world (seed is REQUIRED)
+Create a world; the seed is required:
 
 ```bash
 cargo run --bin server_d -- create --name "MyWorld" --seed 42
 ```
 
-Optional initial population:
+Create the current spatial demonstration population:
 
 ```bash
 cargo run --bin server_d -- create --name "MyWorld" --seed 42 --resources 10 --creatures 5
 ```
 
-### List worlds
+These population flags exercise prototype application rules. They are not part
+of the target generic genesis contract.
+
+List local worlds:
 
 ```bash
 cargo run --bin server_d -- list
 ```
 
-### Run an existing world (tick loop)
+Run an existing local world:
 
 ```bash
 cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 100
 ```
 
-Notes:
-- `--ticks 0` means “run forever”.
-- `Ctrl+C` triggers a graceful shutdown and saves the world.
+`--ticks 0` runs until interruption. `Ctrl+C` requests graceful shutdown
+and saves the current world. `--save-interval` is expressed in simulation
+ticks.
 
-### Storage directory
-
-By default, both binaries use `--data-dir ./data`.
-You can override it:
+Both binaries default to `--data-dir ./data`. Override it before the
+subcommand:
 
 ```bash
 cargo run --bin server_d -- --data-dir ./my_data create --name "MyWorld" --seed 42
 ```
 
-## `sy_cli` — admin inspection CLI (no UI)
+## `sy_cli`
 
-### Status (includes crash-recovery cursor)
+Inspect local status and recovery cursor:
 
 ```bash
 cargo run --bin sy_cli -- status world_42
 ```
 
-### List recent WAL events
+Read recent local WAL events:
 
 ```bash
 cargo run --bin sy_cli -- events world_42 --count 50
-```
-
-Filter from a tick:
-
-```bash
 cargo run --bin sy_cli -- events world_42 --from-tick 1000 --count 50
 ```
 
-### Dump the snapshot as JSON
+Dump the current snapshot:
 
 ```bash
 cargo run --bin sy_cli -- dump world_42 --pretty
 ```
 
-### Inspect entities and zones
+Inspect the current prototype entity and zone model:
 
 ```bash
 cargo run --bin sy_cli -- entities world_42
@@ -86,4 +89,14 @@ cargo run --bin sy_cli -- entities world_42 --kind creature
 cargo run --bin sy_cli -- entity world_42 1
 cargo run --bin sy_cli -- zones world_42
 ```
+
+`sy_cli` is read-only, but its current coherent-read policy still needs the
+P1-11 evidence when `server_d` writes concurrently. It is not the K-02
+confirmed network observation API.
+
+## Future command documentation rule
+
+Distributed, provider, migration, and plugin commands are documented here only
+after their binaries and help output exist. Architecture examples elsewhere
+are conceptual and must not be copied as runnable commands.
 
