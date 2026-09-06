@@ -1,126 +1,121 @@
-# Observation Slice — the First Userland Brick (K-02, K-03)
+# Confirmed Observation Slice
 
-## Status
-
-Design specification for Gate 1-K gaps `K-02` (observation surface), `K-03`
-(anchor world), and the exit criterion `K-04` (first external consumer). See
-[`EXIT_CHECKLIST.md`](EXIT_CHECKLIST.md). Nothing in this document is
-implemented until its checklist gap is checked.
-
-## Why this brick is first
-
-The kernel becomes a platform the day someone else can consume a world
-**without reading the Rust source**. Among all possible bricks (observation,
-agents, human netcode), observation is first because it is:
-
-- genre-neutral: every consumer (renderer, dashboard, bot, analysis script)
-  starts by watching;
-- read-only: it cannot violate causal closure, so it needs no new kernel
-  invariants beyond a concurrent-read policy (P1-11);
-- nearly free: everything it emits already exists in the WAL;
-- the proof artifact: a world evolving in front of an external tool is the
-  demonstration that the "world exists without players" claim is real.
-
-Human-facing netcode is explicitly the **third** brick (after an
-agents/command-injection brick), and remains out of Phase 1 scope.
-
-## K-02 — Observation surface
-
-### Deliverable
-
-A follow-mode, machine-readable event stream over an existing world:
-
-```bash
-sy_cli tail <world_id> [--from-event <id> | --from-tick <t>] [--follow] --json
+```text
+status: TARGET — GAP K-02
 ```
 
-### Output contract
+Observation is the first public read surface of the kernel. It demonstrates
+that a world can evolve, persist, replicate, and be understood without a
+client owning its state.
 
-- **JSON Lines**: exactly one `SimEvent` per line, matching the shapes of
-  [`../CONTRACT.md`](../CONTRACT.md) section 6 (`{ "event_id": ..., "tick":
-  ..., "data": { ... } }`). No wrapper object, no progress decoration on
-  stdout; diagnostics go to stderr.
-- Events are emitted in `event_id` order, without gaps, starting from the
-  requested cursor (default: the current durable tail when `--follow`, else
-  `event_id 1`).
-- The stream is **read-only evidence**: the command never creates, repairs,
-  truncates, or locks-for-write any world file.
+## Contract boundary
 
-### Concurrent-read policy (implements P1-11 for this path)
+An observer can:
 
-While `server_d` owns the world (single writer, P0-10):
+- obtain a coherent confirmed state;
+- subscribe to confirmed events after a cursor;
+- inspect world identity, tick, execution profile, and freshness;
+- recover from reconnect and cursor expiration;
+- filter or project data within declared permissions.
 
-- The reader opens the WAL in read-only mode (`open_read_only` semantics —
-  never the repairing open).
-- On reaching a torn or incomplete tail record, the reader treats it as
-  **end-of-stream-for-now**: it does not report corruption, does not repair,
-  and (in `--follow` mode) retries from the same offset after a poll
-  interval.
-- A CRC failure on a *non-tail* record is reported as suspected corruption
-  and terminates the stream with a nonzero exit code: durable evidence
-  disagreeing mid-file is never skipped over silently.
-- Poll interval and reopen strategy are implementation details (out of
-  contract); the visible guarantee is: every durably committed event is
-  eventually emitted exactly once, in order.
+An observer cannot:
 
-### Acceptance criteria (evidence for closing K-02)
+- submit mutations through the read surface;
+- read unconfirmed local proposals as canonical;
+- change tick rate, ordering, fidelity, or rules by subscribing;
+- trigger canonical materialization through camera or query activity;
+- bypass plugin ownership or data permissions.
 
-1. A world running under `server_d` can be tailed concurrently by `sy_cli`
-   from another process; the tail emits every committed event exactly once,
-   in `event_id` order.
-2. A test appends a deliberately torn tail record and proves the reader
-   pauses (follow mode) or exits cleanly at the tail (non-follow), without
-   modifying the file (byte-identical before/after).
-3. Consuming the stream requires no Seej code: a documented example pipes the
-   output through a generic JSON tool (e.g. `jq`) to answer one question
-   ("how many entities died this run?").
-4. Two consumers tailing the same world receive identical streams.
+## Initial state response
 
-## K-03 — Anchor world
+A coherent initial response identifies at least:
 
-### Purpose
+- `world_id`;
+- confirmed tick and history cursor;
+- authority epoch and freshness classification;
+- execution-profile identifier;
+- selected readable owner domains or projection;
+- a replacement stream cursor.
 
-The observation surface needs something worth observing. The anchor world is
-a documented, reproducible genesis whose event stream shows visible systemic
-life using only the Phase 1 rules — no new gameplay, no new scope.
+Opaque domains can be included as authorized envelopes without promising
+field-level interpretation.
 
-### Definition
+## Event stream
 
-- Genesis: `server_d create --name <name> --seed <seed> --resources 10
-  --creatures 5` (population recorded as part of genesis once P0-06 lands;
-  until then, the creation command line is the documented genesis).
-- Run: `server_d run --world <world_id> --ticks 1000 --save-interval 100`.
-- Under the v0 systemic rules (1%/tick resource depletion, 0.5%/tick creature
-  degradation, dead cleanup every 100 ticks), a 1000-tick run over this
-  population is statistically guaranteed to emit systemic events
-  (`ResourceDepleted`, `EntityDegraded`, `EntityStateChanged`,
-  `EntityDespawned`) — the stream visibly changes without any human input.
+Events after the cursor are ordered by confirmed world position and have stable
+identifiers. Reconnection may redeliver events, so consumers deduplicate.
+Delivery is not advertised as exactly once.
 
-### Acceptance criteria (evidence for closing K-03)
+A node serves one of two explicit read classes:
 
-1. The scenario above is documented (this file) and reproducible with two
-   commands.
-2. **Stream-level determinism:** two fresh runs from the same genesis produce
-   byte-identical event streams (same events, same order, same payloads),
-   proven by a test or scripted comparison. This is the observable form of
-   the Tier 2 guarantee.
-3. An observer following the stream for the 1000-tick run sees systemic
-   events without issuing any command.
+- **current confirmed:** validated against the active authority state;
+- **known confirmed but stale:** tied to a confirmed cursor with freshness
+  indicating that the node may be behind.
 
-## K-04 — First external consumer
+The API never silently presents a raw local WAL tail as confirmed.
 
-The exit criterion of a kernel: at least one consumer of the observation
-surface or contract **not maintained by the kernel author** — a terminal
-visualizer, a Discord bot, a plotting script, anything. Closing evidence is a
-link to the consumer plus the contract surface it uses. This item cannot be
-closed by writing code in this repository; that is the point.
+## Retention and resynchronization
 
-## Out of scope for this slice
+If the requested cursor remains retained, streaming resumes after it. If it
+expired:
 
-- Any network transport, subscription protocol, or push mechanism
-  (`sy_protocol` remains Phase 2+).
-- Any write path for consumers (command injection is the second brick and
-  requires P0-08/P0-09 first).
-- Any UI, rendering, or graphical dependency in this repository.
-- Filtering/query languages beyond the cursor flags above (consumers filter
-  downstream; that is what JSON Lines is for).
+1. return a typed cursor-expired result;
+2. provide or reference a coherent confirmed state;
+3. issue a new cursor;
+4. state that removed events are unavailable.
+
+This behavior preserves usefulness without promising permanent history.
+
+## Neutrality and overload
+
+Observer identity, number, latency, filters, and region of interest have no
+canonical effect. A node applies backpressure, rate limits, disconnection, or
+request refusal before changing world rules or resolution.
+
+If a world requests real-time cadence and observation competes for resources,
+observation yields. The world may still miss its cadence under total overload;
+it cannot alter canonical semantics to satisfy readers.
+
+## Security and limits
+
+The read surface authenticates the caller when the world policy requires it,
+authorizes domains and projections, bounds response and stream sizes, and does
+not expose operator secrets or opaque payloads without permission.
+
+Network framing for this surface is separate from ingame netcode. It may share
+transport libraries with the node-network implementation but has a distinct
+contract and authority.
+
+## Deterministic fixture
+
+Gap K-03 supplies fixed genesis, commands, expected events, confirmed cursors,
+and final semantic hash. The fixture includes:
+
+- an empty-world case;
+- extension-owned data without spatial fields;
+- a cross-owner transaction;
+- a deterministic rejected command;
+- enough confirmed events to exercise reconnect and compaction.
+
+Assertions use fixed expected outcomes. They do not depend on a statistically
+likely event from random population behavior.
+
+## External consumer evidence
+
+K-02 requires a consumer using the observation contract without internal Rust
+state. K-04 separately requires a third-party **write extension** that declares
+data and commands. An observer does not close K-04.
+
+## Acceptance scenarios
+
+- opening and closing an observer leaves the semantic state hash unchanged;
+- a slow observer is limited without delaying or altering canonical order;
+- reconnecting after a response loss produces no semantic duplicates;
+- a stale replica announces its freshness;
+- a minority partition cannot claim a current read;
+- an expired cursor resynchronizes from coherent state;
+- unauthorized owner data is omitted or refused;
+- events are published only after distributed confirmation.
+
+Until those scenarios have executable evidence, this document is a target
+contract rather than an implemented network API.

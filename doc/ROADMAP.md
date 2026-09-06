@@ -1,350 +1,185 @@
-# Roadmap – Seej
+# Roadmap — Seej
 
-> This roadmap describes the **major construction steps** of the platform.  
-> It is **neither exhaustive nor contractual**, and may evolve according to governance decisions.
+## Status model
 
-## Navigation
+Decision D-012 reopened the project foundation. The earlier local Phase 1 slice
+remains implemented evidence, but it is not the first stable kernel contract.
 
-- [`README.md`](../README.md)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- [`DECISIONS.md`](DECISIONS.md)
-- [`ROADMAP.md`](ROADMAP.md)
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-- [`SECURITY.md`](SECURITY.md)
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+Roadmap labels mean:
 
-The project's absolute priority is the **solidity of the simulation core**, its **maintainability**, and its **long-term sustainability**.
+- **Implemented evidence:** exists in the repository; does not imply release
+  readiness.
+- **Active target:** required for the current release gate.
+- **Later:** sequenced after the first stable contract.
+- **Optional ecosystem:** may be built by the community and is not a Seej
+  release obligation.
 
----
+The detailed proof state is maintained in
+[the Phase 1 exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md).
 
-## Phase 0 – Conceptual Foundations (Completed)
+## Foundation 0 — Local deterministic prototype
 
-Status: Done
+**Status: implemented evidence**
 
-Phase 0 locked the project's long-term invariants and governance model.
-Its objective was to establish clear, defensible foundations before scaling implementation.
+The repository already demonstrates:
 
-Delivered:
-- Vision and fundamental principles documented
-- Explicit definition of what the project **is** and **is not**
-- Formal separation between:
-  - simulation core
-  - optional modules
-  - clients
-- Foundational documentation:
-  - README
-  - CONTRIBUTING
-  - Code of Conduct
-  - architecture and decision documents
+- a headless Rust transition engine;
+- explicit seed and deterministic tick execution;
+- local snapshot and WAL persistence;
+- recovery after forced process interruption;
+- a single-writer runtime and inspection CLI;
+- tests, purity checks, fuzz targets, and dependency gates.
 
-Phase 0 remains the reference baseline for all future decisions.
+This foundation intentionally uses a spatial entity/zone model and built-in
+resource/creature degradation rules. Those choices prove the local mechanics;
+they do not define the future universal world contract.
 
----
+Completion of this historical slice is not revoked. Its architectural
+assumptions are superseded where D-012 says so.
 
-## Phase 1 – Minimal Headless Server Slice
+## Foundation 1 — Generic kernel contracts
 
-Status: implemented as a minimal recovery slice. Phase 1 now closes through
-two gates (decision D-011): **Gate 1-K (Kernel Contract)** — the non-negotiable
-bar, and **Gate 1-D (Durability Under Load)** — hardening pulled by explicit
-usage triggers. Both are tracked in `seej/docs/phase1/EXIT_CHECKLIST.md`; the
-kernel contract itself is drafted in `seej/docs/CONTRACT.md`.
+**Status: active target**
 
-**Single (exclusive) objective**
+Outcome: an empty or non-spatial world can run through public, versioned
+capability contracts without depending on internal Rust types.
 
-Prove that a simulated world can exist, evolve, and persist with **no client, no player, and no graphical interface**.
+Required work:
 
-This phase explicitly does **not** target:
-- feature richness
-- performance
-- advanced extensibility
-- user experience
+- separate `world_id`, seed, genesis hash, and node identity;
+- formalize generic owner domains and structured or opaque payload envelopes;
+- define durable command IDs, fingerprints, ordering, statuses, late refusal,
+  and expiration;
+- define deterministic validation and atomic transactions across owners;
+- move spatial entities and degradation rules into example/test extensions;
+- provide replaceable fundamental providers loaded at startup;
+- preserve `sy_core` as the pure transition engine;
+- separate semantic state hashes from storage and authority metadata;
+- define retained checkpoints, cursor expiry, and recovery semantics.
 
-It aims to make the world's autonomous existence undeniable.
+Evidence includes one replacement provider and one real external extension that
+owns data and commands without internal dependencies.
 
-Guiding principle
+## Foundation 2 — Distributed kernel
 
-If the server can run alone for hours, is killed abruptly, restarts, and the world continues as if nothing happened, then Phase 1 is validated.
+**Status: active target; required before first stable contract**
 
-Anything that does not directly serve this proof is out of scope.
+Outcome: the kernel itself operates as an authorized network of nodes while
+preserving one history per world.
 
-✅ **Mandatory capabilities (strict scope)**
+Reference proof:
 
-1. **Deterministic simulation loop**
-   - Explicit tick execution
-   - Strictly controlled execution order
-   - No implicit dependencies:
-     - no direct system clock access
-     - no non-injected RNG
-   - Same inputs ⇒ same outputs
-
-Determinism is a functional requirement, not an optimization.
+- same contracts in one-node and three-node deployments;
+- three authorized nodes, quorum two;
+- explicit discovery, admission, and membership changes;
+- Raft-style reference consensus for crash faults and network partitions;
+- coordinator replacement and stale-authority fencing;
+- no mutation without quorum;
+- node catch-up after interruption;
+- confirmed reads with freshness;
+- local storage failure containment;
+- compatibility checks for kernel, contracts, providers, and plugins.
 
-2. **Persistent simulated time**
-   - World time is simulated data
-   - It progresses independently of any human presence
-   - It is explicitly stored and restored on restart
-   - No dependency on real time
+The first distributed implementation replicates the complete world. Sharding,
+Byzantine consensus, permissionless validators, automatic divergent-history
+merge, and synchronous cross-world transactions are separate future designs.
 
-3. **Minimal spatial representation**
-   - A structured space exists (zones / regions / chunks — free form)
-   - Space is persistent
-   - Space can be partially loaded / simulated
-   - No realism or spatial optimization goals
-
-   Space may be abstract. It only needs to exist.
-
-4. **Persistent non-player entities**
-   - Entities have:
-     - stable identity
-     - internal state
-     - lifecycle
-   - They exist without players, evolve via simple systemic rules, and survive restarts
-
-   No "player" entities. No exceptions.
-
-5. **Minimal systemic rules**
-   - At least one causal rule exists (e.g., consumption, degradation, transformation, movement)
-   - It produces observable state changes
-   - It depends only on the simulation
-   - No gameplay or balancing goals
-
-   A single rule is enough if it is real and persistent.
-
-6. **Explicit on-disk persistence**
-   - Every world mutation is explicitly written to disk and traceable
-   - The world must never vanish when the server stops
-   - No reliance on implicit in-memory state
-
-   Persistence is critical.
-
-7. **Recovery after stop or crash**
-   - The server may be killed abruptly and restarted
-   - The world is automatically restored, coherent, and requires no human intervention
-
-   A lost world = Phase 1 failure.
-
-8. **Headless server execution**
-   - No graphical interface
-   - No dependency on any rendering engine
-   - No connected client required
-   - “Solo” = local server; “Multi” = the same server, remote
-
-Minimal observability required
-
-The world must be observable without a UI. Acceptable means:
-- structured logs
-- state dumps
-- basic CLI tools
-- diagnostic files
-
-No graphical visualization is required.
-
-Explicit out of scope (forbidden in Phase 1)
-
-Formally excluded:
-- any graphical client
-- any UI (even advanced debug UI)
-- any player-oriented logic
-- optional modules
-- advanced AI
-- complex economy
-- advanced networking
-- CPU/memory optimization
-- parallelism
-- balancing or “fun”
-- graphics standards
-- stabilized public API
-
-Introducing any of these too early invalidates Phase 1 scope discipline.
-
-Validation criteria (measurable)
-
-Gate 1-K (Kernel Contract) is closed only if:
-- the server can run alone indefinitely
-- the world evolves without human interaction
-- a restart destroys nothing
-- two runs with the same inputs produce the same world
-- the server has zero graphical dependencies
-- the kernel contract is frozen (`seej/docs/CONTRACT.md`, gap K-01)
-- a world's event stream is observable by external tools (gap K-02)
-- an anchor world proves visible, reproducible systemic life (gap K-03)
-- at least one consumer not maintained by the author builds on the contract
-  (gap K-04)
-
-The operational invariant of Gate 1-K is: **we do not break replay.** Causal
-closure (every mutation enters through the journaled aperture) and
-deterministic re-execution (recovery is a replay) are non-negotiable.
-Long-horizon bit-perfect replay across versions and platforms is an opt-in
-Tier 3 guarantee, pulled by demand.
-
-The current repository satisfies the minimal implementation proof. Gate 1-D
-(Durability Under Load) tracks the production-hardening bar — corruption
-policy, I/O failure policy, compaction, fencing, limits, operator tooling —
-with explicit usage triggers per item.
-
-Phase 1 implementation status (current repository)
-
-Already implemented:
-- Deterministic tick loop with mandatory seed at world creation
-- Persistent simulated time (`Tick`, `SimTime`) in world state
-- Persistent zones and entities with stable identifiers
-- Snapshot + WAL persistence with event cursor (`last_event_id`)
-- Crash recovery by loading snapshot and replaying WAL
-- Headless daemon (`server_d`) for create/list/run flows
-- Inspection CLI (`sy_cli`) for status, events, entities, zones, dumps
-- Determinism tooling and tests (canonical hashing and replay checks)
-
-Closure evidence tracked separately:
-- Fast CI gates cover `sy_core` purity, check/build, formatting, tests, clippy, rustdoc, supply-chain checks, dependency-boundary checks, and WAL fuzz-target build.
-- Scheduled/manual gates cover ignored Phase 1 tests, forced-kill recovery, long burn-in runs, coverage, and WAL fuzz smoke.
-- The authoritative closure checklist is `seej/docs/phase1/EXIT_CHECKLIST.md`.
-
-Phase 1 backlog, restructured by gate (D-011):
-- **Gate 1-K — Kernel Contract (do first).** Kernel deliverables: frozen
-  contract v0 (K-01), observation surface (K-02, spec in
-  `seej/docs/phase1/OBSERVATION_SLICE.md`), anchor world (K-03), first
-  external consumer (K-04). Contract integrity: no-float canonical decisions,
-  simulation-contract versioning, formal genesis, world identity independent
-  from seed, canonical command journaling and ordering, single-writer
-  ownership, WAL/world/contract binding, minimal integrity validation, replay
-  oracle, persisted DTOs, minimal snapshot integrity metadata, concurrent
-  read semantics. Plus cheap hygiene done in passing (purity gate ✅, pinned
-  toolchain ✅, versioned CI gates ✅, tick-based cadence evidence, fail-closed
-  counters, `sy_loader` policy, rules decision log).
-- **Gate 1-D — Durability Under Load (usage-pulled; each item has an explicit
-  trigger).** Corruption/repair policy, durable I/O failure policy, crashpoint
-  matrix, creation durability, adversarial replay, writer fencing, compaction
-  — triggered by a world under real load. Validation, limits, limits manifest
-  — triggered by external input producers. Cross-platform hash parity,
-  semantic-vs-storage hash separation, golden fixtures, variant versioning —
-  triggered by claiming the Tier 3 replay guarantee. Causality hashes, flight
-  recorder, divergence bisector — triggered by the first divergence bug or
-  reproducible-research demand. Doctor, backup/restore, runbook, diagnostics,
-  failure-mode matrix — triggered by operators other than the author.
-
-Final rule (non-negotiable)
-
-Phase 1 is not meant to be impressive. It is meant to be irrefutable.
-
-Anything that does not help prove the world's autonomous, persistent existence does not belong here.
-
----
-
-## Phase 2 – Modular Architecture and Public APIs
-
-Status: deferred. `sy_protocol` and `mods/*` directories exist as placeholders
-or future crates, but they are intentionally excluded from the active Phase 1
-workspace.
-
-**Objective: Enable extension without weakening the core**
-
-Once Gate 1-K is closed, the focus shifts to controlled extensibility.
-
-Consumer bricks land in a deliberate order:
-
-1. **Observation brick** (read-only event stream) — part of Gate 1-K itself
-   (K-02), because every consumer starts by watching.
-2. **Agents brick** (command injection for programmatic actors) — the first
-   write-capable consumer; requires the durable command journal and canonical
-   ordering (P0-08, P0-09) plus the validation/limits items its trigger pulls
-   from Gate 1-D.
-3. **Human netcode brick** — the hardest consumer (latency, prediction,
-   interest management); intentionally last, and constrained by the kernel's
-   tick model rather than the other way around.
-
-Main axes:
-- Definition of versioned public APIs (grounded in the frozen kernel contract)
-- Optional module system
-- Module loading / activation / deactivation
-- Strict isolation between core and extensions
-- Compatibility and versioning management
-- Documentation of core invariants
-
-This phase is critical to:
-- avoid feature creep
-- guarantee project longevity
-- enable healthy community contribution
-
----
-
-## Phase 3 – Advanced Simulation and Scalability
-
-**Objective: A credible world at large scale**
-
-The world must be able to:
-- grow
-- become more complex
-- survive over time
-
-Work axes:
-- Simulation by regions with detail levels
-- CPU / memory optimization
-- Management of large numbers of entities
-- Systemic events (economy, shortages, migrations, conflicts)
-- Replay and deterministic validation tools
-- Advanced observability (metrics, diagnostics)
-
-The focus remains **systemic**, never game-oriented.
-
----
-
-## Phase 4 – Reference Client (Unreal Engine)
-
-**Objective: Visualize the world, not define it**
-
-An official client based on Unreal Engine is introduced as:
-- reference implementation
-- technical showcase
-- visual validation tool
-
-Characteristics:
-- Strict consumer of server state
-- No critical calculations on the client side
-- Modern but sober rendering
-- Documented graphics standard
-- Coherent and extensible asset pipeline
-
-The client **never drives** world evolution.
-
----
-
-## Phase 5 – Tools, SDK, and Community Opening
-
-**Objective: Make the project a true platform**
-
-Final structuring phase before maturity:
-
-- SDK for module developers
-- Tools for administering persistent worlds
-- Advanced documentation (guides, diagrams, examples)
-- Server templates
-- Expanded community governance
-- Stabilized contribution process
-
-The project then becomes a **reusable infrastructure**, independent of any official content.
-
----
-
-## Out of Scope
-
-This roadmap **does not include**:
-- "fun-first" gameplay
-- player balancing
-- written narration
-- quests
-- cinematics
-- default content
-- monetization
-- marketing promises
-
-These elements belong to **worlds created from the platform**, not to the platform itself.
-
----
-
-## Guiding Principle
-
-Each step is validated by a single question:
-
-> **Can the world exist, evolve, and persist without a player or client?**
-
-If the answer is no, the foundation is not yet sufficient.
+The inter-node protocol is foundational work in this stage. Ingame netcode is
+not.
+
+## Foundation 3 — Durability and migration gate
+
+**Status: active target; required before first stable contract**
+
+Outcome: the documented guarantees survive common operational failures and
+future kernel releases.
+
+Required work:
+
+- fail closed on full or read-only storage, I/O errors, failed append,
+  synchronization, and rename;
+- distinguish torn-tail recovery from suspicious corruption;
+- preserve coherent snapshot, manifest, confirmed log, and authority metadata;
+- implement bounded retention without command-ID reuse or broken recovery;
+- maintain migrations for kernel-owned data from every stable version;
+- coordinate migration activation across the authority group;
+- require plugin-owned migration paths and exact historical component
+  fingerprints;
+- publish conformance fixtures for accepted and refused versions;
+- document cold backup, restore, diagnosis, and recovery.
+
+## First stable contract
+
+The first stable release occurs only when Gates 1-K and their mandatory
+evidence are complete. It includes:
+
+- minimal runnable distribution;
+- generic owner data and public commands;
+- trusted operator-approved providers loaded at startup;
+- distributed operation on the reference three-node profile;
+- common storage-failure safety;
+- command status and retention;
+- read-only confirmed observation and resynchronization;
+- stable kernel data migrations;
+- a genuine third-party extension.
+
+The stable promise does not include hot loading, plugin isolation, agents,
+multiresolution, rendering, or ingame netcode.
+
+## Evolution 2 — Safe plugin lifecycle
+
+**Status: later**
+
+- isolated application-plugin runtime with explicit permissions;
+- native execution only by operator approval;
+- hot installation, activation, pause, state transfer, replacement, and
+  removal;
+- obligation-aware lifecycle transactions;
+- resource metering and failure containment;
+- component distribution and artifact-management tooling.
+
+The process may stay running during a controlled world pause. No component with
+unresolved owned data or obligations is silently detached.
+
+## Evolution 3 — Operational scale
+
+**Status: later, pulled by real use**
+
+- richer observability and divergence tooling;
+- online backup when a coherent protocol exists;
+- large-history compaction and archival services;
+- load, chaos, and platform matrices derived from declared support profiles;
+- performance work supported by measurements;
+- optional world sharding under a new consistency contract;
+- explicit asynchronous cross-world coordination.
+
+Replication is never advertised as computation scaling unless measurements and
+a dedicated execution contract prove it.
+
+## Optional ecosystem
+
+The community may develop these independently against stable contracts:
+
+- spatial and non-spatial world models;
+- agents, AI systems, economies, and narratives;
+- multiresolution and causal-resolution engines;
+- administration interfaces and observability tools;
+- 2D, 3D, web, Unreal, Godot, or other renderers;
+- ingame netcode, player sessions, prediction, and interpolation;
+- import/export, research, or simulation-specific toolchains.
+
+Seej does not reserve an official implementation or impose application policy
+for these categories.
+
+## Decision rules for roadmap changes
+
+A roadmap change must state:
+
+1. which contract or user need it serves;
+2. whether it changes the first stable promise;
+3. its failure behavior and compatibility impact;
+4. the gap ID and objective evidence;
+5. whether an earlier decision is superseded.
+
+Documentation cannot close a gate. Only committed implementation and
+reproducible evidence can.
