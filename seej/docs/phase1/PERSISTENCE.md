@@ -120,7 +120,8 @@ The target distinguishes:
 2. local durable staging;
 3. confirmed admission with canonical sequence and `Pending` state;
 4. deterministic resolution computation from the confirmed predecessor;
-5. confirmed resolution containing decision, events, and complete transition;
+5. confirmed resolution containing a `Succeeded`, `Refused`, or `Cancelled`
+   decision, events, and complete transition;
 6. one-time state application and public event/status publication.
 
 A local WAL append does not prove distributed confirmation. The authority
@@ -130,9 +131,11 @@ durability and fencing behavior for that rule.
 
 Confirmed admission and resolution records bind world identity, genesis,
 execution profile, authority term, configuration version, full command identity
-and fingerprint, order, decision, events, and state/checkpoint cursor. Recovery
-resumes a confirmed pending admission and never applies an already confirmed
-resolution twice.
+and fingerprint, order, decision, events, and state/checkpoint cursor. An
+authorized cancellation additionally binds its stable control-operation
+identity, requester, reason, and target command. Recovery resumes a confirmed
+pending admission and never recomputes a confirmed terminal decision as new
+work.
 
 ## Retention and compaction
 

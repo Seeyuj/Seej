@@ -97,11 +97,22 @@ Admission rules:
   expired and cannot be reused as a new command.
 
 Admission creates durable `Pending` state without application effects.
-Resolution records `Succeeded` or `Refused`; a successful resolution confirms
-all events and state effects together. `Conflict`, `Expired`, `NotFound`, and
-`Unavailable` are request results rather than stored terminal states. A pending
-command is retained until resolution. Closed kernel-issued generations preserve
-non-reuse after individual terminal results are compacted.
+Resolution records `Succeeded`, `Refused`, or `Cancelled`; a successful
+resolution confirms all events and state effects together. `Conflict`,
+`Expired`, `NotFound`, and `Unavailable` are request results rather than stored
+terminal states. A pending command is retained until resolution. Closed
+kernel-issued generations preserve non-reuse after individual terminal results
+are compacted.
+
+An authorized operator can request a confirmed `CancelCommand` kernel control
+operation for a command that is still `Pending`. It records the target,
+requester, reason, and its own stable identity. Cancellation produces no
+application effects and does not settle application obligations. Normal
+execution and cancellation race only through confirmed order: the first
+terminal resolution wins, and retrying either request returns the durable
+outcome. The kernel control path remains usable when application code is
+unavailable, subject to its own authorization, quorum, limits, compatibility,
+and persistence requirements.
 
 One in-world transaction may call commands owned by multiple plugins. The
 transaction binds to one confirmed base cursor and gives owner sub-commands a
@@ -129,7 +140,9 @@ input.
 Only deterministic contract evaluation can produce a durable `Refused`
 decision. A plugin crash, timeout, missing artifact, or temporarily unavailable
 capability produces no application effects and leaves the admission pending or
-the authority unavailable until it can resume safely.
+the authority unavailable until it can resume safely. An authorized
+`Cancelled` decision remains available as the explicit administrative escape
+path; it is never synthesized from a timeout or crash.
 
 The existing resource and creature degradation behavior is a prototype
 fixture. Before the first stable contract it must execute through the same
@@ -140,6 +153,13 @@ public extension boundary as any third-party world rule.
 Startup activation verifies manifests, permissions, fingerprints,
 dependencies, data versions, and execution compatibility before mutation is
 allowed.
+
+Migration first pauses affected application admissions, then lets commands
+already admitted under the old profile reach a normal terminal result or an
+authorized cancellation. A confirmed barrier fixes the exact source state and
+cursor before conversion. No old-profile application transition may pass that
+barrier. The migrated candidate and target execution profile activate together
+or the old profile remains authoritative.
 
 A component with owned data or active obligations cannot be removed merely by
 unregistering code. Removal or replacement migrates its owned data and either

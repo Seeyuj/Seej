@@ -110,7 +110,10 @@ durably confirmed, no owner effects occur.
 If another confirmed transition makes the base cursor stale, the candidate is
 discarded and the entire transaction is recomputed from its canonical
 predecessor. Execution failure or unavailable plugin code is not a world-law
-refusal and cannot create partial effects.
+refusal and cannot create partial effects. An authorized operator may instead
+resolve a still-pending command as `Cancelled` through the confirmed kernel
+control contract. Cancellation has no application effects and does not resolve
+world obligations.
 
 Events record the accepted causal result. A state change without an admitted
 command and confirmed event chain is invalid. Diagnostic messages and
@@ -190,7 +193,9 @@ plugins cannot claim authority.
   state.
 - **Recover:** load a retained compatible checkpoint and confirmed suffix.
 - **Replicate:** add an authorized copy of the same world through catch-up.
-- **Migrate:** transform explicit data versions at a confirmed boundary.
+- **Migrate:** drain or explicitly cancel affected pending commands, fix the
+  exact source state at a confirmed barrier, and transform explicit data
+  versions for atomic activation.
 - **Re-simulate:** recompute retained transitions with exact components.
 - **Clone:** create a new identity from an exported state.
 - **Archive:** preserve state without requiring it to remain executable; an

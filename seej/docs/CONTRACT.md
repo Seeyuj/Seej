@@ -158,15 +158,29 @@ Command handling has two durable logical records in the confirmed history:
 
 1. **Admission** binds the envelope to a per-world admission sequence and
    creates durable `Pending` state. Admission alone has no application effect.
-2. **Resolution** records `Succeeded` or `Refused` together with the complete
-   event set and state transition. Applying this confirmed record once is the
-   only way command effects become canonical.
+2. **Resolution** records `Succeeded`, `Refused`, or `Cancelled` together with
+   the complete event set and state transition. Applying a successful confirmed
+   record is the only way application effects become canonical. A cancellation
+   has no application effects.
 
 An implementation may confirm admission and resolution in one storage or
 consensus transaction, but the two logical states and their recovery behavior
 remain observable. After recovery, an admitted command without a resolution is
 still `Pending` and is deterministically resumed from its confirmed predecessor.
-A confirmed resolution is never executed again.
+A confirmed terminal decision is never recomputed as new work.
+
+`CancelCommand` is a kernel control operation, not an application-law refusal.
+It identifies the target command, authorized requester, reason, and stable
+control-operation identity. It can resolve only an admitted `Pending` command
+whose terminal resolution has not already been confirmed. The first terminal
+record confirmed in a race between normal execution and cancellation wins;
+retries return that durable result. Cancellation cannot erase confirmed effects
+or discharge an application obligation.
+
+The authority group keeps this bounded control path available when application
+execution is blocked, provided authorization, quorum, compatibility of the
+kernel control contract, limits, and persistence remain available. A plugin is
+never allowed to authorize its own administrative cancellation implicitly.
 
 New commands execute by target tick and then admission sequence. Closing a tick
 is itself confirmed; after that boundary, a new command targeting that tick is
@@ -188,10 +202,10 @@ For one command namespace:
   and cannot be admitted as new;
 - a timeout or unavailable authority result is not a refusal.
 
-Durable command states are `Pending`, `Succeeded`, and `Refused`. `Conflict`,
-`Expired`, `NotFound`, and `Unavailable` are submission or query results and do
-not replace a stored command state. `Unavailable` means the authority group
-cannot answer safely; it is never a fabricated terminal result.
+Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
+`Conflict`, `Expired`, `NotFound`, and `Unavailable` are submission or query
+results and do not replace a stored command state. `Unavailable` means the
+authority group cannot answer safely; it is never a fabricated terminal result.
 
 The persisted limits profile bounds open generations and pending commands. At
 a bound, the authority group limits new admission with a typed non-terminal
@@ -260,11 +274,19 @@ their migrations. Re-simulation refuses to run when an exact referenced
 component is missing. Operators retain plugin artifacts; Seej records their
 references and cryptographic fingerprints.
 
-Migration preparation and activation are separate confirmed phases. A failed
-preparation can be abandoned under the old profile. Confirmation of the new
-profile and migrated state is the activation commit point; after it, recovery
-continues from the new state and any return requires another explicit
-migration. An uncertain activation response is resolved from confirmed history.
+Migration preparation, draining, a final base barrier, and activation are
+separate confirmed phases. Preparation pauses affected application admissions.
+Commands admitted under the old profile then reach a normal terminal decision
+or an authorized `Cancelled` decision. A confirmed `MigrationBarrier` records
+the exact old-profile state and cursor after that drain and prevents further
+affected application transitions. Nodes derive and verify the migrated
+candidate only from this barrier.
+
+Confirmation of the new profile and migrated state against that barrier is the
+activation commit point. Before activation, a confirmed abort under the old
+profile may release the barrier; after activation, recovery continues from the
+new state and any return requires another explicit migration. An uncertain
+activation response is resolved from confirmed history.
 
 **Implemented:** local snapshot + WAL recovery, CRC-protected WAL records, and
 atomic snapshot replacement on the supported path. Format version 3 requires

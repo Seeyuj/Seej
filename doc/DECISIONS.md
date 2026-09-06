@@ -566,9 +566,9 @@ The first stable contract uses these operational semantics:
 
 - A command has a kernel-issued identity namespace opened by a confirmed
   operation. A confirmed Admission creates durable `Pending` state without
-  application effects. A confirmed Resolution atomically records `Succeeded`
-  or `Refused`, events, and the state transition. Recovery resumes pending work
-  and never reapplies a resolution.
+  application effects. A confirmed Resolution atomically records `Succeeded`,
+  `Refused`, or `Cancelled`, events, and the state transition. Recovery resumes
+  pending work and never recomputes a confirmed terminal decision as new work.
 - Status retention is measured in canonical ticks. Pending commands never
   expire. Confirmed closure of kernel-issued generations creates durable
   non-reusable expired namespaces without retaining every terminal result.
@@ -586,10 +586,11 @@ The first stable contract uses these operational semantics:
 - A current-confirmed read requires a quorum authority barrier in the active
   term and configuration, plus local application through its cursor. A
   resynchronization state and cursor describe one retained confirmed cut.
-- Migration preparation and activation are separate. Preparation may abort
-  under the old profile. Once new profile and migrated state are confirmed
-  together, recovery continues from the new state; return requires another
-  explicit migration.
+- Migration preparation, pending-command drain, a final source-state barrier,
+  and activation are separate. Preparation may abort under the old profile.
+  Once the barrier, new profile, and migrated state are confirmed together,
+  recovery continues from the new state; return requires another explicit
+  migration.
 - Minimum causal linkage, cold backup/restore evidence, and a baseline recovery
   procedure are first-stable requirements. Rich diagnosis, online backup, and
   load hardening remain usage-triggered work.
@@ -599,6 +600,13 @@ The first stable contract uses these operational semantics:
   promises.
 
 These statements are target contracts. D-013 closes no implementation gap.
+
+### Amendment by D-014
+
+D-014 defines the authorized cancellation escape path, fixes the migration
+source at a post-drain barrier, and forbids implicit voter demotion during
+migration. Those clauses replace the less specific D-013 wording above where
+they overlap.
 
 ### Decision coverage
 
@@ -617,6 +625,7 @@ These statements are target contracts. D-013 closes no implementation gap.
 | D-011 — contract-first kernel | Superseded scheduling retained in D-012 | K-01 and Gate 1-K |
 | D-012 — distributed extensible kernel | Root, node, plugin, and world contracts | K-01 through K-10 |
 | D-013 — operational failure semantics | Command, transaction, network, migration, and retention clauses | K-02, K-06 through K-10, P1-20, P2-02, P2-03 |
+| D-014 — cancellation and migration barriers | Kernel control, migration, and membership clauses | K-07, K-08, K-09 |
 
 ### Audit-correction traceability
 
@@ -670,6 +679,50 @@ behavior.
   including membership, reads, recovery, and compaction.
 - No checklist item is complete because D-013 exists; executable evidence is
   still required before contract freeze.
+
+---
+
+## D-014 — Command Cancellation and Migration Barriers
+
+**Status**: Accepted
+
+### Context
+
+A plugin can fail indefinitely after one of its commands becomes durably
+`Pending`. Requiring every pending command to resolve before replacing that
+plugin creates a recovery deadlock. Migration preparation also cannot name its
+final source state before already admitted work finishes, and an unavailable
+configured voter cannot silently become a learner without changing quorum
+semantics.
+
+### Decision
+
+- An authorized operator can submit an identified, confirmed kernel control
+  operation that resolves a still-pending command as `Cancelled`. It records
+  requester and reason, has no application effects, and cannot erase confirmed
+  effects or settle application obligations.
+- Normal execution and cancellation race through confirmed order. The first
+  terminal resolution wins; retries return the durable outcome.
+- Migration prepares and pauses new affected admissions, drains normal work or
+  uses explicit cancellation, then confirms a `MigrationBarrier` containing the
+  exact final old-profile cursor and state. Conversion begins only from that
+  barrier.
+- Migration and membership changes are serialized. Authority terms may advance
+  through elections, but the configuration version remains fixed until
+  activation or abort.
+- An absent or incompatible configured voter retains its configured role and
+  quorum weight. It cannot participate until compatible and caught up. Removal
+  or demotion requires a confirmed membership transition.
+
+### Consequences
+
+- Kernel control operations require their own authorization, limits,
+  idempotency, persistence, and quorum confirmation.
+- A broken application component cannot force the kernel to invent a business
+  refusal or make its own replacement impossible.
+- Migration evidence must cover cancellation races, mutations between prepare
+  and barrier, stable membership, activation, abort, and recovery.
+- These are target semantics. D-014 closes no implementation gap.
 
 ---
 

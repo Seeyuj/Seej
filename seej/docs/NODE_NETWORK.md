@@ -39,8 +39,11 @@ use a Raft-style protocol; its wire format is not the public plugin contract.
   non-voting learner, verifies the execution profile, and catches up before it
   can enter a voting configuration. A returning voter recovers its durable
   term, vote, configuration, and confirmed log before participating under the
-  consensus protocol. No node serves current reads until it has applied the
-  required confirmed prefix.
+  consensus protocol. A configured voter that is offline or temporarily
+  incompatible does not become a learner implicitly: it remains part of the
+  quorum denominator but cannot vote until compatible and caught up. Removing
+  or demoting it requires the confirmed membership-transition protocol. No node
+  serves current reads until it has applied the required confirmed prefix.
 
 Authentication, credential formats, and transport encryption are deployment
 concerns described by the security policy. They must bind a connection to an
@@ -162,23 +165,40 @@ An incompatible node cannot vote, confirm mutations, or claim a current read.
 
 A coordinated migration has explicit confirmed phases:
 
-1. `MigrationPrepare` identifies the old and target profiles, base cursor,
-   conversion steps, and required artifacts under the old profile. New affected
-   admissions pause, and every pending command bound to the old profile reaches
-   a terminal resolution before activation.
-2. Nodes needed for the active configuration's quorum verify the target
+1. `MigrationPrepare` identifies the old and target profiles, affected
+   capabilities, conversion steps, required artifacts, and active configuration
+   version under the old profile. New affected application admissions pause.
+   The prepare record does not yet choose the source state for conversion.
+2. Every pending command bound to the affected old profile reaches
+   `Succeeded`, `Refused`, or an explicitly authorized `Cancelled` resolution.
+   Cancellation is a confirmed kernel control operation and never an inferred
+   result of plugin failure.
+3. `MigrationBarrier` fixes the exact old-profile state, semantic hash, and
+   confirmed cursor after the drain. Affected ticks and application transitions
+   cannot pass this barrier.
+4. Nodes needed for the active configuration's quorum verify the target
    artifacts and deterministically derive the same candidate state and semantic
-   hash. Offline nodes do not block activation; they rejoin as learners and
-   catch up under the new profile.
-3. `MigrationActivate` confirms the target profile and migrated state together.
-   This is the activation commit point; mixed-profile mutation remains refused.
+   hash from that barrier.
+5. `MigrationActivate` confirms the barrier reference, target profile, and
+   migrated state together. This is the activation commit point;
+   mixed-profile mutation remains refused.
 
-Before `MigrationActivate` commits, a failed preparation can be abandoned by a
-confirmed abort under the old profile, leaving the old state authoritative.
-After it commits, the new profile and state are authoritative and recovery must
-finish installing or loading them. An uncertain response is resolved by reading
-confirmed history. Returning to the old profile requires a separately declared
-and confirmed migration; it is never an automatic rollback.
+Membership changes and migration are serialized. The configured voter set and
+configuration version remain fixed from preparation through activation or
+confirmed abort; if membership must change, the migration aborts and restarts
+under the new confirmed configuration. Elections may still change the
+authority term. An absent configured voter remains a voter in the confirmed
+configuration and therefore in quorum calculation, but cannot participate or
+serve current reads until it installs the active profile and catches up. A
+confirmed joint membership transition is required to remove or demote it.
+
+Before `MigrationActivate` commits, a failed preparation or barrier can be
+abandoned by a confirmed abort under the old profile, releasing the admission
+and progression pause while leaving the old state authoritative. After
+activation commits, the new profile and state are authoritative and recovery
+must finish installing or loading them. An uncertain response is resolved by
+reading confirmed history. Returning to the old profile requires a separately
+declared and confirmed migration; it is never an automatic rollback.
 
 ## 9. First stable evidence
 
@@ -197,7 +217,12 @@ Gap `K-07` requires executable evidence for:
 - incompatible node or plugin profile refusal;
 - current-read refusal by an isolated former coordinator;
 - observation resynchronization without a gap while compaction advances;
-- migration failure before activation and recovery after activation commit.
+- migration failure before activation and recovery after activation commit;
+- cancellation racing normal resolution without two terminal outcomes;
+- migration draining a blocked command through authorized cancellation;
+- a mutation finishing after preparation but before the final source barrier;
+- an absent configured voter returning under the activated profile without an
+  implicit membership change.
 
 Until that evidence exists, every distributed behavior in this document is a
 target rather than an implemented claim.

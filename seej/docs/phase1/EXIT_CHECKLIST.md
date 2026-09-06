@@ -81,12 +81,14 @@ Every item in this section blocks the first stable contract.
   terminal resolution. Prove recovery before admission, between admission and
   resolution, and after resolution before reply; also prove retry without
   duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
-  confirmed generation opening/closure, and non-reusable expired IDs.
+  authorized cancellation, a cancellation/execution race with one durable
+  winner, confirmed generation opening/closure, and non-reusable expired IDs.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
-  preparation, activation commit, pre-activation abort, post-activation
-  recovery, refusal of mixed profiles, and missing/incompatible plugin
-  blocking.
+  preparation, pending-command drain or cancellation, a final source-state
+  barrier, activation commit, pre-activation abort, post-activation recovery,
+  refusal of mixed profiles, stable membership during migration, and
+  missing/incompatible plugin blocking.
 - [ ] **K-10: Retention and recovery points.** Implement a declared bounded
   retention policy preserving current state, obligations, recovery, stable
   command-ID expiration, semantic continuity, and observer resynchronization.
@@ -246,8 +248,12 @@ The reference distributed test matrix must include:
 | Full group restarts | Recovers one term/configuration/history without local configuration overriding confirmed membership. |
 | Profile mismatch | Node is denied authority and current-read claims. |
 | Migration preparation fails | A confirmed abort preserves the old profile before activation. |
+| Command remains blocked during migration | An authorized confirmed cancellation resolves only the still-pending command and permits the final migration barrier. |
+| Cancellation races normal execution | Confirmed order yields exactly one terminal decision and retries return it. |
+| Command finishes after migration preparation | Its effects precede and are included in the confirmed source-state barrier. |
 | Migration activation reply is lost | Confirmed history decides whether old or new profile is authoritative. |
 | Node fails after migration activation | Recovery finishes on the confirmed new profile; no implicit rollback occurs. |
+| Configured voter is absent during activation | Its configured role and quorum weight remain; participation resumes only after compatibility and catch-up, or changes through explicit joint reconfiguration. |
 
 ## Platform durability note
 

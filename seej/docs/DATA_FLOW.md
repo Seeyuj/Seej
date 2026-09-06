@@ -49,7 +49,7 @@ pure transition engine
   v
 authority group confirms one Resolution record
   |
-  +--> Succeeded or Refused + complete events/transition
+  +--> Succeeded, Refused, or Cancelled + complete events/transition
   +--> apply a successful confirmed transition once
   +--> publish confirmed events/cursor/freshness
 ```
@@ -71,6 +71,12 @@ If a node fails after admission and before resolution, the next coordinator
 finds `Pending` in confirmed history and recomputes from the same confirmed
 predecessor and execution profile. If it fails after resolution and before the
 reply, the durable resolution is returned without reapplying effects.
+
+An authorized `CancelCommand` follows the kernel control path. It identifies
+the requester, reason, target command, and its own stable identity. It can win
+only while the target is `Pending`; whichever terminal resolution is confirmed
+first wins the race, and retries return that result. Cancellation has no
+application effects and cannot erase obligations or already confirmed state.
 
 ## Command retry flow
 
@@ -143,17 +149,29 @@ canonical simulation.
 
 ## Migration flow
 
-A confirmed `MigrationPrepare` identifies the old and target execution
-profiles, base cursor, and all kernel/plugin steps. The group pauses affected
-admission, resolves pending old-profile commands, and has the quorum required
-by the active configuration verify artifacts, candidate state, and semantic
-hash. A confirmed `MigrationActivate` commits the new profile and state
-together, then progression resumes.
+1. A confirmed `MigrationPrepare` identifies the old and target execution
+   profiles, affected capabilities, conversion steps, required artifacts, and
+   active membership configuration. It pauses new affected application
+   admissions but does not yet select the conversion state.
+2. Commands already admitted under the old profile reach `Succeeded`,
+   `Refused`, or an explicitly authorized `Cancelled` decision. Application
+   failure alone never manufactures a terminal result.
+3. A confirmed `MigrationBarrier` fixes the final old-profile source cursor and
+   semantic state after every affected command is terminal. Affected ticks and
+   application transitions cannot pass that barrier.
+4. The quorum required by the unchanged active configuration verifies target
+   artifacts and derives the same migrated candidate and semantic hash from the
+   barrier.
+5. A confirmed `MigrationActivate` binds the barrier, target profile, and
+   migrated state atomically, then progression resumes.
 
-A failure before activation can produce a confirmed abort under the old
-profile. A failure after activation recovers the new state. An uncertain reply
-is resolved from confirmed history; returning to the old profile is a new
-explicit migration.
+Membership changes and migration are serialized; a configuration change makes
+an unfinished migration abort and restart under the new confirmed
+configuration. Elections and authority terms may still advance. A failure
+before activation can produce a confirmed abort under the old profile. A
+failure after activation recovers the new state. An uncertain reply is resolved
+from confirmed history; returning to the old profile is a new explicit
+migration.
 
 No current binary implements this distributed flow. Its evidence is tracked by
 the exit checklist.
