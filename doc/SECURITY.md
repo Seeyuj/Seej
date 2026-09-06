@@ -1,184 +1,185 @@
 # Security Policy
 
-## Purpose
+Security is a structural property of Seej's authority, persistence, provider,
+and compatibility contracts. A corrupted canonical world is worse than an
+explicitly unavailable world.
 
-This document defines the security policy for the **Seej** project.
+## Scope
 
-## Navigation
+The project security scope includes maintained Seej code and bundled
+fundamental providers:
 
-- [`README.md`](../README.md)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- [`DECISIONS.md`](DECISIONS.md)
-- [`ROADMAP.md`](ROADMAP.md)
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-- [`SECURITY.md`](SECURITY.md)
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- pure transition and validation logic;
+- local and distributed persistence;
+- node identity, admission, membership, authority epochs, and replication;
+- public command, observation, provider, and plugin boundaries;
+- migrations, retention, backup, recovery, and operator tools;
+- build and dependency controls maintained by the repository.
 
-The objectives of this policy are to:
+Community plugins, renderers, ingame clients, custom deployment systems, and
+third-party services are not maintained by Seej unless explicitly adopted.
+Vulnerabilities in Seej's isolation, permission, validation, or plugin boundary
+remain in scope even when a third-party plugin triggers them.
 
-- protect the integrity of the **simulation core**;
-- guarantee the **coherence and persistence** of simulated worlds;
-- frame the **responsible disclosure** of vulnerabilities;
-- clarify the **scope of responsibility** of the project.
+Operators remain responsible for host security, network policy, credentials,
+backup custody, approved plugins, and deployment-specific availability.
 
-Security is considered a **structural requirement**, on par with persistence, determinism, and maintainability.
+## Current and target security posture
 
----
+The current repository is a local, single-writer prototype. It does not
+implement distributed node authentication, consensus, generic plugin
+isolation, or hot loading.
 
-## Security Scope
+The first distributed reference profile trusts admitted operators and handles
+crash faults, storage failures, and network partitions. It is not Byzantine or
+permissionless. A malicious authorized kernel node is outside that first fault
+model, while privilege bypass, unauthenticated admission, message tampering,
+and stale-authority writes remain security defects.
 
-### Included in Scope
+The first stable release may execute only trusted providers explicitly approved
+by the operator at startup. Isolated application-plugin execution is later.
+Until it exists, native plugins have process-level privileges and must not be
+described as sandboxed.
 
-The security policy covers:
+## Assets and invariants
 
-- the **server simulation core**;
-- **disk persistence** mechanisms;
-- public APIs exposed by the server;
-- world state, entity, and rule management;
-- official tools provided with the core (CLI, scripts, server utilities).
+Protect at least:
 
-### Out of Scope
+- one confirmed history and stable identity per world;
+- command identity, order, status, and non-reuse after expiration;
+- checkpoint, retained history, active obligations, and migration metadata;
+- authority membership and monotonic fencing epochs;
+- component manifests, versions, and artifact fingerprints;
+- credentials, signing material, and transport keys;
+- operator diagnostics that may contain sensitive world metadata.
 
-**Not** covered by this policy:
+Security-sensitive code must fail explicitly. Diagnostic logs are not a
+canonical store and must not contain secrets.
 
-- graphical clients (Unreal, Godot, Web, etc.);
-- third-party modules or extensions;
-- specific rules defined by a community server;
-- custom deployments (cloud, bare metal, containers);
-- content, scripts, or assets produced by third parties.
+## Trust boundaries
 
-Each world operator is responsible for the security of their execution environment.
+### Nodes
 
----
+Discovery does not grant authority. Membership is an explicit confirmed
+operation. Connections bind to an authenticated `node_id`, authorized world,
+authority epoch, and compatible execution profile.
 
-## Threat Model (Principles)
+A stale or minority node cannot confirm mutations or claim a current read.
+Messages are bounded, authenticated, replay-protected as required, and checked
+against world and profile identity.
 
-The project is based on the following assumptions:
+### Producers and observers
 
-- the **server is authoritative** and trusts no client;
-- the client is considered **potentially hostile**;
-- all incoming data is **untrusted by default**;
-- persistence is a **critical asset** (loss or corruption = major incident).
+Every external input is untrusted. Authenticate and authorize as required by
+world policy, enforce payload/cardinality limits, validate before canonical
+execution, and avoid error details that expose secrets.
 
-Contributions must respect these principles and never introduce logic that weakens this model.
+Observers receive only permitted domains and a confirmed cursor with freshness.
+Read activity cannot mutate state or weaken simulation behavior.
 
----
+### Providers and plugins
 
-## Expected Security Best Practices
+Installation does not imply permission. Manifests declare capabilities,
+ownership, dependencies, limits, permissions, versions, migrations, and
+fingerprints.
 
-Contributors are required to follow these rules:
-These requirements complement those described in `CONTRIBUTING.md`.
+A plugin cannot directly mutate another owner's data. Opaque payloads remain
+bounded and integrity-protected. Removal cannot discard active obligations.
+Missing or mismatched required artifacts block activation, migration, or
+re-simulation.
 
-### Server Side
+### Storage
 
-- strict input validation;
-- absence of critical logic on the client side;
-- clear separation between persistent and transient data;
-- refusal of any uncontrolled network dependency;
-- no hardcoded secrets (tokens, keys, identifiers).
+Persistence errors fail closed. Full/read-only media, append, synchronization,
+rename, and generic I/O failures cannot produce reported success or accepted
+memory-only state. Torn-tail recovery is distinct from suspicious corruption
+and operator repair.
 
-### Code and Architecture
+Storage CRC and semantic state hashes are integrity tools, not peer
+authentication or signatures.
 
-- code readability and auditability;
-- determinism of critical systems;
-- clear logging of errors impacting world state;
-- explicit failure handling (I/O, corruption, invalid states).
+## Security requirements
 
-Complex but opaque code will be rejected, even if functional.
-
----
-
-## Vulnerability Reporting
-
-### ⚠️ Do Not Open a Public Issue
-
-Security vulnerabilities **must not** be reported via public issues, discussions, or pull requests.
-
-This includes notably:
-
-- corruption or loss of persistent data;
-- privilege escalation;
-- bypass of server authority;
-- arbitrary code execution;
-- denial of service impacting persistent simulation.
-
-### Reporting Channel
-
-Please report any vulnerability responsibly via:
-
-**Email:** `security@seej.org`
-
-For general contribution rules (issues, PR, workflow), see `CONTRIBUTING.md` — except for vulnerabilities, which must follow this document.
-
-The message must include:
-
-- a clear description of the problem;
-- the impacted scope;
-- reproduction steps if possible;
-- potential impact on simulation or persistence.
-
----
-
-## Processing Process
-
-Maintainers commit to:
-
-1. acknowledge receipt of the report;
-2. analyze impact and severity;
-3. propose a fix or mitigation;
-4. publish a correction within a reasonable timeframe.
-
-No correction date is guaranteed, but critical vulnerabilities are treated as a priority.
-
----
-
-## Responsible Disclosure
-
-Contributors and security researchers commit to:
-
-- not exploit the vulnerability publicly;
-- not disclose details before correction;
-- cooperate with maintainers if necessary.
-
-Any premature disclosure or voluntary public exploit may result in exclusion from the project.
-
----
-
-## Supported Versions
-
-As the project is in the foundation phase:
-
-- only the **active main branch** is supported;
-- no security backward compatibility is guaranteed on obsolete versions;
-- fixes are applied to the current development version.
-
-World operators are responsible for keeping their instance up to date.
-
----
-
-## Server Operator Responsibility
-
-Server administrators must:
-
-- secure their operating system;
-- control network access;
-- manage offline backups;
-- audit third-party modules used;
-- monitor logs and metrics.
-
-The project cannot be held responsible for an incident related to poor configuration or an external module.
-
----
-
-## Philosophy
-
-The project's security rests on a simple principle:
-
-> **A corrupted persistent world is worse than an unavailable world.**
-
-Any security decision will prioritize:
-- data integrity;
-- simulation coherence;
-- long-term robustness.
-
-Security is not an optional feature.
+Contributions affecting a trust boundary must consider:
+
+- authentication and authorization;
+- least privilege and explicit permissions;
+- input and resource bounds;
+- denial of service and backpressure;
+- duplicate, delayed, reordered, and replayed messages;
+- command retry and timeout ambiguity;
+- stale authority and split-brain resistance;
+- storage failure and crash consistency;
+- migration rollback and mixed-version refusal;
+- dependency and artifact provenance;
+- secret handling and diagnostic redaction.
+
+Do not hardcode keys, tokens, credentials, or stable deployment identities.
+CORS or network location is not authorization.
+
+## Vulnerability reporting
+
+Do not report a vulnerability through a public issue, discussion, pull request,
+or other public channel.
+
+Report privately by email:
+
+**security@seej.org**
+
+Include:
+
+- a clear description and affected version or commit;
+- impacted boundary and potential world-state consequences;
+- reproduction steps or proof of concept when safe;
+- whether confidentiality, integrity, authority, or availability is affected;
+- suggested mitigation when available.
+
+Examples include persistent-data loss or corruption, authority bypass,
+unauthorized node admission, stale writes, command duplication, permission
+escape, arbitrary code execution, secret disclosure, or denial of service that
+can compromise durable state.
+
+Maintainers will acknowledge, assess, coordinate a fix or mitigation, and
+publish information when appropriate. No fixed response or correction time is
+guaranteed.
+
+Researchers should avoid accessing unrelated data, damaging worlds, retaining
+secrets, or disclosing exploitable details before coordinated remediation.
+
+## Supported versions and migrations
+
+During the foundation phase, only the active development line is supported for
+security fixes. After stable releases exist, the project will publish an
+explicit supported-version policy.
+
+The contract promise to migrate kernel-owned data from every stable format does
+not promise indefinite security maintenance of every old executable. Operators
+may need to perform supported stepwise migrations to reach a maintained
+release.
+
+Plugin security support and data migrations remain the plugin publisher's
+responsibility. Seej refuses incompatible activation but cannot supply missing
+third-party fixes or artifacts.
+
+## Operator responsibilities
+
+Operators must:
+
+- secure hosts, accounts, credentials, and transport endpoints;
+- authorize nodes and plugins using least privilege;
+- retain recovery data and required historical plugin artifacts;
+- test restore and migration procedures;
+- monitor quorum, storage health, authority changes, and failed validation;
+- keep maintained components updated;
+- isolate native plugins at the deployment level until Seej sandboxing exists;
+- follow the documented recovery process instead of silently repairing
+  suspicious evidence.
+
+## Related documents
+
+- [Decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel)
+- [Node-network contract](../seej/docs/NODE_NETWORK.md)
+- [Plugin contract](../seej/docs/PLUGIN_CONTRACT.md)
+- [Persistence behavior](../seej/docs/phase1/PERSISTENCE.md)
+- [Exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md)
+- [Contribution guide](../CONTRIBUTING.md)

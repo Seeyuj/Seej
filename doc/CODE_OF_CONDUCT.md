@@ -12,7 +12,8 @@
 
 ## Purpose
 
-This project aims to provide an **open-source infrastructure for simulating persistent sandbox worlds**, maintainable in the long term.
+This project provides open-source infrastructure for deterministic, persistent
+worlds through a distributed kernel and an open extension ecosystem.
 
 This code of conduct aims to ensure:
 - constructive technical exchanges;
@@ -58,7 +59,8 @@ Contributors must understand that:
 - maintainers contribute on their own time;
 - there is no obligation for immediate response;
 - no contribution is guaranteed to be accepted;
-- no public roadmap is contractual.
+- the published roadmap expresses technical priorities, not a delivery-date
+  guarantee.
 
 Any attempt at pressure, repeated insistence, or circumvention of governance decisions is contrary to the project's spirit.
 
@@ -93,6 +95,10 @@ A contribution may be rejected:
 - without prolonged debate.
 
 Decisions are made in the interest of the project in the long term, not to satisfy an immediate consensus.
+
+Architecture disputes are resolved against the accepted decision log and
+public contracts. Application preferences that the kernel deliberately leaves
+to world authors are not grounds for excluding a respectful contribution.
 
 ---
 

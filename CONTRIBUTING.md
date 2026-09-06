@@ -1,589 +1,208 @@
 # Contribution Guide
 
-Thank you for your interest in this project.
+Seej is a distributed, extensible world kernel for deterministic persistent
+worlds. Contributions are evaluated against the public contracts, decision
+history, current release gate, and actual repository behavior.
 
-Before any contribution (code, documentation, ideas, issues, discussions), please read the [`README.md`](README.md) and ensure that your proposal aligns with the repository's objective: **providing a simulation core for persistent sandbox worlds**, maintainable in the long term.
+Start with:
 
-This repository is neither a video game, nor a graphics engine, nor a narrative RPG. The project's priority is **systemic coherence**, **core stability**, **real persistence** of the simulated world, and **maintainability over several years**.
+- [project overview](README.md);
+- [decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel);
+- [architecture](doc/ARCHITECTURE.md);
+- [kernel contract](seej/docs/CONTRACT.md);
+- [exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md);
+- [security policy](doc/SECURITY.md);
+- [code of conduct](doc/CODE_OF_CONDUCT.md).
 
-Some contributions, even technically correct, may be rejected if they do not serve the project's vision and architecture.
+Report security vulnerabilities privately as described by the security policy,
+not through a public issue or pull request.
 
-## Navigation
+## Project principles
 
-- [`README.md`](README.md)
-- [`ARCHITECTURE.md`](doc/ARCHITECTURE.md)
-- [`DECISIONS.md`](doc/DECISIONS.md)
-- [`ROADMAP.md`](doc/ROADMAP.md)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`SECURITY.md`](doc/SECURITY.md)
-- [`CODE_OF_CONDUCT.md`](doc/CODE_OF_CONDUCT.md)
+### One authoritative history per world
 
-## Table of Contents
+Authority belongs to the explicitly authorized kernel node group. Clients,
+observers, and application plugins cannot bypass admission, validation,
+ownership, durable confirmation, or authority epochs.
 
-- [Before Contributing](#before-contributing)
-- [Security (Responsible Disclosure)](#security-responsible-disclosure)
-- [Project Philosophy and Principles](#project-philosophy-and-principles)
-  - [Simulation Before Narration](#simulation-before-narration)
-  - [Autonomous World Not Centered on the Player](#autonomous-world-not-centered-on-the-player)
-  - [Authoritative Server and Real Persistence](#authoritative-server-and-real-persistence)
-  - [Pragmatic Deterministic and Explainable AI](#pragmatic-deterministic-and-explainable-ai)
-  - [Strict Modularity and Controlled Extensibility](#strict-modularity-and-controlled-extensibility)
-  - [Strict Separation Between Simulation and Rendering](#strict-separation-between-simulation-and-rendering)
-  - [Platform Before Content](#platform-before-content)
-- [Accepted Contribution Types](#accepted-contribution-types)
-- [Good First Contributions](#good-first-contributions)
-- [Explicitly Rejected Contributions](#explicitly-rejected-contributions)
-- [Architecture Technical Rules and Constraints](#architecture-technical-rules-and-constraints)
-- [Contribution Workflow](#contribution-workflow)
-- [Validation Process and Governance](#validation-process-and-governance)
-- [Code of Conduct and Communication](#code-of-conduct-and-communication)
+A local deployment uses a one-node group. A multi-node deployment follows the
+same public semantics. Kernel networking is foundational; ingame netcode is an
+application plugin.
 
-## Before Contributing
+### Pure deterministic transitions
 
-By contributing to this repository, you accept that:
+For equal confirmed state, ordered command, tick, and active contracts, the
+pure engine produces the same decision and events. Core transitions cannot
+depend on wall clock, packet timing, filesystem ordering, ambient randomness,
+thread scheduling, or observer activity.
 
-- **simulation** and **persistence** take precedence over narration or rendering;
-- the **server** remains the sole authority on world state;
-- systems must be **explainable**, **deterministic**, and **decoupled**;
-- project governance prioritizes **coherence** over speed.
+External services and generative systems are allowed as extensions. Their
+results become untrusted, bounded, validated, persisted commands before
+affecting canonical state.
 
-If these principles do not match your expectations or approach, this project is probably not suited to your contribution — and this choice is perfectly legitimate.
+### Explicit durability and compatibility
 
-To maximize acceptance chances:
+Never report a canonical success before the configured durable confirmation.
+Recovery, re-simulation, migration, clone, backup, and repair are separate
+operations with explicit behavior.
 
-- **For a significant modification** (new feature, core change, major refactoring), first open an issue or discussion. *(Exception: security vulnerabilities — see `SECURITY.md`.)*
-- **One Pull Request = one objective**: avoid "catch-all" changes.
-- **Explain the why**: context and systemic impact matter as much as code.
+Stable kernel-owned data needs a migration path. Plugin authors own their data
+migrations. Replay-affecting contract changes are versioned and cannot be
+hidden inside an internal refactor.
 
-## Security (Responsible Disclosure)
+### Kernel and ecosystem
 
-Security vulnerabilities **must not** be reported via public issues, discussions, or pull requests.
+The minimal distribution supplies fundamental providers, but storage,
+scheduling, validation, membership, and replication remain replaceable behind
+contracts. Agents, economies, space, multiresolution, rendering, interfaces,
+and ingame netcode are optional community capabilities.
 
-Please follow the procedure and reporting channel described in [`SECURITY.md`](doc/SECURITY.md).
+The kernel does not impose an ontology, narration style, economic law,
+mortality rule, or human privilege. A world extension can define any of those
+when it respects deterministic admission, validation, persistence, ownership,
+and compatibility.
 
-## Project Philosophy and Principles
+### Observation neutrality
 
-This platform is based on a set of structural principles that guide all technical, architectural, and organizational decisions. Any contribution is evaluated against these principles.
+Read-only activity never changes canonical priority, fidelity, tick rate, or
+outcomes. Limit readers under load before changing simulation semantics.
 
-### Simulation Before Narration
+## Current priority
 
-The project's heart is a **persistent simulation engine**.
+The repository has a working local spatial prototype. The current priority is
+the first stable distributed kernel gate:
 
-The world exists, evolves, and transforms independently of any human or player presence. No scenario, no imposed narration, no predefined "path" structures the world's functioning.
+- generic owner domains and commands;
+- trusted startup providers and provider conformance;
+- durable command identity, ordering, status, and retention;
+- common storage-failure safety;
+- one- and three-node authority evidence;
+- confirmed observation;
+- migrations and compatibility fixtures;
+- one real third-party data-owning extension.
 
-Stories, narratives, and situations emerge exclusively from simulated systems (time, resources, entities, conflicts, interactions).
+The current zone/entity/degradation implementation is evidence to preserve
+during extraction, not a universal model to expand.
 
-Any contribution introducing imposed, linear, or player-centered narrative logic will be rejected.
+Hot loading, isolated plugin execution, sharding, official agents, official
+rendering, and ingame netcode are later or community work.
 
-### Autonomous World Not Centered on the Player
+## Useful contribution types
 
-The player is never a central, indispensable, or privileged entity.
+High-value contributions include:
 
-The world:
+- fixes with a precise failure scenario and regression test;
+- deterministic transition, replay, and migration fixtures;
+- injected storage and distributed-failure tests;
+- public schema and compatibility tooling;
+- provider conformance harnesses;
+- read-only diagnostics and confirmed observation;
+- bounded input, resource, and persistence limits;
+- backup, recovery, and incident documentation;
+- security improvements to membership, permissions, and artifact validation;
+- performance work based on measurements and preserved semantics;
+- example extensions using only public contracts.
 
-- continues to evolve in the absence of players;
-- does not pause;
-- does not artificially adapt to human presence.
+Application plugins are welcome as ecosystem projects or contract fixtures.
+They are not merged into the kernel merely because they are useful.
 
-Players, like NPCs, are actors among others, subject to the same systemic rules.
+## Changes that will be rejected
 
-Any contribution assuming a "hero", a unique role, or special treatment of the player is incompatible with this project.
+A contribution is incompatible when it:
 
-### Authoritative Server and Real Persistence
+- places graphics, player sessions, or application rules inside `sy_core`;
+- lets a client, observer, discovered peer, or plugin mutate state directly;
+- treats local append as distributed confirmation;
+- creates two writable canonical histories during a partition;
+- uses network arrival order or wall time as an implicit transition input;
+- lets a plugin edit another owner's data without a public command;
+- silently drops opaque data, unknown required variants, or active obligations;
+- silently retargets a late command or reuses an expired command ID;
+- performs an implicit migration or continues with incompatible components;
+- presents a target design as implemented behavior;
+- adds default world content or one application ontology to the kernel;
+- couples kernel operation to a particular renderer or closed client stack.
 
-The server is the sole authority on world state.
+Narrative, player-centered, generative, spatial, or game-oriented behavior is
+not rejected as community application work. It is rejected only when proposed
+as a mandatory kernel policy or when it bypasses the kernel contracts.
 
-This implies:
+## Architecture rules
 
-- no critical logic must be executed on the client side;
-- the client is a consumer of world state, never a decision-maker;
-- persistence is ensured on disk, explicitly and traceably.
+The current dependency rules live in
+[seej/docs/DEPENDENCY_RULES.md](seej/docs/DEPENDENCY_RULES.md).
 
-Mechanisms relying on volatile, temporary, or implicitly recomputed states are prohibited for the simulation core.
+`sy_core` depends only on `sy_types` and `sy_api`. It performs no real I/O.
+Node networking and persistence belong in infrastructure/runtime layers.
+Application plugins depend on public contracts rather than kernel internals.
+Ingame netcode cannot become the node-replication protocol.
 
-### Pragmatic Deterministic and Explainable AI
+Persisted DTOs and public schemas do not inherit stability accidentally from
+serde over internal Rust enums. Define explicit versions, limits, unknown
+handling, migrations, and golden fixtures.
 
-Non-player entities are **agents** defined by:
+Before the first stable contract, trusted providers may be statically linked or
+selected at startup. Do not introduce a partial hot-loader or sandbox and call
+the lifecycle complete.
 
-- needs;
-- objectives;
-- memory;
-- explainable decision rules.
+## Validation
 
-The project does not aim to create "magical" or opaque AI. Behaviors must be reproducible, observable, and debuggable.
+Run Rust commands from `seej/server/` with the pinned toolchain. Select checks
+proportionate to the change; CI remains the source of the complete matrix.
 
-Probabilistic or generative approaches may exist **on the periphery**, but never at the heart of persistent simulation.
+Common commands:
 
-### Strict Modularity and Controlled Extensibility
+```bash
+cargo check --workspace --all-targets
+cargo fmt --all --check
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
+```
 
-The project core must remain:
-
-- minimal;
-- stable;
-- decoupled;
-- maintainable in the long term.
-
-Any non-essential feature must be implemented as an **optional module**, clearly isolated from the simulation core.
-
-Modules:
-
-- use public APIs exposed for extension;
-- do not bypass the core;
-- can be activated, deactivated, or replaced without compromising the world.
-
-In the current Phase 1 workspace, `mods/*` and `sy_protocol` remain deferred.
-Contributions should first close the Phase 1 hardening gaps listed in
-[`seej/docs/phase1/EXIT_CHECKLIST.md`](seej/docs/phase1/EXIT_CHECKLIST.md)
-before expanding extension or network scope.
-
-### Strict Separation Between Simulation and Rendering
-
-World simulation is totally independent of any rendering technology.
-
-The project may define a reference graphics standard, but this standard:
-
-- never dictates simulation rules;
-- introduces no graphics dependency in the server;
-- remains a consumer of the simulated world.
-
-Any contribution directly coupling simulation logic to a graphics engine will be rejected.
-
-### Platform Before Content
-
-The project provides **systems**, **rules**, and **tools**, not ready-made experiences.
-
-Content (worlds, factions, scripts, assets, specific rules) is left to servers, creators, and communities.
-
-Contributions adding "default" content to the detriment of platform robustness are not prioritized.
-
-## Accepted Contribution Types
-
-The project accepts and encourages contributions that strengthen the platform's stability, coherence, and sustainability.
-
-## Good First Contributions
-
-If you want to contribute quickly with high acceptance probability, start with small, verifiable work directly aligned with Phase 1:
-
-- replay validation tests (snapshot cursor + WAL boundary cases);
-- persistence documentation improvements (snapshot/WAL/recovery behavior);
-- CLI inspection improvements (`sy_cli status`, `events`, `dump`, `entities`, `zones`);
-- burn-in scenarios and reproducibility checks;
-- structured logging and diagnostic clarity improvements.
-
-These contributions are valuable because they strengthen determinism, persistence confidence, and operational observability without changing the architectural direction.
-
-### Bug Fixes
-
-Any fix improving:
-
-- server stability;
-- simulation coherence;
-- persistence reliability;
-- behavior reproducibility;
-
-is considered a priority.
-
-Fixes must be accompanied by a clear description of the problem, its systemic impact, and, when possible, a test reproducing the case.
-
-### Performance and Scalability Improvements
-
-Contributions on:
-
-- CPU / memory consumption;
-- region or chunk simulation management;
-- server scaling;
-- disk access and persistence optimization;
-
-are strongly encouraged.
-
-Any optimization must prioritize readability, maintainability, and stability over an isolated marginal gain.
-
-### Technical Documentation
-
-Documentation is a contribution in its own right.
-
-Particularly encouraged:
-
-- architecture documentation;
-- simulation flow diagrams;
-- system invariant descriptions;
-- server deployment guides;
-- public API and module documentation.
-
-Clear documentary contribution is often more valuable than an additional feature.
-
-### Tests Validation and Observability
-
-The project values contributions related to:
-
-- unit and integration tests;
-- persistence validation tools;
-- replay or deterministic simulation mechanisms;
-- metrics, structured logs, and diagnostic tools.
-
-Any improvement facilitating debugging of a persistent world is considered strategic.
-
-### Optional Modules and Extensions
-
-Features non-essential to the core may be proposed as **optional modules** for
-the Phase 2+ roadmap, provided they:
-
-- strictly respect public APIs;
-- do not introduce a dependency toward the core;
-- remain deactivatable without impact on simulation.
-
-Experimental modules are not part of the active Phase 1 workspace. They can be
-discussed or prototyped separately, but Phase 1 PRs should prioritize
-determinism, persistence, recovery, observability, and hardening.
-
-### Development and Operational Tools
-
-Tools facilitating:
-
-- local development;
-- profiling;
-- server monitoring;
-- persistent world management;
-- administration and maintenance;
-
-are welcome contributions, even if not directly visible on the client side.
-
-## Explicitly Rejected Contributions
-
-To preserve the platform's coherence, maintainability, and long-term viability, certain categories of contributions are explicitly rejected.
-
-### Game-Oriented or Immediate Fun Features
-
-Contributions primarily aiming to:
-
-- improve short-term game experience;
-- add isolated gameplay mechanics;
-- enrich content without systemic impact;
-
-are not accepted in the project core.
-
-The project provides systems, not ready-made game experiences.
-
-### Imposed Narration or Scripted Logic
-
-Any contribution introducing:
-
-- linear quests;
-- mandatory scripted events;
-- imposed narrative progression;
-
-is incompatible with the principle of emergent narration.
-
-Stories must stem from simulated systems, never precede them.
-
-### Player Centrality or Special Treatment
-
-Contributions assuming:
-
-- a unique or privileged player role;
-- specific rules applicable only to players;
-- artificial world adaptation to human presence;
-
-are rejected.
-
-The player is an actor among others, subject to the same rules as simulated entities.
-
-### Authoritative Client Logic or Coupled to Simulation
-
-Any critical logic executed on the client side is prohibited.
-
-This notably includes:
-
-- simulation decisions made on the client side;
-- calculations impacting the world's persistent state;
-- direct dependency between client and server core.
-
-The client is never a source of truth.
-
-### Opaque Non-Deterministic or Magical AI
-
-Contributions relying on:
-
-- unexplainable decisions;
-- non-reproducible models;
-- strong dependency on external generative systems;
-
-are not accepted in the simulation core.
-
-Behaviors must be understandable, observable, and reproducible.
-
-### Strong Coupling with a Specific Technology or Engine
-
-Any contribution:
-
-- linking the simulation core to a graphics engine;
-- introducing an unjustified dependency on a closed technology;
-- preventing headless server execution;
-
-will be rejected.
-
-The project must remain independent of any particular client or engine.
-
-### Adding Default Content to the Core
-
-The core is not intended to contain:
-
-- predefined worlds;
-- "official" factions;
-- imposed game rules;
-- mandatory graphical assets.
-
-Content belongs to servers, not the platform.
-
-## Architecture Technical Rules and Constraints
-
-Any contribution must respect the project's overall architecture and technical constraints, designed to guarantee system stability, persistence, and evolutivity in the long term.
-
-### Strict Separation Between Core and Extensions
-
-The project is structured around:
-
-- a **minimal and stable simulation core**;
-- **optional modules and extensions**.
-
-The core:
-
-- contains exclusively mechanisms essential to persistent simulation;
-- depends only on `sy_types` and `sy_api`;
-- keeps filesystem I/O, networking, persistence orchestration, and observability outside `sy_core`;
-- depends on no external module.
-
-Any non-strictly essential feature must be implemented as a module once the
-module/API surface is part of the active roadmap phase.
-
-### API Stability and Breaking Change Management
-
-Phase 1 API crates are internal contracts for the active server slice. A
-stabilized public extension/API surface is a Phase 2 objective, not a Phase 1
-deliverable.
-
-Consequently:
-
-- any incompatible modification must be explicitly justified;
-- no breaking change to commands, events, persistence contracts, snapshots, or
-  WAL semantics will be accepted without prior discussion;
-- impacts on existing modules must be clearly documented.
-
-Backward compatibility is a priority for persisted worlds and recovery
-artifacts.
-
-### Determinism and Reproducibility
-
-Core systems must be:
-
-- deterministic given equal inputs;
-- reproducible over time;
-- observable and debuggable.
-
-Any logic introducing non-reproducible behaviors must be isolated, documented, and justified.
-
-#### `sy_core` Purity Gate
-
-The simulation core lives under `seej/server/crates/sy_core/src/**`. It must not
-use wall-clock time, environment access, OS randomness, filesystem I/O,
-networking, or nondeterministic hash collections in canonical transition paths.
-
-Before pushing a change that touches `sy_core`, run from `seej/server/`:
+For `sy_core` changes:
 
 ```bash
 python3 scripts/check_sy_core_purity.py --self-test
 python3 scripts/check_sy_core_purity.py
 ```
 
-CI runs the same gate as `sy_core purity`. Findings are reported as
-`path:line:column: rule_id: reason`.
+A meaningful behavior change needs a test at the boundary where it could
+regress. A documentation-only change needs link, anchor, command, terminology,
+status, and diff validation rather than an unrelated full test run.
 
-### Explicit and Traceable Persistence
+Report pre-existing failures separately from regressions.
 
-Persistent world data must:
+## Workflow
 
-- be explicitly written to disk;
-- be replayable or inspectable;
-- not depend on implicit or transient states.
+For a significant contract or architecture change, open an issue or discussion
+before implementation unless maintainers have already authorized the work.
+Each branch and pull request should have one coherent objective.
 
-Persistence mechanisms must be designed to survive restarts, crashes, and version migrations.
+Suggested branch names:
 
-### Mandatory Headless Server Execution
+- `fix/short-description`;
+- `feature/short-description`;
+- `docs/short-description`;
+- `refactor/short-description`.
 
-The server must be able to run:
+Commits should be atomic and explain the outcome. A pull request includes:
 
-- without a graphical interface;
-- without client dependency;
-- without a rendering engine.
+- the concrete problem and resulting behavior;
+- affected contracts, decisions, migrations, and compatibility;
+- failure behavior and security implications;
+- exact validation commands and results;
+- remaining limitations;
+- evidence or fixture links for any closed checklist gap.
 
-Any contribution introducing a direct or indirect graphics dependency on the server side will be rejected.
+Do not mark a gap closed because prose exists. Update its checkbox only with
+reproducible committed evidence.
 
-### Readability Simplicity and Maintainability
+## Governance
 
-Code readability is a functional requirement.
+Maintainers preserve the long-term architecture and may reject technically
+correct work that changes the product promise without an accepted decision.
+Major changes are added to the decision log with justification, impact, and
+supersession.
 
-Contributions must prioritize:
-
-- simple abstractions;
-- minimal dependencies;
-- code understandable without implicit context.
-
-"Smart" but hard-to-maintain code will be rejected in favor of a simpler and more robust solution.
-
-## Contribution Workflow
-
-Any contribution to the project follows a standardized process to ensure quality, coherence, and traceability of changes.
-
-### Recommended Prior Discussion
-
-For any significant contribution (new feature, core modification, major refactoring), it is strongly recommended to open an issue or discussion before writing code.
-
-This allows:
-
-- verifying alignment with project philosophy;
-- avoiding unnecessary work;
-- anticipating systemic impacts.
-
-### Fork and Branches
-
-Contributions are made via a fork of the main repository.
-
-Branches must follow a clear convention:
-
-- `fix/short-description`
-- `feature/short-description`
-- `doc/short-description`
-- `refactor/short-description`
-
-Each branch must be limited to a specific objective.
-
-### Commits
-
-Commits must:
-
-- be atomic;
-- have a clear and descriptive message;
-- explain the *why* of the change, not just the *what*.
-
-Corrective or temporary commits must be cleaned before Pull Request submission.
-
-### Pull Requests
-
-Any contribution goes through a Pull Request.
-
-The Pull Request must include:
-
-- a description of the problem or objective;
-- the systemic justification for the change;
-- impacts on simulation, persistence, and compatibility;
-- tests added or adapted, if applicable.
-
-Incomplete or insufficiently justified Pull Requests may be closed without thorough review.
-
-### Review and Iterations
-
-Contributions are reviewed by project maintainers.
-
-Modifications or clarifications may be requested. Prolonged lack of response may result in Pull Request closure.
-
-Review covers architecture as much as the code itself.
-
-## Validation Process and Governance
-
-This project is open-source, but it is not without governance.
-
-Technical and architectural decisions are made in the project's long-term interest, not based on contribution volume or proposal popularity.
-
-### Maintainers and Responsibility
-
-The project is led by a small group of maintainers responsible for the core and overall vision.
-
-Maintainers:
-
-- define and protect the project's architecture;
-- validate or reject contributions;
-- guarantee the platform's long-term coherence.
-
-Core responsibility cannot be implicitly delegated by a Pull Request.
-
-### Contribution Validation Criteria
-
-Contributions are evaluated according to the following criteria:
-
-- alignment with project philosophy;
-- impact on stability and persistence;
-- code clarity and maintainability;
-- compatibility with existing architecture;
-- long-term systemic benefit.
-
-A technically correct contribution may be rejected if it does not meet these criteria.
-
-### Rejection Disagreements and Arbitration
-
-Rejecting a contribution is a normal decision and part of the governance process.
-
-Maintainers may reject a contribution:
-
-- without obligation to propose an alternative;
-- without entering into a prolonged debate;
-- without exhaustive justification beyond established principles.
-
-Disagreements must remain technical, argued, and respectful.
-
-### Project Evolution
-
-The project's vision and principles may evolve, but only:
-
-- collectively;
-- via structured discussions;
-- with clearly measured impact on existing work.
-
-No isolated Pull Request can alone modify the project's foundations.
-
-## Code of Conduct and Communication
-
-The project aims to maintain a healthy, respectful collaboration environment oriented toward constructive technical exchanges.
-
-### Respect and Professionalism
-
-All interactions (issues, discussions, code reviews, comments) must remain:
-
-- respectful;
-- factual;
-- focused on technical content.
-
-Personal attacks, value judgments, and aggressive behaviors are not tolerated.
-
-### Technical Disagreements
-
-Disagreements are normal and expected in an infrastructure project.
-
-They must:
-
-- be technically argued;
-- rely on facts, measurements, or established principles;
-- avoid any personalization of the debate.
-
-Disagreement never implies questioning intentions or skills.
-
-### Communication and Expectations
-
-Maintainers contribute on their time and according to their priorities.
-
-There is:
-
-- no obligation for immediate response;
-- no guarantee of contribution acceptance;
-- no commitment to a public roadmap.
-
-Any pressure, insistence, or attempt to force a decision is contrary to the project's spirit.
-
-### Enforcement
-
-Maintainers reserve the right to:
-
-- moderate discussions;
-- close issues or Pull Requests;
-- limit or suspend access to contributions;
-
-when a participant's behavior harms the project's proper functioning.
+Technical disagreement is welcome when it remains factual and respectful.
+Participation follows the [code of conduct](doc/CODE_OF_CONDUCT.md).
