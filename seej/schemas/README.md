@@ -10,7 +10,7 @@ Schema families planned before the first stable contract include:
 - event envelope and confirmed-history cursor;
 - owner-domain envelope for structured or opaque plugin data;
 - plugin/provider manifest, permissions, dependencies, and migrations;
-- node membership, authority epoch, and compatibility handshake;
+- node membership configuration, authority term, and compatibility handshake;
 - observation state, freshness, cursor expiration, and resynchronization;
 - retention, limits, and integrity metadata.
 

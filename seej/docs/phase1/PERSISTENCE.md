@@ -129,10 +129,10 @@ provider defines the quorum rule under
 durability and fencing behavior for that rule.
 
 Confirmed admission and resolution records bind world identity, genesis,
-execution profile, authority epoch, full command identity and fingerprint,
-order, decision, events, and state/checkpoint cursor. Recovery resumes a
-confirmed pending admission and never applies an already confirmed resolution
-twice.
+execution profile, authority term, configuration version, full command identity
+and fingerprint, order, decision, events, and state/checkpoint cursor. Recovery
+resumes a confirmed pending admission and never applies an already confirmed
+resolution twice.
 
 ## Retention and compaction
 

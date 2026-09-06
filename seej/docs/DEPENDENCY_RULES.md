@@ -70,7 +70,7 @@ The target public capability set includes at least:
 - tick scheduling;
 - deterministic validation;
 - transaction coordination;
-- membership and authority epochs;
+- membership configuration and authority terms;
 - consensus/replication;
 - observation and retained-cursor access;
 - component loading and compatibility checks.

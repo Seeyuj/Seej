@@ -225,8 +225,9 @@ is not a distributed commit.
 
 Canonical success and observer publication occur only after the active
 authority group provides the configured durable confirmation. Loss of quorum
-pauses mutation. Authority epochs fence stale coordinators. Read-only access to
-an older confirmed state may continue with explicit freshness.
+pauses mutation. Durable authority terms fence stale coordinators, while
+separate confirmed configuration versions govern membership. Read-only access
+to an older confirmed state may continue with explicit freshness.
 
 **Implemented:** only the one-process, one-writer FileStore path.
 
@@ -254,6 +255,12 @@ Kernel-owned data has a migration path from every stable version. Plugins own
 their migrations. Re-simulation refuses to run when an exact referenced
 component is missing. Operators retain plugin artifacts; Seej records their
 references and cryptographic fingerprints.
+
+Migration preparation and activation are separate confirmed phases. A failed
+preparation can be abandoned under the old profile. Confirmation of the new
+profile and migrated state is the activation commit point; after it, recovery
+continues from the new state and any return requires another explicit
+migration. An uncertain activation response is resolved from confirmed history.
 
 **Implemented:** local snapshot + WAL recovery, CRC-protected WAL records, and
 atomic snapshot replacement on the supported path. Format version 3 requires
@@ -283,9 +290,12 @@ Full history archival is optional. Genesis re-simulation is possible only when
 the full required history and artifacts were retained.
 
 Observers read a confirmed prefix. Responses contain a stable cursor and
-freshness. Reconnection may redeliver identified events. An expired cursor
-returns an explicit expiration plus a coherent state and replacement cursor;
-deleted history stays unavailable.
+freshness. A current-confirmed response requires the authority proof defined by
+the node-network contract; otherwise it is explicitly stale or unavailable.
+Reconnection may redeliver identified events. An expired cursor returns an
+explicit expiration plus a coherent state and replacement cursor describing
+the same confirmed cut; that cut remains retained through stream handoff or the
+handoff restarts explicitly. Deleted history stays unavailable.
 
 Observing is semantically neutral. Reader presence, speed, or identity cannot
 change canonical fidelity, rules, ordering, or outcomes. The runtime may rate

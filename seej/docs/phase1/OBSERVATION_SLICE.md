@@ -32,7 +32,7 @@ A coherent initial response identifies at least:
 
 - `world_id`;
 - confirmed tick and history cursor;
-- authority epoch and freshness classification;
+- authority term, configuration version, and freshness classification;
 - execution-profile identifier;
 - selected readable owner domains or projection;
 - a replacement stream cursor.
@@ -48,9 +48,10 @@ Delivery is not advertised as exactly once.
 
 A node serves one of two explicit read classes:
 
-- **current confirmed:** validated against the active authority state;
+- **current confirmed:** backed by a quorum read barrier in the active term and
+  configuration, with the serving node applied through the barrier cursor;
 - **known confirmed but stale:** tied to a confirmed cursor with freshness
-  indicating that the node may be behind.
+  marked stale or unknown because current authority was not proved.
 
 The API never silently presents a raw local WAL tail as confirmed.
 
@@ -60,8 +61,10 @@ If the requested cursor remains retained, streaming resumes after it. If it
 expired:
 
 1. return a typed cursor-expired result;
-2. provide or reference a coherent confirmed state;
-3. issue a new cursor;
+2. provide or reference a coherent confirmed state and cursor from the same
+   cut;
+3. retain that cut through stream handoff, or restart explicitly from a newer
+   replacement cut;
 4. state that removed events are unavailable.
 
 This behavior preserves usefulness without promising permanent history.
@@ -114,6 +117,8 @@ data and commands. An observer does not close K-04.
 - a stale replica announces its freshness;
 - a minority partition cannot claim a current read;
 - an expired cursor resynchronizes from coherent state;
+- compaction advancing during resynchronization cannot create a silent event
+  gap;
 - unauthorized owner data is omitted or refused;
 - events are published only after distributed confirmation.
 

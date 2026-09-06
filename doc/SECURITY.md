@@ -11,7 +11,8 @@ fundamental providers:
 
 - pure transition and validation logic;
 - local and distributed persistence;
-- node identity, admission, membership, authority epochs, and replication;
+- node identity, admission, membership configuration, authority terms, and
+  replication;
 - public command, observation, provider, and plugin boundaries;
 - migrations, retention, backup, recovery, and operator tools;
 - build and dependency controls maintained by the repository.
@@ -48,7 +49,7 @@ Protect at least:
 - one confirmed history and stable identity per world;
 - command identity, order, status, and non-reuse after expiration;
 - checkpoint, retained history, active obligations, and migration metadata;
-- authority membership and monotonic fencing epochs;
+- authority membership/configuration and monotonic election terms;
 - component manifests, versions, and artifact fingerprints;
 - credentials, signing material, and transport keys;
 - operator diagnostics that may contain sensitive world metadata.
@@ -62,7 +63,7 @@ canonical store and must not contain secrets.
 
 Discovery does not grant authority. Membership is an explicit confirmed
 operation. Connections bind to an authenticated `node_id`, authorized world,
-authority epoch, and compatible execution profile.
+authority term, membership configuration, and compatible execution profile.
 
 A stale or minority node cannot confirm mutations or claim a current read.
 Messages are bounded, authenticated, replay-protected as required, and checked
@@ -111,7 +112,8 @@ Contributions affecting a trust boundary must consider:
 - command retry and timeout ambiguity;
 - stale authority and split-brain resistance;
 - storage failure and crash consistency;
-- migration rollback and mixed-version refusal;
+- migration abort before activation, recovery after activation, and
+  mixed-version refusal;
 - dependency and artifact provenance;
 - secret handling and diagnostic redaction.
 

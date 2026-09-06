@@ -41,6 +41,7 @@ receiving node
 authority group proposes and confirms canonical order
   |
   | confirmed Admission: envelope + sequence + Pending
+  | authority term + configuration version
   v
 pure transition engine
   |
@@ -124,13 +125,16 @@ A replica or observer cannot advance the tick independently.
 
 An observer starts from a coherent confirmed state and cursor, receives
 identified events after that cursor, and deduplicates on reconnect. Responses
-include freshness.
+include freshness. A current-confirmed state requires a quorum-backed read
+barrier in the active term and configuration, and the serving node must have
+applied through that barrier. Without it, the response is stale or unavailable.
 
 When retention removes the cursor:
 
 1. return explicit cursor expiration;
-2. provide or identify a coherent current state;
-3. issue a new cursor for subsequent events;
+2. provide or identify a coherent confirmed state and cursor from the same cut;
+3. pin that cut through stream handoff, or restart with another explicit
+   expiration and replacement cut;
 4. never claim that the removed interval remains available.
 
 Reader backpressure can slow or reject the read path, but it cannot change the
@@ -138,11 +142,17 @@ canonical simulation.
 
 ## Migration flow
 
-A migration proposal identifies the old and new execution profiles and all
-kernel/plugin steps. The authority group pauses mutation at a confirmed
-boundary, verifies artifacts and conversions, confirms the new profile and
-state together, then resumes. Failure leaves the prior compatible state
-authoritative.
+A confirmed `MigrationPrepare` identifies the old and target execution
+profiles, base cursor, and all kernel/plugin steps. The group pauses affected
+admission, resolves pending old-profile commands, and has the quorum required
+by the active configuration verify artifacts, candidate state, and semantic
+hash. A confirmed `MigrationActivate` commits the new profile and state
+together, then progression resumes.
+
+A failure before activation can produce a confirmed abort under the old
+profile. A failure after activation recovers the new state. An uncertain reply
+is resolved from confirmed history; returning to the old profile is a new
+explicit migration.
 
 No current binary implements this distributed flow. Its evidence is tracked by
 the exit checklist.

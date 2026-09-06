@@ -147,6 +147,9 @@ Every stable version of kernel-owned data has a supported migration path to the
 current stable version, possibly through intermediate versions. Plugin authors
 own their data migrations. Activation occurs at a confirmed transition
 boundary and fails closed when required code or data conversion is missing.
+Preparation can be abandoned under the old profile; once profile and migrated
+state are confirmed together, recovery continues from the new state and any
+return is another explicit migration.
 
 The first stable contract permits only operator-approved trusted providers
 loaded at startup. Hot loading, safe hot replacement, and isolated application
