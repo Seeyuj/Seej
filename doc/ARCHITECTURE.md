@@ -3,7 +3,9 @@
 ## Purpose and authority
 
 This document explains the durable project architecture established by
-[decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel).
+[decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel) and
+the operational semantics fixed by
+[D-013](DECISIONS.md#d-013--operational-failure-semantics).
 The normative behavior is defined by the contracts under `seej/docs/`.
 The roadmap schedules that work, and the Phase 1 documents describe the
 prototype and its evidence.

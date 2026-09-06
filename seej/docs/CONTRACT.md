@@ -269,6 +269,10 @@ an exact match; no migration currently exists.
 **Target (P0-14, K-09):** injected common-I/O-failure evidence, explicit
 migrations, compatible group activation, and historical-component checks.
 
+Baseline cold backup/restore evidence and the first-stable recovery procedure
+are mandatory under `P2-02` and `P2-03`; hot backup and advanced diagnostic
+tooling remain later work.
+
 The current `snapshot.json`, `meta.json`, and FileEventLog encoding are
 reference-provider formats, not mandatory formats for every future provider.
 
@@ -343,9 +347,11 @@ The first contract cannot freeze until the checklist proves at least:
 - the generic kernel and provider boundary;
 - fail-closed common storage errors;
 - durable command lifecycle and retention;
+- causal binding from each resolution to its predecessor and resulting state;
 - one- and three-node authority behavior;
 - coherent confirmed observation;
 - kernel-owned migrations;
+- tested cold backup/restore and a baseline operator recovery procedure;
 - a third-party data-owning extension using public commands without internal
   dependencies.
 

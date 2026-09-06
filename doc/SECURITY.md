@@ -181,6 +181,7 @@ Operators must:
 ## Related documents
 
 - [Decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel)
+- [Decision D-013](DECISIONS.md#d-013--operational-failure-semantics)
 - [Node-network contract](../seej/docs/NODE_NETWORK.md)
 - [Plugin contract](../seej/docs/PLUGIN_CONTRACT.md)
 - [Persistence behavior](../seej/docs/phase1/PERSISTENCE.md)

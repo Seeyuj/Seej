@@ -1,10 +1,11 @@
 # AGENTS.md — Seej
 
 Seej is open-source infrastructure for deterministic, persistent sandbox
-worlds. Decision D-012 defines it as a distributed, extensible world kernel.
-The kernel runs on one or more authorized nodes and coordinates replaceable
-providers for its fundamental capabilities. Ingame netcode, agents, rendering,
-economies, spatial models, and multiresolution engines remain userland.
+worlds. Decision D-012 defines it as a distributed, extensible world kernel;
+D-013 fixes its operational failure semantics. The kernel runs on one or more
+authorized nodes and coordinates replaceable providers for its fundamental
+capabilities. Ingame netcode, agents, rendering, economies, spatial models, and
+multiresolution engines remain userland.
 
 Resolve tradeoffs in this order: architectural durability, correctness,
 determinism, persistence and recovery, maintainability, testability,
@@ -15,7 +16,8 @@ observability, performance, then implementation speed.
 - **Distributed authority:** authority belongs to the authorized group for a
   world. A confirmed history is the source of truth. Node discovery does not
   grant authority, and a minority partition cannot create another canonical
-  history.
+  history. Durable authority terms fence coordinators; separate confirmed
+  configuration versions govern membership changes.
 - **Headless operation:** a world evolves without UI, rendering, assets,
   connected clients, agents, or ingame netcode. A one-node deployment uses the
   same kernel contracts as a multi-node deployment.
@@ -63,7 +65,7 @@ Read the documents relevant to the affected boundary:
 
 | Subject | Authority |
 | --- | --- |
-| Direction and supersession | [Decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel) |
+| Direction and supersession | [D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel) and [D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) |
 | Public guarantees and statuses | [Kernel contract](seej/docs/CONTRACT.md) |
 | Inter-node authority | [Node-network contract](seej/docs/NODE_NETWORK.md) |
 | Providers and world extensions | [Plugin contract](seej/docs/PLUGIN_CONTRACT.md) |

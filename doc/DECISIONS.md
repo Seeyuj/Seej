@@ -394,7 +394,7 @@ The operational form of the invariant is: **we do not break replay.**
 
 ## D-012 — Distributed Extensible World Kernel
 
-**Status**: Accepted
+**Status**: Accepted, operational semantics clarified by D-013
 
 ### Decision
 
@@ -424,8 +424,9 @@ plugin concern.
 - A world has one confirmed history. A replica does not advance canonical
   ticks independently. Loss of quorum suspends mutation rather than creating a
   divergent branch.
-- A temporary coordinator is fenced by an authority epoch. Membership changes
-  and rejoining-node catch-up are explicit transitions.
+- A temporary coordinator is fenced by an authority term. Membership uses a
+  separate confirmed configuration version; changes and rejoining-node catch-up
+  are explicit transitions.
 - A local WAL append is not distributed confirmation. Success and public
   canonical effects require the configured durable group confirmation.
 - A failing local store stops or quarantines unsafe activity on that node.
@@ -515,9 +516,11 @@ The first stable contract requires:
 - generic extension-owned data and trusted startup providers;
 - fail-closed behavior for common storage failures;
 - durable command identity, status, ordering, and retention semantics;
+- causal linkage between resolutions, events, and before/after state;
 - three-node distributed evidence with quorum, partition, fencing, catch-up,
   and compatible migration scenarios;
 - a read-only confirmed observation surface;
+- tested cold backup/restore and a baseline recovery procedure;
 - a real third-party extension that declares data and uses public commands
   without internal kernel dependencies.
 
@@ -540,6 +543,109 @@ D-011's rule that all protocol work waits until a later phase.
 | D-009 | Preserved. |
 | D-010 | Preserved, with precise safe-Rust and `unsafe` boundaries. |
 | D-011 | Superseded: contract-first remains; distributed networking and baseline durability move into the stable gate. |
+
+---
+
+## D-013 — Operational Failure Semantics
+
+**Status**: Accepted
+
+### Context
+
+A consistency review of the D-012 documentation found that the product
+direction was aligned but several failure boundaries still allowed incompatible
+implementations. In particular, admission and application had no complete crash
+state machine, compacted command IDs had no durable non-reuse mechanism,
+cross-owner atomicity did not define candidate validation, membership changes
+did not guarantee quorum intersection, and migration rollback was ambiguous
+after activation.
+
+### Decision
+
+The first stable contract uses these operational semantics:
+
+- A command has a kernel-issued identity namespace. A confirmed Admission
+  creates durable `Pending` state without application effects. A confirmed
+  Resolution atomically records `Succeeded` or `Refused`, events, and the state
+  transition. Recovery resumes pending work and never reapplies a resolution.
+- Status retention is measured in canonical ticks. Pending commands never
+  expire. Confirmed closure of kernel-issued generations creates durable
+  non-reusable expired namespaces without retaining every terminal result.
+- A cross-owner transaction binds to a confirmed base cursor. Ordered owner
+  proposals build a private candidate state and cross-domain validators inspect
+  the complete result. A stale candidate is discarded and recomputed in full.
+  Component failure is not fabricated as a world-law refusal.
+- Active obligations leave an owner only through confirmed transfer to an
+  active compatible successor or confirmed resolution. Archival alone is valid
+  for terminal obligations, or for an entire world that no longer advances.
+- The reference consensus provider separates authority terms from membership
+  configuration versions. New voters first catch up as learners; configuration
+  changes preserve overlapping old/new quorums. A confirmed-history conflict is
+  quarantined, while an explicitly unconfirmed local suffix may be reconciled.
+- A current-confirmed read requires a quorum authority barrier in the active
+  term and configuration, plus local application through its cursor. A
+  resynchronization state and cursor describe one retained confirmed cut.
+- Migration preparation and activation are separate. Preparation may abort
+  under the old profile. Once new profile and migrated state are confirmed
+  together, recovery continues from the new state; return requires another
+  explicit migration.
+- Minimum causal linkage, cold backup/restore evidence, and a baseline recovery
+  procedure are first-stable requirements. Rich diagnosis, online backup, and
+  load hardening remain usage-triggered work.
+- Hot loading and isolated plugin execution are later Seej kernel capabilities.
+  Agents, economies, spatial models, rendering, multiresolution, and ingame
+  netcode remain optional community capabilities, not official delivery
+  promises.
+
+These statements are target contracts. D-013 closes no implementation gap.
+
+### Decision coverage
+
+| Decision | Normative home | Release evidence |
+| --- | --- | --- |
+| D-001 — platform, not game | Kernel boundary and roadmap ecosystem section | K-01 contract review |
+| D-002 — simulation before narration | World laws and plugin contract | K-06 extension fixture |
+| D-003 — autonomous world | Headless kernel and observer-neutral world model | K-03 deterministic fixtures |
+| D-004 — authority and persistence | Node-network confirmed history | K-07 distributed proof |
+| D-005 — rendering separation | Kernel/plugin boundary | K-01 and dependency checks |
+| D-006 — old official renderer direction | Superseded by D-012 optional ecosystem | No first-stable delivery gap |
+| D-007 — deterministic external inputs | Deterministic transition and validation contracts | P0-03, P0-15 |
+| D-008 — minimal extensible core | Provider/plugin contract | K-04, K-05, K-06 |
+| D-009 — stability before speed | Exit-checklist evidence policy | Every closed gap names evidence |
+| D-010 — Rust core | Dependency rules and pure-engine boundary | P0-01 purity gate |
+| D-011 — contract-first kernel | Superseded scheduling retained in D-012 | K-01 and Gate 1-K |
+| D-012 — distributed extensible kernel | Root, node, plugin, and world contracts | K-01 through K-10 |
+| D-013 — operational failure semantics | Command, transaction, network, migration, and retention clauses | K-02, K-06 through K-10, P1-20, P2-02, P2-03 |
+
+### Audit-correction traceability
+
+| Finding corrected | Binding contract | Required evidence |
+| --- | --- | --- |
+| Admission and resolution crash gap | `CONTRACT.md` command lifecycle; `DATA_FLOW.md` | K-08 crash-boundary fixtures |
+| Rollback after confirmed migration | `NODE_NETWORK.md` compatibility/migration | K-09 pre/post-activation fixtures |
+| Incomplete cross-owner validation | `PLUGIN_CONTRACT.md` transactions | K-06 candidate/invariant fixtures |
+| Expired command-ID reuse | `CONTRACT.md` retention; `PERSISTENCE.md` compaction | K-08 and K-10 generation fixtures |
+| Unsafe membership transition ambiguity | `NODE_NETWORK.md` reference membership transition | K-07 joint-configuration fixtures |
+| Unproved current-read freshness | `NODE_NETWORK.md` reads; `OBSERVATION_SLICE.md` | K-02 and K-07 barrier fixtures |
+| Archiving active obligations | `PLUGIN_CONTRACT.md` lifecycle; `WORLD_SPEC.md` obligations | K-06 removal fixture |
+| First-stable requirements placed in Gate 1-D | `EXIT_CHECKLIST.md` Gate 1-K | P1-20, P2-02, P2-03 |
+| Official application capabilities implied | `ROADMAP.md` optional ecosystem; Phase 1 scope | Documentation status review |
+| Lost evidence traceability | `EXIT_CHECKLIST.md` implemented evidence table | Named paths and reproduction commands |
+
+The [Phase 1 exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md) remains the
+authority for implementation status. The [root kernel contract](../seej/docs/CONTRACT.md),
+[node-network contract](../seej/docs/NODE_NETWORK.md), and
+[plugin contract](../seej/docs/PLUGIN_CONTRACT.md) define the referenced target
+behavior.
+
+### Consequences
+
+- Implementations must model intermediate durable states rather than infer them
+  from RPC success or local storage.
+- Provider replaceability is tested against observable failure semantics,
+  including membership, reads, recovery, and compaction.
+- No checklist item is complete because D-013 exists; executable evidence is
+  still required before contract freeze.
 
 ---
 

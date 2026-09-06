@@ -2,8 +2,9 @@
 
 ## Status model
 
-Decision D-012 reopened the project foundation. The earlier local Phase 1 slice
-remains implemented evidence, but it is not the first stable kernel contract.
+Decision D-012 reopened the project foundation and D-013 fixed the operational
+failure semantics. The earlier local Phase 1 slice remains implemented
+evidence, but it is not the first stable kernel contract.
 
 Roadmap labels mean:
 
@@ -106,12 +107,14 @@ Required work:
 - require plugin-owned migration paths and exact historical component
   fingerprints;
 - publish conformance fixtures for accepted and refused versions;
-- document cold backup, restore, diagnosis, and recovery.
+- bind confirmed resolutions to their before/after semantic states;
+- prove cold backup and restore;
+- publish the baseline recovery procedure for every first-stable failure mode.
 
 ## First stable contract
 
-The first stable release occurs only when Gates 1-K and their mandatory
-evidence are complete. It includes:
+The first stable release occurs only when Gate 1-K and its mandatory evidence
+are complete. It includes:
 
 - minimal runnable distribution;
 - generic owner data and public commands;
@@ -119,8 +122,10 @@ evidence are complete. It includes:
 - distributed operation on the reference three-node profile;
 - common storage-failure safety;
 - command status and retention;
+- confirmed causal linkage;
 - read-only confirmed observation and resynchronization;
 - stable kernel data migrations;
+- tested cold backup/restore and a baseline operator recovery procedure;
 - a genuine third-party extension.
 
 The stable promise does not include hot loading, plugin isolation, agents,

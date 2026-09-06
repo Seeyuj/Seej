@@ -8,6 +8,7 @@ Start with:
 
 - [project overview](README.md);
 - [decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel);
+- [decision D-013](doc/DECISIONS.md#d-013--operational-failure-semantics);
 - [architecture](doc/ARCHITECTURE.md);
 - [kernel contract](seej/docs/CONTRACT.md);
 - [exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md);
@@ -23,7 +24,8 @@ not through a public issue or pull request.
 
 Authority belongs to the explicitly authorized kernel node group. Clients,
 observers, and application plugins cannot bypass admission, validation,
-ownership, durable confirmation, or authority epochs.
+ownership, durable confirmation, authority terms, or confirmed membership
+configurations.
 
 A local deployment uses a one-node group. A multi-node deployment follows the
 same public semantics. Kernel networking is foundational; ingame netcode is an
@@ -75,17 +77,20 @@ the first stable distributed kernel gate:
 - generic owner domains and commands;
 - trusted startup providers and provider conformance;
 - durable command identity, ordering, status, and retention;
+- causal binding of resolutions, events, and before/after state;
 - common storage-failure safety;
 - one- and three-node authority evidence;
 - confirmed observation;
 - migrations and compatibility fixtures;
+- cold backup/restore and the baseline operator recovery procedure;
 - one real third-party data-owning extension.
 
 The current zone/entity/degradation implementation is evidence to preserve
 during extraction, not a universal model to expand.
 
-Hot loading, isolated plugin execution, sharding, official agents, official
-rendering, and ingame netcode are later or community work.
+Hot loading and isolated plugin execution are later kernel work. Sharding needs
+a separate future decision. Agents, economies, spatial models, rendering,
+multiresolution, and ingame netcode are optional community work.
 
 ## Useful contribution types
 

@@ -6,6 +6,8 @@ status: TARGET ARCHITECTURE WITH AN IMPLEMENTED LOCAL PROTOTYPE
 
 This document maps the logical architecture to the repository. It must not be
 read as a claim that distributed runtime components already exist.
+The logical direction comes from D-012 and the failure boundaries from D-013 in
+the [decision log](../../doc/DECISIONS.md).
 
 ## Component model
 

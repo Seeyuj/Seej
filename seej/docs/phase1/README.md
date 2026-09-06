@@ -31,26 +31,32 @@ Phase 1 must produce:
 - an empty or extension-defined world without mandatory space or entity kinds;
 - replaceable fundamental providers and trusted startup extensions;
 - durable command lifecycle and atomic cross-owner transitions;
+- causal binding between resolutions, events, and before/after state;
 - fail-closed behavior for common local-storage failures;
 - the same world contract on one or three authorized nodes;
 - one confirmed history under coordinator failure and network partition;
 - confirmed read-only observation, bounded retention, and resynchronization;
 - compatible kernel-owned migrations;
+- tested cold backup/restore and a baseline recovery procedure;
 - a third-party extension proving the public surface.
 
 The full requirements and evidence are in
 [EXIT_CHECKLIST.md](EXIT_CHECKLIST.md).
 
-## Explicitly later
+## Planned kernel evolution after first stable
 
-These capabilities do not block the first stable contract:
+These Seej capabilities do not block the first stable contract:
 
 - arbitrary hot loading or hot replacement;
-- isolated application-plugin execution;
-- ingame netcode and player prediction;
-- official agents, economies, renderers, or multiresolution engines;
-- world sharding or Byzantine consensus;
-- synchronous atomic transactions between worlds.
+- isolated application-plugin execution with explicit permissions.
+
+World sharding, Byzantine consensus, and synchronous cross-world transactions
+would each require a separate future decision and contract; they are not
+release promises.
+
+Agents, economies, spatial models, renderers, multiresolution engines, and
+ingame netcode/player prediction are optional community capabilities rather
+than planned official Seej implementations.
 
 A future implementation may prepare clean boundaries for these capabilities
 without documenting them as available.

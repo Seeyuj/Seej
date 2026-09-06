@@ -20,7 +20,9 @@ kernel infrastructure; player-facing netcode is not.
 ## Contract Status
 
 The distributed architecture is the target established by
-[decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel).
+[decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel),
+with operational failure semantics fixed by
+[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics).
 It is **not implemented or frozen yet**. The public
 [kernel contract](seej/docs/CONTRACT.md),
 [node-network contract](seej/docs/NODE_NETWORK.md), and

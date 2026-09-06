@@ -14,15 +14,28 @@ but do not prove them.
 
 ## Implemented evidence
 
-| Done | Evidence | Scope |
-| --- | --- | --- |
-| [x] | `P0-01` pure-core gate | The script and CI reject forbidden APIs in `sy_core`. |
-| [x] | `P1-01` repository CI definitions | Check, build, fmt, test, clippy, rustdoc, dependency, fuzz-build, and purity jobs are versioned. |
-| [x] | `P1-02` pinned Rust toolchain | Repository and CI select the same Rust release. |
-| [x] | Determinism/recovery tests | Current local prototype compares repeated and recovered state hashes. |
-| [x] | Forced-process interruption test | Current local runtime can be killed and recovered from snapshot + WAL. |
-| [x] | Burn-in test | Ignored test exercises 100k local ticks and recovery parity. |
-| [x] | WAL fuzz targets | Decoder and round-trip targets build; scheduled smoke commands are documented. |
+These rows identify evidence already present for the local prototype. A checked
+row means the named code or gate exists; it does not claim that the command was
+run for this checkout or close a distributed target.
+
+| Done | Criterion | Evidence | Reproduce from `seej/server/` |
+| --- | --- | --- | --- |
+| [x] | `P0-01` pure-core gate | [`scripts/check_sy_core_purity.py`](../../server/scripts/check_sy_core_purity.py) and CI reject forbidden `sy_core` dependencies/APIs. | `python3 scripts/check_sy_core_purity.py --self-test` then `python3 scripts/check_sy_core_purity.py` |
+| [x] | `P1-01` repository CI definitions | [`.github/workflows/rust.yml`](../../../.github/workflows/rust.yml) versions check, build, fmt, test, clippy, rustdoc, dependency, fuzz-build, and purity jobs. | Inspect the workflow; run the standard commands documented in [`DETERMINISM.md`](DETERMINISM.md). |
+| [x] | `P1-02` pinned Rust toolchain | [`rust-toolchain.toml`](../../server/rust-toolchain.toml) selects the repository toolchain. | `rustc --version` from this directory uses the pinned toolchain. |
+| [x] | Deterministic tick loop | Canonical hash tests in [`sy_core/src/determinism.rs`](../../server/crates/sy_core/src/determinism.rs). | `cargo test -p sy_core determinism::tests` |
+| [x] | Recoverable injected RNG | `restore_seeded_from_fresh_instance` in [`sy_infra/src/rng/mod.rs`](../../server/crates/sy_infra/src/rng/mod.rs). | `cargo test -p sy_infra rng::tests::restore_seeded_from_fresh_instance` |
+| [x] | Snapshot + WAL recovery | Recovery parity and cursor cases in [`recovery_determinism.rs`](../../server/crates/sy_infra/tests/recovery_determinism.rs). | `cargo test -p sy_infra --test recovery_determinism` |
+| [x] | WAL corruption cases | Header, CRC, partial-batch, and torn-tail tests in [`store/wal.rs`](../../server/crates/sy_infra/src/store/wal.rs). | `cargo test -p sy_infra store::wal::tests` |
+| [x] | Strict event replay | Incoherent-event rejection tests in [`sy_core/src/replay.rs`](../../server/crates/sy_core/src/replay.rs). | `cargo test -p sy_core replay::tests` |
+| [x] | Clean restart parity | `clean_restart_matches_continuous_run_hash`. | `cargo test -p sy_infra --test recovery_determinism clean_restart_matches_continuous_run_hash` |
+| [x] | Crash replay parity | `crash_replay_matches_continuous_run_hash`. | `cargo test -p sy_infra --test recovery_determinism crash_replay_matches_continuous_run_hash` |
+| [x] | Forced process kill | Ignored test in [`forced_kill_recovery.rs`](../../server/bin/server_d/tests/forced_kill_recovery.rs). | `cargo test -p server_d --test forced_kill_recovery -- --ignored` |
+| [x] | Long burn-in | Ignored 100k-tick test in `recovery_determinism.rs`. | `cargo test -p sy_infra --test recovery_determinism burn_in_100k_ticks_keeps_deterministic_hashes_and_bounded_growth -- --ignored` |
+| [x] | Workspace boundary | Deferred protocol and mod crates remain outside active workspace membership. | `cargo metadata --no-deps` |
+| [x] | Standard CI gate | Repository workflow contains the standard workspace checks. | `cargo check --workspace --all-targets`; `cargo fmt --all --check`; `cargo test --workspace --all-targets`; `cargo clippy --workspace --all-targets -- -D warnings` |
+| [x] | Ignored Phase 1 gate | Workflow job `Phase 1 ignored tests` exists. | `cargo test --workspace --all-targets -- --ignored` |
+| [x] | WAL fuzz build/smoke | Decoder and round-trip targets and scheduled smoke commands are documented in [`fuzz/README.md`](../../server/crates/sy_infra/fuzz/README.md). | Run the documented `cargo +nightly fuzz` commands from `crates/sy_infra/fuzz/`. |
 
 These rows prove only their stated local behavior. They do not close a
 distributed or generic-contract gap.
@@ -55,20 +68,25 @@ Every item in this section blocks the first stable contract.
 - [ ] **K-06: Generic data ownership and transactions.** Support versioned
   structured or opaque owner domains, public owner commands, declared
   validators and obligations, and atomic transitions spanning at least two
-  owners inside one world.
+  owners inside one world. Prove ordered candidate-state validation,
+  cross-domain invariant checks, stale-base recomputation, and transfer or
+  resolution of active obligations before owner removal.
 - [ ] **K-07: Distributed kernel proof.** Run the same contract on one node and
   on three authorized nodes with quorum two. Prove admission, confirmation,
-  coordinator loss, minority partition, stale-epoch fencing, catch-up,
-  membership change, compatibility refusal, and local-storage failure
-  containment.
-- [ ] **K-08: Durable command lifecycle.** Persist command ID, payload
-  fingerprint, target tick, canonical order, and status. Prove retry without
-  duplicate effects, ID/payload conflict, late refusal, uncertain timeout, and
-  non-reusable expired IDs.
+  coordinator loss, minority partition, stale-term/configuration fencing,
+  catch-up, joint membership change, full restart, current-read barriers,
+  compatibility refusal, and local-storage failure containment.
+- [ ] **K-08: Durable command lifecycle.** Persist full command identity,
+  intention fingerprint, target tick, admission order, `Pending` admission, and
+  terminal resolution. Prove recovery before admission, between admission and
+  resolution, and after resolution before reply; also prove retry without
+  duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
+  generation closure, and non-reusable expired IDs.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
-  coordinated activation, refusal of mixed profiles, migration failure
-  behavior, and missing/incompatible plugin blocking.
+  preparation, activation commit, pre-activation abort, post-activation
+  recovery, refusal of mixed profiles, and missing/incompatible plugin
+  blocking.
 - [ ] **K-10: Retention and recovery points.** Implement a declared bounded
   retention policy preserving current state, obligations, recovery, stable
   command-ID expiration, semantic continuity, and observer resynchronization.
@@ -83,7 +101,8 @@ Every item in this section blocks the first stable contract.
   depend on unconstrained `f32` or `f64`; use explicit deterministic
   representations and fixtures.
 - [ ] **P0-04: Fail-closed canonical counters.** Tick, event, entity/domain,
-  command sequence, and authority epoch cannot wrap or saturate ambiguously.
+  command/generation sequence, authority term, and configuration version cannot
+  wrap or saturate ambiguously.
 - [ ] **P0-05: Persist the simulation contract.** State and history identify
   the complete replay-affecting contract, not only a physical format.
 - [ ] **P0-06: Formalize genesis.** Persist and hash a versioned `GenesisSpec`
@@ -97,9 +116,10 @@ Every item in this section blocks the first stable contract.
   confirmed per-world order, not arrival or thread timing.
 - [ ] **P0-10: Enforce safe writer/authority ownership.** The current local
   store requires an exclusive writer; the distributed path requires authority
-  epochs and provider-specific fencing.
+  terms, confirmed membership configurations, and provider-specific fencing.
 - [ ] **P0-11: Bind durable records.** Bind confirmed records to world identity,
-  genesis, execution profile, authority epoch, and causal cursor.
+  genesis, execution profile, authority term, configuration version, and causal
+  cursor.
 - [ ] **P0-12: Validate world integrity.** Provide a pure generic validator
   callable after decode, recovery, migration, and before authority claims.
 - [ ] **P0-13: Separate torn-tail recovery from corruption.** Fail or quarantine
@@ -144,8 +164,17 @@ Every item in this section blocks the first stable contract.
   an explicit operator recovery mechanism until K-10 compaction replaces it.
 - [ ] **P1-19: Implement retention-aware compaction.** Preserve stable cursors,
   checkpoints, obligations, causal linkage, and expired command identities.
+- [ ] **P1-20: Add the minimum causal chain.** Link admission, resolution,
+  events, active contracts, and before/after semantic hashes so the first stable
+  contract can prove which confirmed operation produced each state.
 - [ ] **P2-01: Give `sy_loader` one explicit role.** It remains inert or
   becomes startup provider composition with boundary tests; no hidden logic.
+- [ ] **P2-02: Prove baseline backup and restore.** Document and test at least a
+  cold backup of the complete authoritative state and ordinary recovery after
+  restore. Do not claim hot backup without a coherent protocol.
+- [ ] **P2-03: Publish the baseline operator recovery runbook.** Cover the
+  first-stable failure model: corruption, storage failure, failed migration,
+  lost quorum, stale nodes, and missing components.
 - [ ] **P2-06: Record the application-rule boundary decision.** The decision
   log and contracts identify the extracted prototype rules as fixtures and
   prevent new application logic from accumulating in the kernel.
@@ -176,8 +205,6 @@ They do not weaken Gate 1-K.
 
 ### Trigger: first deterministic divergence or research demand
 
-- [ ] **P1-20: Add causality hashes.** Link commands, events, contracts, and
-  before/after semantic hashes.
 - [ ] **P1-21: Add a deterministic flight recorder.** Persist compact execution
   evidence adequate for diagnosis.
 - [ ] **P1-23: Build a divergence bisector.** Find the first different
@@ -187,13 +214,9 @@ They do not weaken Gate 1-K.
 
 - [ ] **P1-22: Add a read-only doctor command.** Validate identity, profiles,
   checkpoints, history, ownership, obligations, and authority without repair.
-- [ ] **P2-02: Prove backup and restore.** Document and test at least cold
-  backup; do not claim hot backup without a coherent protocol.
-- [ ] **P2-03: Publish an operator recovery runbook.** Cover corruption,
-  storage failure, failed migration, lost quorum, stale nodes, and missing
-  components.
 - [ ] **P2-04: Emit structured recovery diagnostics.** Include identifiers,
-  cursors, profiles, authority epoch, repair mode, and semantic hashes.
+  cursors, profiles, authority term, configuration version, repair mode, and
+  semantic hashes.
 - [ ] **P2-05: Maintain the failure-mode matrix beyond stable scenarios.**
 
 ### Trigger: sustained scale beyond baseline limits
@@ -212,15 +235,19 @@ The reference distributed test matrix must include:
 | --- | --- |
 | One node | Same public semantics under a one-member authority profile. |
 | Three healthy nodes | One confirmed order and equal semantic state. |
-| Coordinator stopped | A new coordinator continues after fencing the old epoch. |
+| Coordinator stopped | A new coordinator continues after fencing the old term. |
 | One-node minority | Read-only confirmed state with freshness; mutation refused or unavailable. |
 | Delayed old coordinator returns | Cannot confirm or publish stale work. |
 | Replica storage fails | It stops unsafe work; remaining quorum may continue. |
 | Quorum storage fails | World mutations stop with no fabricated refusal for uncertain commands. |
-| Node rejoins | Validates profile and catches up before authority/read-current claims. |
-| Membership changes | Change itself is confirmed and old membership is fenced. |
+| Existing voter restarts | Recovers durable term, vote, configuration, and log before participating; applies the read barrier before current-read claims. |
+| New node joins | Acts as a non-voting learner until compatible and caught up. |
+| Membership changes | Joint configuration preserves old/new quorum intersection, including interruption before final configuration. |
+| Full group restarts | Recovers one term/configuration/history without local configuration overriding confirmed membership. |
 | Profile mismatch | Node is denied authority and current-read claims. |
-| Migration | All participants activate one compatible profile at a confirmed boundary. |
+| Migration preparation fails | A confirmed abort preserves the old profile before activation. |
+| Migration activation reply is lost | Confirmed history decides whether old or new profile is authoritative. |
+| Node fails after migration activation | Recovery finishes on the confirmed new profile; no implicit rollback occurs. |
 
 ## Platform durability note
 
