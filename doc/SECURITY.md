@@ -84,9 +84,10 @@ ownership, dependencies, limits, permissions, versions, migrations, and
 fingerprints.
 
 A plugin cannot directly mutate another owner's data. Opaque payloads remain
-bounded and integrity-protected. Removal cannot discard active obligations.
-Missing or mismatched required artifacts block activation, migration, or
-re-simulation.
+bounded and integrity-protected. Removal cannot discard or merely archive
+active obligations while a world continues: they require a confirmed transfer
+or resolution. Missing or mismatched required artifacts block activation,
+migration, or re-simulation.
 
 ### Storage
 

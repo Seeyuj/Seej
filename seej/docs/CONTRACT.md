@@ -104,9 +104,20 @@ Opaque data is allowed. The kernel preserves its envelope and bytes but may
 require the owner plugin or a tool to interpret them.
 
 Only the owner commands mutate a domain. A transaction can invoke several
-owners inside the same world. All validators observe one coherent pre-state;
-the complete transition is confirmed and applied atomically or no owner
-effects are applied.
+owners inside the same world. It binds to one confirmed base cursor and orders
+its owner sub-commands canonically. Starting from the immutable base state, the
+kernel builds a private candidate state: each owner validates and proposes only
+its own domain changes while observing the candidate produced by earlier
+sub-commands. After all parts succeed, cross-domain validators inspect the
+complete candidate state.
+
+The resulting decision, events, and complete candidate transition are
+confirmed atomically or no owner effects are applied. If the confirmed head no
+longer matches the base cursor before confirmation, the proposal is discarded
+and the entire transaction is recomputed from its actual canonical predecessor.
+It is never partially rebased. Plugin timeout, crash, or unavailable compatible
+code leaves the command pending or the authority unavailable; it is not
+fabricated as a deterministic `Refused` decision.
 
 The kernel does not define universal conservation. A world declares its laws,
 including any creation, destruction, privilege, mortality, spatial, or
@@ -293,9 +304,11 @@ at startup. Activation validates compatibility, permissions, versions,
 fingerprints, data migrations, and required capabilities.
 
 Removing or replacing a plugin with owned data or active obligations requires
-an explicit transfer, migration, resolution, or archival transition. The world
-may pause at a confirmed boundary while the server remains available for
-inspection.
+an explicit migration of its data and either transfer to an active successor or
+resolution of every active obligation. Archival alone may detach code only when
+all obligations are terminal, or when the entire world is explicitly archived
+and cannot advance. The world may pause at a confirmed boundary while the
+server remains available for inspection.
 
 Hot loading and isolated application-plugin execution are **Later**. Their
 eventual implementation must preserve this contract.

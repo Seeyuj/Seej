@@ -77,8 +77,10 @@ automatic scaling of tick computation.
 
 A world records the exact causal-resolution plugin and policy versions needed
 to interpret retained state. The plugin owns its payload migrations. Removing
-it requires materializing, transferring, resolving, or explicitly archiving
-its owned state and obligations.
+it requires migrating its owned state and transferring active obligations to a
+compatible successor or resolving them. Its terminal state may be archived. An
+entire archived world may retain unresolved opaque obligations, but cannot
+advance until an explicit lifecycle transition restores compatible ownership.
 
 Operators retain artifacts needed for re-simulation. If they are missing, Seej
 may still preserve and recover an opaque checkpoint while refusing to

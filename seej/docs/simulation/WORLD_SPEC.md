@@ -100,9 +100,17 @@ Commands express intentions against an owner domain at a target tick. Admission
 binds them to a stable identity, payload fingerprint, active contracts, and a
 canonical order.
 
-A transaction can contain commands for several owners. Each validates against
-one coherent prior state. If any part is invalid or cannot be durably
-confirmed, no owner effects occur.
+A transaction can contain commands for several owners. It binds to one
+confirmed base cursor and gives its owner sub-commands a canonical order. Each
+owner observes the candidate state produced by preceding sub-commands, but may
+propose changes only to its own domains. Cross-domain laws validate the
+complete candidate. If any part is invalid or the complete result cannot be
+durably confirmed, no owner effects occur.
+
+If another confirmed transition makes the base cursor stale, the candidate is
+discarded and the entire transaction is recomputed from its canonical
+predecessor. Execution failure or unavailable plugin code is not a world-law
+refusal and cannot create partial effects.
 
 Events record the accepted causal result. A state change without an admitted
 command and confirmed event chain is invalid. Diagnostic messages and
@@ -159,6 +167,10 @@ a declared outcome. Examples include debts, scheduled effects, references held
 by another domain, and pending cross-domain transactions. Its envelope must be
 identifiable even when the payload is opaque.
 
+An active obligation is detached from its current owner only by a confirmed
+transfer to an active compatible successor or a confirmed resolution. Merely
+archiving its bytes is not an outcome while the world can still advance.
+
 Full archival and genesis re-simulation are optional. A bounded-retention world
 can still promise recovery from its retained checkpoint.
 
@@ -181,7 +193,9 @@ plugins cannot claim authority.
 - **Migrate:** transform explicit data versions at a confirmed boundary.
 - **Re-simulate:** recompute retained transitions with exact components.
 - **Clone:** create a new identity from an exported state.
-- **Archive:** preserve state without requiring it to remain executable.
+- **Archive:** preserve state without requiring it to remain executable; an
+  archived world cannot advance until all required components and obligations
+  are restored through an explicit lifecycle transition.
 - **Delete:** an operator operation outside the simulation contract.
 
 These operations cannot be substituted for each other silently.

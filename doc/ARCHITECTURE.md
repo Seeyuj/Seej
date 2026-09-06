@@ -94,8 +94,11 @@ relationships, and obligations.
 
 Each mutable data domain declares one logical owner. Other plugins change it
 through public commands. A kernel transaction can coordinate several owners
-inside one world so that all validated effects are confirmed together or none
-are applied. This does not imply atomicity across worlds or external services.
+inside one world. Ordered owner proposals build a private candidate state,
+cross-domain laws validate the complete result, and all effects are confirmed
+together or none are applied. A stale candidate is recomputed in full from its
+canonical predecessor. This does not imply atomicity across worlds or external
+services.
 
 World law is supplied through declared validators. The kernel enforces those
 validators without defining universal economics, mortality, equality between

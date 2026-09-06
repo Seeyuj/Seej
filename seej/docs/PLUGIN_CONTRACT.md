@@ -101,11 +101,17 @@ all events and state effects together. `Conflict`, `Expired`, `NotFound`, and
 command is retained until resolution. Closed kernel-issued generations preserve
 non-reuse after individual terminal results are compacted.
 
-One in-world transaction may call commands owned by multiple plugins. All
-participants validate against one immutable input state. The kernel confirms
-and applies the complete transition atomically, or applies none of it. Effects
-in other worlds and external services require explicit asynchronous protocols
-and are not part of this atomicity guarantee.
+One in-world transaction may call commands owned by multiple plugins. The
+transaction binds to one confirmed base cursor and gives owner sub-commands a
+canonical order. Each owner validates against the candidate state produced by
+the preceding sub-commands and may propose changes only to its own domains.
+Cross-domain validators then inspect the complete candidate.
+
+The kernel confirms the decision, events, and complete transition atomically,
+or applies none of it. A candidate whose base cursor is no longer the confirmed
+predecessor is discarded and recomputed in full. Effects in other worlds and
+external services require explicit asynchronous protocols and are not part of
+this atomicity guarantee.
 
 ## 5. Laws and validation
 
@@ -118,6 +124,11 @@ persistable decisions. An external nondeterministic computation affects the
 world only after its result becomes a bounded, validated, persisted command
 input.
 
+Only deterministic contract evaluation can produce a durable `Refused`
+decision. A plugin crash, timeout, missing artifact, or temporarily unavailable
+capability produces no application effects and leaves the admission pending or
+the authority unavailable until it can resume safely.
+
 The existing resource and creature degradation behavior is a prototype
 fixture. Before the first stable contract it must execute through the same
 public extension boundary as any third-party world rule.
@@ -129,10 +140,12 @@ dependencies, data versions, and execution compatibility before mutation is
 allowed.
 
 A component with owned data or active obligations cannot be removed merely by
-unregistering code. Removal or replacement requires an explicit transition
-that migrates, transfers, resolves, or archives those obligations. The server
-process may stay available while the affected world's progression pauses at a
-confirmed boundary.
+unregistering code. Removal or replacement migrates its owned data and either
+transfers each active obligation to an activated compatible successor or
+resolves it according to the world contract. Archival permits detachment only
+for terminal obligations, or as part of archiving the entire world so that it
+cannot advance. The server process may stay available while the affected
+world's progression pauses at a confirmed boundary.
 
 Stable kernel-owned data always has a migration path from each stable version.
 Plugins own their data migrations. A missing step or component blocks the
@@ -165,3 +178,16 @@ implementation, that:
 
 Gap `K-05` requires at least one fundamental provider replacement in tests.
 Hot loading and sandbox isolation do not block the first stable contract.
+
+Transaction and lifecycle fixtures before freeze include:
+
+- with a declared non-negative-balance law, two ordered withdrawals of seven
+  from a balance of ten cannot both succeed;
+- payment and item transfer either appear in one confirmed resolution or not
+  at all;
+- a candidate made stale before confirmation is discarded and recomputed in
+  full;
+- a participant crash cannot become a fabricated business refusal or partial
+  effect;
+- a debt with a future due tick prevents owner removal until confirmed transfer
+  or resolution.

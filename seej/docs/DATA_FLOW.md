@@ -94,14 +94,20 @@ an explicit late refusal.
 ```text
 command
   -> resolve participating owners
-  -> validate all parts against one immutable pre-state
-  -> produce one complete transition
+  -> bind the transaction to a confirmed base cursor
+  -> order owner sub-commands canonically
+  -> apply each owner proposal to a private candidate state
+  -> validate cross-domain invariants on the complete candidate
   -> confirm one Resolution: decision + events + state atomically
   -> expose all effects together
 ```
 
-Failure, refusal, or missing compatibility for any participant yields no owner
-effects. External systems and other worlds are coordinated asynchronously.
+A deterministic refusal by any participant yields no owner effects. If the
+confirmed head changed before confirmation, discard the candidate and
+recompute the whole transaction from its canonical predecessor. Missing
+compatibility, plugin crash, or timeout leaves the command pending or the
+authority unavailable instead of manufacturing a refusal. External systems and
+other worlds are coordinated asynchronously.
 
 ## Tick flow
 
