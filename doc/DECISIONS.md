@@ -723,6 +723,13 @@ semantics.
   the per-producer floor.
 - Persisted finite limits per producer and per world bound non-closed
   generations, pending commands, retained results, tombstones, and bytes.
+- The canonical confirmed cursor, a checkpoint's atomically bound cursor, and a
+  state instance's applied cursor are distinct. Recovery materializes recorded
+  confirmed transitions after the checkpoint; re-simulation alone recomputes
+  resolved commands through exact historical components.
+- Materialization requires matching predecessor cursor and semantic hash and
+  advances state and applied cursor together. It never directly repeats an
+  external call; stable effect identities support asynchronous deduplication.
 
 ### Consequences
 
@@ -734,6 +741,8 @@ semantics.
   and barrier, stable membership, activation, abort, and recovery.
 - Retention evidence must cover exact expiry, sealing races, compaction before
   generation closure, and continuous producers without unbounded result growth.
+- Recovery evidence must cover a confirmed suffix after an older checkpoint,
+  cursor/hash mismatch, and external-effect redelivery without re-execution.
 - These are target semantics. D-014 closes no implementation gap.
 
 ---

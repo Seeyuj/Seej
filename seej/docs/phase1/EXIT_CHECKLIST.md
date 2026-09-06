@@ -83,7 +83,8 @@ Every item in this section blocks the first stable contract.
   duplicate effects, ID/payload conflict, tick closure, uncertain timeout,
   authorized cancellation, a cancellation/execution race with one durable
   winner, exact status expiry, confirmed generation opening/sealing/closure,
-  continuous producer activity, and non-reusable expired IDs.
+  continuous producer activity, non-reusable expired IDs, and suffix
+  materialization without command re-execution.
 - [ ] **K-09: Compatibility and migrations.** Define an execution profile and a
   migration mechanism for kernel-owned stable data. Prove compatible
   preparation, pending-command drain or cancellation, a final source-state
@@ -173,8 +174,10 @@ Every item in this section blocks the first stable contract.
   generation closure, and expired command identities through the durable
   per-producer floor.
 - [ ] **P1-20: Add the minimum causal chain.** Link admission, resolution,
-  events, active contracts, and before/after semantic hashes so the first stable
-  contract can prove which confirmed operation produced each state.
+  events, active contracts, predecessor/result cursors, and before/after
+  semantic hashes. Persist distinct confirmed, checkpoint, and applied cursor
+  roles so the first stable contract can prove which confirmed operation
+  produced each materialized state.
 - [ ] **P2-01: Give `sy_loader` one explicit role.** It remains inert or
   becomes startup provider composition with boundary tests; no hidden logic.
 - [ ] **P2-02: Prove baseline backup and restore.** Document and test at least a
@@ -272,6 +275,9 @@ The reference distributed test matrix must include:
 | Producer submits continuously | Finite generation bounds force rotation or `LimitExceeded`; retained terminal data remains bounded. |
 | Closed generation records are compacted | The per-producer floor rejects every old ID before any removed generation record is consulted. |
 | Sealed generation contains a pending command | The command and required execution profile remain retained; limits prevent unlimited additional admission. |
+| Checkpoint is at cursor 100 and history is confirmed through 110 | Recovery materializes records 101–110 into a new state instance without re-evaluating their resolved commands. |
+| Materialization sees a cursor gap or wrong predecessor hash | Recovery fails closed and does not advance the applied cursor. |
+| A recovered event or effect intention is delivered again | It keeps its stable identity; recovery itself invokes no external service and the asynchronous consumer deduplicates. |
 
 ## Platform durability note
 

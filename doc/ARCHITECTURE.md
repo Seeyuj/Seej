@@ -115,7 +115,8 @@ The durable model separates:
 3. confirmed admission and durable `Pending` state;
 4. deterministic resolution computation;
 5. confirmed resolution containing decision, events, and transition;
-6. one-time application and publication to observers.
+6. ordered materialization into each node's state instance and publication to
+   observers after confirmation.
 
 A local append is sufficient for parts of the current one-node prototype but
 is not a distributed commit. The distributed contract reports success and
@@ -126,6 +127,12 @@ checkpoint and the retained confirmed history after its cursor. Re-simulation
 from commands is a stronger operation and additionally requires the exact
 contracts and plugin artifacts. Migration transforms data between explicit
 stable formats and is neither recovery nor re-simulation.
+
+The confirmed history cursor, checkpoint cursor, and node-local applied cursor
+are distinct. Recovery may materialize a recorded resolution again into a new
+state instance after a crash, but it never asks application code to decide that
+resolved command again. State and applied cursor advance together, and a node
+with materialization lag cannot claim a current read.
 
 ## Observation
 

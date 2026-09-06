@@ -70,7 +70,17 @@ must preserve these boundaries:
 If a node fails after admission and before resolution, the next coordinator
 finds `Pending` in confirmed history and recomputes from the same confirmed
 predecessor and execution profile. If it fails after resolution and before the
-reply, the durable resolution is returned without reapplying effects.
+reply, the durable resolution is returned without re-evaluating the command.
+A fresh state instance may materialize that recorded resolution when recovering
+from an older checkpoint; it does not create a second canonical effect.
+
+Recovery tracks three positions: the authority group's `confirmed_cursor`, the
+retained checkpoint's `checkpoint_cursor`, and each state instance's
+`applied_cursor`. Starting at the checkpoint cursor, the node consumes retained
+confirmed records in order. Each record's predecessor cursor and semantic hash
+must match the materialized state, and state plus `applied_cursor` advance
+together. Gaps or mismatches fail closed. Recovery delivers no external effect
+directly; identified events may be redelivered for consumer deduplication.
 
 An authorized `CancelCommand` follows the kernel control path. It identifies
 the requester, reason, target command, and its own stable identity. It can win

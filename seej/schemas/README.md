@@ -9,7 +9,8 @@ Schema families planned before the first stable contract include:
 - command-generation open/seal/close operations and limits, command envelope,
   payload fingerprint, exact result-expiration tick, non-reuse tombstone, and
   durable admission/resolution state;
-- event envelope and confirmed-history cursor;
+- event envelope, confirmed-history cursor, checkpoint cursor, applied cursor,
+  and their causal semantic-hash bindings;
 - owner-domain envelope for structured or opaque plugin data;
 - plugin/provider manifest, permissions, dependencies, and migrations;
 - node membership configuration, authority term, and compatibility handshake;

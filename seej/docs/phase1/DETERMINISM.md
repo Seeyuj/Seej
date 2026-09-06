@@ -66,6 +66,11 @@ The current runner proves local engine behavior from a fixed schedule. It does
 not prove durable command admission, distributed confirmation, plugin
 compatibility, or migrations.
 
+The current event replay reconstructs the local world. In the stable target,
+ordinary recovery materializes recorded confirmed decisions after a validated
+checkpoint; deterministic re-simulation separately invokes exact historical
+components and compares the recomputed results with those records.
+
 ## Stable target
 
 Before freeze:
@@ -78,6 +83,8 @@ Before freeze:
 - `P0-15`: a replay oracle recomputes retained transitions;
 - `P1-04`: semantic hashes are separate from storage and authority hashes;
 - `P1-05/P1-06`: golden versions and stable persisted variants exist;
+- `P1-20`: predecessor/result cursors and semantic hashes distinguish recovery
+  materialization from command re-execution;
 - `K-07`: all compatible replicas reach the same semantic state;
 - `K-09`: coordinated migrations produce a single declared result.
 
@@ -102,4 +109,3 @@ A multiresolution plugin may lead to a future different from a hypothetical
 fully detailed run when the active world contract permits it. Determinism means
 the declared approximation produces the same transition for the same explicit
 inputs; it does not mean all allowed simulation policies share one future.
-

@@ -88,6 +88,14 @@ state, the ordered admitted input, the tick, and the active contract profile.
 Network arrival order and leader scheduling are not transition inputs until
 captured in the confirmed order.
 
+Confirmation and local materialization are separate positions. The group
+publishes a canonical `confirmed_cursor`; each node records the
+`applied_cursor` of its current state instance. A checkpoint atomically binds
+its state and semantic hash to a `checkpoint_cursor`. A node can lag and catch
+up by materializing recorded confirmed transitions in order, but it cannot
+re-evaluate an already resolved command during ordinary recovery or claim a
+current read before applying the required barrier.
+
 ## 5. Availability and failure behavior
 
 - **Quorum available:** the group may admit and confirm mutations.
@@ -130,7 +138,7 @@ local WAL tail. Every response identifies:
 - `world_id`;
 - authority term and configuration version;
 - confirmed cursor;
-- state or event position;
+- state `applied_cursor` or event position;
 - freshness, including whether the node is currently caught up.
 
 A **current confirmed** read requires a quorum-backed authority read barrier in

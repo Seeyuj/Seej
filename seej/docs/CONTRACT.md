@@ -250,8 +250,8 @@ position, owner, schema version, and stable event position. Unknown mandatory
 variants are refused rather than silently skipped.
 
 A confirmed causal chain binds command, resulting events, active execution
-profile, and semantic state transition. Diagnostic logs are never canonical
-history.
+profile, predecessor cursor and semantic hash, and resulting cursor and
+semantic hash. Diagnostic logs are never canonical history.
 
 **Implemented:** `SimEvent` values have local event IDs and are stored in the
 FileEventLog WAL. Some legacy events are replay no-ops.
@@ -278,12 +278,26 @@ one and three nodes.
 
 ## 8. Persistence, recovery, replay, and migration
 
+Three positions have distinct meanings:
+
+- `confirmed_cursor` is the highest canonical history record known confirmed;
+- `checkpoint_cursor` is the confirmed position atomically bound to a retained
+  checkpoint's state, execution profile, and semantic hash;
+- `applied_cursor` is the highest confirmed position materialized into a
+  particular node-local state instance.
+
+An `applied_cursor` cannot advance separately from the state it describes. It
+may lag `confirmed_cursor`. A node cannot use that lagging materialization for a
+current read until it applies through the required read barrier.
+
 These operations are distinct:
 
-- **Recovery:** load a compatible retained checkpoint and apply the confirmed
-  retained history after its cursor.
+- **Recovery:** load and validate a compatible retained checkpoint, set the new
+  state instance to its `checkpoint_cursor`, and materialize retained confirmed
+  records after that cursor in order. It consumes recorded decisions and
+  transitions; it does not invoke owner code to decide resolved commands again.
 - **Re-simulation:** recompute transitions from retained commands and exact
-  execution components.
+  execution components, then compare them with the recorded causal results.
 - **Migration:** convert durable data from one explicit stable version to
   another at a coordinated boundary.
 - **Clone:** create a new world identity from copied or exported state.
@@ -292,6 +306,19 @@ Every accepted canonical mutation is durably confirmed before success. A
 storage error such as full/read-only media, I/O failure, failed append, failed
 rename, or failed synchronization prevents unsafe new acceptance. Suspicious
 corruption is quarantined or refused; it is not silently repaired.
+
+Materializing a confirmed resolution requires the current `applied_cursor` and
+semantic hash to match its recorded predecessor. It advances state, semantic
+hash, and `applied_cursor` together. A new state instance may therefore apply a
+confirmed resolution that an earlier in-memory instance had applied before a
+crash; this reconstructs the canonical state and is not a second command
+execution. A gap, mismatched predecessor, or different result at the same
+cursor fails closed.
+
+Recovery never invokes an external side effect merely because it materializes
+a record. Durable events and effect intentions retain their stable IDs and may
+be redelivered; external consumers are responsible for deduplication under
+their explicit asynchronous protocol.
 
 Kernel-owned data has a migration path from every stable version. Plugins own
 their migrations. Re-simulation refuses to run when an exact referenced

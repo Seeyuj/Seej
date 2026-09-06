@@ -31,7 +31,8 @@ An observer cannot:
 A coherent initial response identifies at least:
 
 - `world_id`;
-- confirmed tick and history cursor;
+- confirmed tick, `confirmed_cursor`, and the returned state's
+  `applied_cursor`;
 - authority term, configuration version, and freshness classification;
 - execution-profile identifier;
 - selected readable owner domains or projection;

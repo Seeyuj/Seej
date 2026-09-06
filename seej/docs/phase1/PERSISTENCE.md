@@ -122,7 +122,8 @@ The target distinguishes:
 4. deterministic resolution computation from the confirmed predecessor;
 5. confirmed resolution containing a `Succeeded`, `Refused`, or `Cancelled`
    decision, events, and complete transition;
-6. one-time state application and public event/status publication.
+6. ordered materialization of that recorded transition into each state instance
+   and public event/status publication after confirmation.
 
 A local WAL append does not prove distributed confirmation. The authority
 provider defines the quorum rule under
@@ -136,6 +137,27 @@ authorized cancellation additionally binds its stable control-operation
 identity, requester, reason, and target command. Recovery resumes a confirmed
 pending admission and never recomputes a confirmed terminal decision as new
 work.
+
+The target persists or derives three distinct cursors:
+
+- the authority group's `confirmed_cursor`;
+- each checkpoint's `checkpoint_cursor`, atomically bound to world identity,
+  execution profile, state, and semantic hash;
+- each materialized state instance's `applied_cursor`, advanced atomically with
+  that state.
+
+Ordinary recovery validates a checkpoint, creates a state instance at its
+cursor, and materializes the retained confirmed suffix. A Resolution records
+its predecessor and result cursors and semantic hashes. Materialization requires
+the current state to match that predecessor, then advances the state and
+`applied_cursor` together. Applying the recorded suffix to a new instance is
+allowed even if a crashed in-memory instance had applied it; recomputing the
+resolved command through plugin code is not. Gaps, mismatches, or conflicting
+results fail closed.
+
+Recovery does not invoke external services. It may redeliver stable identified
+events or effect intentions to an explicit asynchronous consumer protocol,
+which handles duplicates.
 
 ## Retention and compaction
 

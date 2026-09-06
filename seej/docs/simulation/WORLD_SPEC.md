@@ -42,6 +42,12 @@ Operational state includes node membership, local file paths, transport
 connections, caches, leader leases, diagnostics, and storage cursors. It can be
 durable and security-sensitive without becoming application world state.
 
+The canonical history has a `confirmed_cursor`. A retained checkpoint binds
+one state and semantic hash to its `checkpoint_cursor`, while each node-local
+state instance tracks the highest materialized `applied_cursor`. These cursor
+roles cannot be substituted: a node may know a later confirmed cursor than it
+has applied, and cannot present the lagging state as current.
+
 A semantic state hash excludes deployment-specific bytes and authority
 metadata. Storage checksums and authenticated network messages have separate
 purposes.
@@ -119,9 +125,17 @@ Events record the accepted causal result. A state change without an admitted
 command and confirmed event chain is invalid. Diagnostic messages and
 observer-specific projections are not events.
 
+Ordinary recovery materializes recorded confirmed transitions after a
+checkpoint without asking owner plugins to decide resolved commands again.
+Re-simulation is the separate operation that recomputes them with exact
+components. Stable event identifiers permit redelivery without creating a new
+canonical event.
+
 External side effects and other worlds are outside the atomic boundary. Their
 coordination uses explicit messages and compensating or asynchronous
-application protocols.
+application protocols. Recovering kernel state does not directly repeat an
+external call; consumers of durable effect intentions handle redelivery by
+stable identity.
 
 ## 7. Randomness and external computation
 
