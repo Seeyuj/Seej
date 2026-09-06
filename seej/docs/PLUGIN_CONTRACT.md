@@ -215,8 +215,27 @@ implementation, that:
 - recovers without relying on internal Rust domain types;
 - proves that a consumer can use the contract without reading `sy_core`.
 
-Gap `K-05` requires at least one fundamental provider replacement in tests.
-Hot loading and sandbox isolation do not block the first stable contract.
+Gap `K-05` requires a public-interface substitution fixture for every
+fundamental capability boundary. An alternative used only by the conformance
+harness is sufficient; Seej does not require two production implementations of
+each capability. One test component may cover several boundaries, but each row
+below needs independent success and failure evidence:
+
+| Capability boundary | Minimum substitution evidence |
+| --- | --- |
+| State storage and recovery | Replace the bundled provider; preserve durable ordering, checkpoint recovery, integrity checks, and fail-closed injected I/O failures. |
+| Command admission and status | Preserve identity, deduplication, ordering, terminal states, cancellation, generation lifecycle, expiry, and limits. |
+| Tick scheduling | Advance explicit canonical ticks without making wall-clock or local scheduling order a transition input. |
+| Deterministic validation | Produce the same typed decisions from the same explicit state, command, tick, and contract without bypassing owner rules. |
+| Transaction coordination | Preserve ordered candidate construction, final cross-domain validation, stale-base recomputation, and atomic confirmation. |
+| Membership and authority terms | Preserve explicit admission, voter configuration, joint transitions, durable terms, and stale-authority fencing. |
+| Consensus and replication | Preserve one confirmed order in one- and three-node profiles, quorum loss behavior, catch-up, and crash recovery. |
+| Observation and retained cursors | Preserve confirmed/stale read classes, neutrality, authorization, cursor expiry, and coherent resynchronization. |
+| Component loading and compatibility | Preserve manifest, permission, version, fingerprint, dependency, migration, and incompatible-activation checks. |
+
+Every fixture imports only public contracts and is run against both the bundled
+and alternative implementation. Hot loading and sandbox isolation do not block
+the first stable contract.
 
 Transaction and lifecycle fixtures before freeze include:
 

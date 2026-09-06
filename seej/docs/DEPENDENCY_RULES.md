@@ -101,7 +101,9 @@ Target checks before contract freeze:
 
 - dependency tests for public contract packages;
 - a third-party extension built without internal dependencies;
-- at least one replacement fundamental provider;
+- a bundled-versus-alternative conformance fixture for every fundamental
+  provider boundary listed above; alternatives may be test-only but import only
+  public contracts;
 - protocol and ingame-netcode separation;
 - three-node compatibility and authority tests.
 

@@ -58,8 +58,10 @@ Required work:
 - separate semantic state hashes from storage and authority metadata;
 - define retained checkpoints, cursor expiry, and recovery semantics.
 
-Evidence includes one replacement provider and one real external extension that
-owns data and commands without internal dependencies.
+Evidence includes a public-interface substitution fixture for every fundamental
+provider boundary and one real external extension that owns data and commands
+without internal dependencies. Alternative providers may be conformance-only;
+the stable gate does not require duplicate production implementations.
 
 ## Foundation 2 — Distributed kernel
 

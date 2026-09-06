@@ -60,6 +60,11 @@ move into the active architecture when implemented. Ingame netcode remains an
 application plugin. Current exclusion of `sy_protocol` and `mods/*` is a
 repository fact, not a rule that they must stay deferred forever.
 
+`sy_cli` opens the current store for inspection without a mutating world API.
+Its explicit `dump --output` path is not yet guarded against resolving into or
+aliasing the data directory; that limitation is tracked by P1-11 in the exit
+checklist.
+
 ## `sy_core` boundary
 
 The pure engine cannot use:

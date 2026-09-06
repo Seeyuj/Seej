@@ -40,8 +40,8 @@ Documentation uses three status labels:
 
 The current prototype is a single-process, single-writer headless server. It
 can create a spatial demonstration world, run deterministic ticks, persist a
-snapshot and local WAL, recover after interruption, and expose read-only CLI
-inspection.
+snapshot and local WAL, recover after interruption, and inspect the store
+through a CLI that opens its WAL read-only.
 
 Implemented today:
 
@@ -58,6 +58,10 @@ The prototype does not yet provide a distributed authority group, consensus,
 generic plugin-owned data, a stable public extension ABI, hot loading, or
 plugin isolation. The current zone/entity types and systemic rules are
 prototype behavior, not the future universal world model.
+
+`sy_cli dump --output` writes to the operator-supplied destination and does not
+yet reject a path that aliases the canonical data directory. Until gap P1-11 is
+closed, exports must be directed outside the world store.
 
 ## Target Architecture
 

@@ -62,8 +62,10 @@ Every item in this section blocks the first stable contract.
   recovery, and does not depend on `sy_core` internals. An observer alone does
   not satisfy this gap.
 - [ ] **K-05: Replaceable fundamental providers.** The minimal distribution
-  runs an empty world with bundled providers. A conformance test replaces at
-  least one fundamental provider without weakening its capability contract.
+  runs an empty world with bundled providers. Public-interface conformance
+  fixtures substitute every fundamental capability boundary listed in the
+  plugin contract and exercise its success and failure semantics. Test-only
+  alternatives qualify; a second production implementation is not required.
   First-stable providers are trusted and operator-approved at startup.
 - [ ] **K-06: Generic data ownership and transactions.** Support versioned
   structured or opaque owner domains, public owner commands, declared
@@ -151,6 +153,9 @@ Every item in this section blocks the first stable contract.
   manifest creation, initial confirmation, and first checkpoint boundaries.
 - [ ] **P1-11: Define concurrent read behavior.** Inspection never mutates
   durable files and never presents a partial local tail as confirmed state.
+  An explicit export must reject any resolved destination inside the canonical
+  data directory or aliasing an existing store file, including normalized,
+  symlink/junction, and hard-link aliases supported by the platform.
 - [ ] **P1-12: Add adversarial recovery and replication fixtures.** Cover
   duplicate, missing, reordered, wrong-world, wrong-contract, stale-authority,
   incompatible-plugin, and wrong-checkpoint inputs.
@@ -200,6 +205,23 @@ Every item in this section blocks the first stable contract.
   conformance fixture, or read-only diagnostic.
 - [ ] Documentation labels current, target, and later behavior consistently.
 - [ ] All local links and anchors resolve.
+
+### Evidence required for K-05
+
+| Capability boundary | Required proof through an alternative public implementation |
+| --- | --- |
+| State storage and recovery | Durable ordering, coherent checkpoint recovery, integrity refusal, and injected write/sync/replace failures. |
+| Command admission and status | Identity, ordering, retry, cancellation, generation lifecycle, exact expiry, non-reuse, and bounds. |
+| Tick scheduling | Equal canonical ticks from equal explicit scheduling input; no ambient-time dependency. |
+| Deterministic validation | Equal typed results and enforcement for equal state, command, tick, and contracts. |
+| Transaction coordination | Atomic multi-owner result, complete-candidate validation, and stale-base recomputation. |
+| Membership and authority terms | Learner admission, joint configuration, persisted term/vote, and fencing. |
+| Consensus and replication | One- and three-node order, quorum loss, coordinator replacement, catch-up, and restart. |
+| Observation and retained cursors | Current/stale reads, permission checks, neutrality, cursor expiry, and coherent handoff. |
+| Component loading and compatibility | Manifest, fingerprint, permission, dependency, version, migration, and refusal checks. |
+
+Each row runs against the bundled implementation and at least one test-only or
+external alternative that imports only the public capability contract.
 
 ## Gate 1-D — hardening pulled by real use
 

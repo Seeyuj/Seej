@@ -90,10 +90,14 @@ cargo run --bin sy_cli -- entity world_42 1
 cargo run --bin sy_cli -- zones world_42
 ```
 
-`sy_cli` does not mutate the world store. The `dump --output` option may write
-the requested export file. Its current coherent-read policy still needs the
-P1-11 evidence when `server_d` writes concurrently. It is not the K-02
-confirmed network observation API.
+Inspection opens the current world store and WAL through read-only paths. The
+`dump --output` option writes the requested export file, and the current code
+does not prevent that destination from resolving inside, or aliasing a file in,
+the canonical data directory. Until P1-11 is implemented, operators must choose
+an export destination outside the world store.
+
+P1-11 also remains open for coherent reads while `server_d` writes
+concurrently. `sy_cli` is not the K-02 confirmed network observation API.
 
 ## Future command documentation rule
 

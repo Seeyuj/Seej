@@ -44,7 +44,7 @@ seej/
 │   │   └── mod_physics          # outside active workspace; placeholder
 │   ├── bin/
 │   │   ├── server_d             # active local daemon
-│   │   └── sy_cli               # active local read-only CLI
+│   │   └── sy_cli               # active local inspector; export path unguarded
 │   └── examples/                # unwired placeholders
 └── clients/                     # empty; optional ecosystem reservation
 ```

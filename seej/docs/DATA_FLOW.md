@@ -19,9 +19,12 @@ local validation -> sy_core transition -> SimEvent batch
                                   optional snapshot
 ```
 
-Today `server_d` is the mutating ingress. `sy_cli` is a read-only inspector
-of local durable data. The local WAL stores resulting events rather than a
-complete durable external-command lifecycle.
+Today `server_d` is the mutating world ingress. `sy_cli` opens local durable
+data through read-only store and WAL paths for inspection. Its explicit
+`dump --output` option separately writes an operator-selected export file and
+does not yet prevent that path from aliasing the world store. The local WAL
+stores resulting events rather than a complete durable external-command
+lifecycle.
 
 The FileStore flow is described exactly in
 [phase1/PERSISTENCE.md](phase1/PERSISTENCE.md). It must not be generalized into

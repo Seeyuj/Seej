@@ -730,6 +730,10 @@ semantics.
 - Materialization requires matching predecessor cursor and semantic hash and
   advances state and applied cursor together. It never directly repeats an
   external call; stable effect identities support asynchronous deduplication.
+- Every fundamental provider boundary requires a public-interface substitution
+  fixture against bundled and alternative implementations. Test-only
+  alternatives are sufficient; duplicate production implementations are not a
+  release requirement.
 
 ### Consequences
 
@@ -743,6 +747,12 @@ semantics.
   generation closure, and continuous producers without unbounded result growth.
 - Recovery evidence must cover a confirmed suffix after an older checkpoint,
   cursor/hash mismatch, and external-effect redelivery without re-execution.
+- Provider evidence must cover every fundamental boundary's normal and failure
+  semantics rather than infer universal replaceability from one substituted
+  provider.
+- Current `sy_cli` inspection opens the store read-only, but its explicit export
+  destination remains unguarded. P1-11 requires rejecting paths inside or
+  aliasing canonical storage before the CLI can promise store-safe export.
 - These are target semantics. D-014 closes no implementation gap.
 
 ---

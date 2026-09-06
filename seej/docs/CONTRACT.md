@@ -385,8 +385,10 @@ Observing is semantically neutral. Reader presence, speed, or identity cannot
 change canonical fidelity, rules, ordering, or outcomes. The runtime may rate
 limit or refuse observation under load.
 
-**Implemented:** `sy_cli` provides read-only local inspection. It is not yet a
-concurrent network observation surface.
+**Implemented:** `sy_cli` opens the local WAL read-only for inspection. Its
+explicit `dump --output` destination is not yet protected from aliasing the
+world store, so P1-11 remains open. It is not yet a concurrent network
+observation surface.
 
 **Target (K-02, K-10):** confirmed stream, retention, resynchronization, and
 concurrent-read evidence.
@@ -425,6 +427,8 @@ semantic, storage, and authority metadata.
 The first contract cannot freeze until the checklist proves at least:
 
 - the generic kernel and provider boundary;
+- bundled-versus-alternative conformance evidence for every fundamental
+  provider capability;
 - fail-closed common storage errors;
 - durable command lifecycle and retention;
 - causal binding from each resolution to its predecessor and resulting state;
