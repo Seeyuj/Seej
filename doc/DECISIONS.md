@@ -75,7 +75,7 @@ A "game"-oriented positioning imposes compromises incompatible with these object
 
 ## D-002 — Simulation Before Narration
 
-**Status**: Accepted  
+**Status**: Accepted, scope amended by D-012
 
 ### Decision
 
@@ -103,7 +103,7 @@ Imposed narration weakens the system's coherence and credibility.
 
 ## D-003 — Autonomous World Not Centered on the Player
 
-**Status**: Accepted  
+**Status**: Accepted, scope amended by D-012
 
 ### Decision
 
@@ -116,18 +116,20 @@ A credible world does not need human presence to function.
 ### Consequences
 
 - The server runs without a connected client.
-- The player has no special status.
-- Players and NPCs are subject to the same systemic rules.
+- The kernel does not embed a player category or human privilege.
+- A world extension may explicitly define different rules for humans, players,
+  NPCs, or any other application-defined role.
 
 ---
 
 ## D-004 — Authoritative Server and Real Persistence
 
-**Status**: Accepted  
+**Status**: Accepted, distributed authority amended by D-012
 
 ### Decision
 
-The server is the sole authority on the world state.
+The server-side kernel is the sole authority on world state. D-012 replaces
+the implied single process with an explicitly authorized node group.
 
 ### Justification
 
@@ -174,7 +176,7 @@ Linking the core to a graphics engine would compromise portability and longevity
 
 ## D-006 — Reference Rendering Client and Official Graphics Standard
 
-**Status**: Accepted  
+**Status**: Superseded by D-012
 
 ### Decision
 
@@ -209,18 +211,20 @@ However, no engine or client must become a structural dependency.
 This decision targets the roadmap's client phase (Phase 4+).  
 It is not part of the current minimal server scope (Phase 1).
 
-> Unreal Engine is not the project.  
-> It is an official client among others, replaceable.
+This historical direction no longer commits Seej to an official rendering
+client or graphics standard. A renderer, including an Unreal client, may be a
+community project consuming the public contracts.
 
 ---
 
 ## D-007 — Pragmatic, Deterministic, and Explainable AI
 
-**Status**: Accepted  
+**Status**: Accepted for kernel inputs, scope amended by D-012
 
 ### Decision
 
-Entities are **deterministic agents**, explainable and observable.
+The kernel accepts only validated, ordered, persisted inputs. It does not ship
+or prescribe an agent model.
 
 ### Justification
 
@@ -234,15 +238,17 @@ Opaque or magical AI is incompatible with these requirements.
 
 ### Consequences
 
-- No conscious or fantasized autonomous AI.
-- Generative AI allowed only on the periphery.
-- Decisions must be traceable and justifiable.
+- Agents and generative systems are community extensions.
+- External nondeterministic results become explicit validated inputs before
+  they can affect canonical state.
+- Kernel decisions remain replayable from retained state, inputs, and active
+  contracts.
 
 ---
 
 ## D-008 — Minimal Core, Modular Extensions
 
-**Status**: Accepted  
+**Status**: Accepted, extended by D-012
 
 ### Decision
 
@@ -256,14 +262,15 @@ A core that is too rich becomes unstable, rigid, and costly to maintain.
 ### Consequences
 
 - Documented and versioned public APIs before extension work is opened.
-- Modules that can be activated, deactivated, or replaced.
+- Fundamental providers and application extensions are replaceable when they
+  satisfy the kernel contracts.
 - No module bypasses the core.
 
 ### Scope note
 
 In Phase 1, `sy_api` is the active internal command/event/persistence contract.
-The stabilized public extension surface and module-loading contract are Phase 2
-work.
+The first stable contract must support trusted, operator-approved providers
+loaded at startup. Hot replacement and isolated execution remain later work.
 
 ---
 
@@ -299,26 +306,29 @@ The **simulation core** is developed in **Rust**.
 
 Rust offers an optimal balance for a persistent platform project:
 
-- **Memory safety**: compile-time guarantees, essential for long-term stability;
+- **Memory safety**: strong compile-time guarantees for safe Rust, essential
+  for long-term stability;
 - **Performance**: native performance without compromising safety;
 - **Concurrency**: a safe and powerful concurrency model for multi-entity simulations;
 - **Maintainability**: a strong type system and mature ecosystem that support multi-year maintenance;
 - **Interoperability**: ability to expose C-compatible APIs for clients in other languages;
-- **Reliability**: absence of undefined behavior, crucial for persistence and reproducibility.
+- **Reliability**: safe Rust excludes broad classes of undefined behavior;
+  `unsafe` code and FFI remain explicit review boundaries.
 
 ### Consequences
 
 - The simulation core is written in Rust.
 - Clients can be developed in any language compatible with the exposed APIs.
 - Optional modules can be written in Rust or other languages depending on their nature.
-- Rust compilation guarantees memory safety with no runtime overhead.
+- Safe Rust provides memory-safety guarantees without a tracing garbage
+  collector; `unsafe` and FFI code require their own invariants and tests.
 - The Rust ecosystem (crates) can be used for non-critical features.
 
 ---
 
 ## D-011 — Contract-First Kernel, Usage-Pulled Hardening
 
-**Status**: Accepted
+**Status**: Superseded by D-012
 
 ### Decision
 
@@ -379,6 +389,157 @@ The operational form of the invariant is: **we do not break replay.**
 - Floating-point canonical decisions remain scheduled for removal (P0-03):
   portable recovery re-applies the journal through a different binary, which
   makes float determinism a contract concern, not a Tier 3 luxury.
+
+---
+
+## D-012 — Distributed Extensible World Kernel
+
+**Status**: Accepted
+
+### Decision
+
+Seej is a **logical distributed world kernel**. One world runs on one or more
+explicitly authorized nodes. The kernel coordinates identity, simulated time,
+ordered command admission, validation, atomic in-world transitions, durable
+history, and inter-node replication through frozen, versioned contracts.
+
+`sy_core` remains a pure deterministic transition engine inside the kernel.
+Each node runtime assembles it with replaceable providers. The project ships a
+minimal working distribution of fundamental providers, while world models,
+agents, economies, spatial systems, multiresolution engines, interfaces,
+renderers, and ingame netcode are community capabilities.
+
+The network between kernel nodes is foundational. Ingame networking for
+players, prediction, interpolation, and client synchronization is a later
+plugin concern.
+
+### Distributed authority
+
+- There is no mandatory global coordinator or registry.
+- Each world has an explicit authority group. Discovery never grants
+  membership or write authority.
+- The first reference provider targets three authorized nodes, quorum two, and
+  a Raft-style consensus model for crash faults and network partitions. It is
+  not a Byzantine or permissionless consensus promise.
+- A world has one confirmed history. A replica does not advance canonical
+  ticks independently. Loss of quorum suspends mutation rather than creating a
+  divergent branch.
+- A temporary coordinator is fenced by an authority epoch. Membership changes
+  and rejoining-node catch-up are explicit transitions.
+- A local WAL append is not distributed confirmation. Success and public
+  canonical effects require the configured durable group confirmation.
+- A failing local store stops or quarantines unsafe activity on that node.
+  Other replicas may continue only while the world still has quorum.
+
+### Identity, time, and compatibility
+
+- `world_id`, node identity, seed, and genesis hash are distinct. Replication
+  preserves `world_id`; an independent clone receives a new identity.
+- Ticks and command ordering are canonical per world. There is no global
+  simulation clock across worlds or nodes.
+- A compatible authority group runs one declared execution profile:
+  simulation contract, command and event schemas, provider contracts, and
+  required plugin versions. Incompatible nodes are refused.
+- Stable kernel-owned data maintains a migration path from every stable
+  version, possibly through ordered intermediate steps. Activation is
+  coordinated at a world transition boundary.
+- Plugins own their data migrations. An incompatible or missing required
+  plugin blocks migration or re-simulation.
+- The operator retains historical plugin artifacts. Seej records exact
+  references and cryptographic fingerprints and refuses re-simulation when
+  required components are unavailable.
+
+### Extensibility and world freedom
+
+- Even storage, tick scheduling, validation, replication, and membership are
+  provider capabilities behind mandatory contracts. The bundled providers are
+  replaceable, but their required guarantees are not.
+- The first stable contract loads only trusted providers explicitly approved
+  by the operator at startup. Hot loading and isolated execution arrive later.
+  Later application plugins are isolated by default with explicit permissions;
+  native execution is an operator-approved exception.
+- A data domain has one declared logical owner. Other extensions change it
+  through public commands.
+- A transaction may update multiple owners atomically inside one world:
+  validation and durable effects all succeed, or none do. No automatic
+  cross-world or external-system atomicity is promised.
+- Opaque plugin payloads are allowed. Their envelope identifies the owner,
+  format, and version. Seej preserves integrity; interpretation can require
+  the plugin or a dedicated tool.
+- Removing or replacing a plugin with active data or obligations requires an
+  explicit transfer, migration, or resolution. A controlled pause between
+  transitions is allowed without stopping the server process.
+- The kernel does not require space, zones, creatures, resources, economics,
+  agents, or human privileges. A world declares its application laws and
+  validators; the kernel enforces those declarations.
+
+### Commands, observation, and retention
+
+- Commands carry a durable identifier, payload fingerprint, target tick, and
+  canonical per-world order. A late command is refused rather than silently
+  retargeted.
+- Retrying the same identifier and payload returns its durable status without
+  applying effects twice. Reusing the identifier with different content is a
+  conflict.
+- A response timeout does not prove refusal. The producer queries a durable
+  status that may be pending, succeeded, refused, or unavailable while the
+  authority group cannot answer safely.
+- A declared status-retention window may expire. After it does, the identifier
+  remains in an expired namespace and is refused forever rather than executed
+  as new.
+- Observation reads a confirmed prefix and reports freshness. It never changes
+  simulation rules, fidelity, priority, or history. Readers may be limited or
+  refused under load.
+- An expired observation cursor produces an explicit expiration response and
+  a coherent state with a new cursor. Deleted history is not reconstructed.
+- History retention may be bounded. The current state, active obligations,
+  command-identity safety, and recovery points remain intact; full archival is
+  optional.
+
+### Simulation policies
+
+- A world can declare a real-time cadence and explicit degradation or catch-up
+  policy. That policy cannot bypass durability, quorum, or observation
+  neutrality.
+- A world can declare protected established facts and permitted
+  approximations. A community multiresolution engine may produce a different
+  future from a fully detailed simulation while preserving those facts and
+  laws.
+- External nondeterminism, including model output and wall-clock observations,
+  affects canonical state only through validated persisted inputs.
+
+### First stable contract
+
+The first stable contract requires:
+
+- generic extension-owned data and trusted startup providers;
+- fail-closed behavior for common storage failures;
+- durable command identity, status, ordering, and retention semantics;
+- three-node distributed evidence with quorum, partition, fencing, catch-up,
+  and compatible migration scenarios;
+- a read-only confirmed observation surface;
+- a real third-party extension that declares data and uses public commands
+  without internal kernel dependencies.
+
+The current single-process prototype is useful evidence but does not satisfy
+these requirements yet. D-012 reopens the foundation roadmap and replaces
+D-011's rule that all protocol work waits until a later phase.
+
+### Supersession map
+
+| Earlier decision | Effect of D-012 |
+| --- | --- |
+| D-001 | Preserved: Seej remains infrastructure, not a game. |
+| D-002 | Narrowed: the kernel prescribes no narration; extensions remain free. |
+| D-003 | Narrowed: the kernel has no built-in player privilege; worlds may declare one. |
+| D-004 | Extended from one authoritative server to one authoritative node group per world. |
+| D-005 | Preserved: rendering remains outside the kernel. |
+| D-006 | Superseded: no official Unreal client or graphics standard is promised. |
+| D-007 | Narrowed to validated and replayable kernel inputs; Seej ships no official agents. |
+| D-008 | Extended to fundamental replaceable providers and explicit lifecycle rules. |
+| D-009 | Preserved. |
+| D-010 | Preserved, with precise safe-Rust and `unsafe` boundaries. |
+| D-011 | Superseded: contract-first remains; distributed networking and baseline durability move into the stable gate. |
 
 ---
 
