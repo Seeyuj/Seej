@@ -71,7 +71,8 @@ history required by K-08 and K-07.
 
 1. Decode `snapshot.json`.
 2. Validate `meta.json` as equal or an allowed older mirror.
-3. Read WAL records through the first invalid record.
+3. Scan the WAL to EOF, allowing repair only for the compatible short v1
+   header fragment described below.
 4. Verify durable event IDs are contiguous from 1 and cover the snapshot
    cursor.
 5. Select events after `snapshot.last_event_id`.
@@ -87,9 +88,15 @@ does not form a coherent current world.
 
 ## Current torn-tail and corruption behavior
 
-The reader stops at an incomplete record or CRC mismatch and can truncate the
-invalid tail. This protects ordinary torn appends but does not yet distinguish
-every expected partial write from suspicious corruption.
+At a validated record boundary, normal open truncates and synchronizes a
+terminal fragment of 1–25 bytes only if it is compatible with a v1 header.
+Exact EOF leaves the file unchanged.
+
+A complete 26-byte header with an incomplete frame, an unsupported version,
+corruption (including a CRC mismatch), or an I/O error while scanning causes
+refusal before any write. Read-only inspection never repairs the file and
+reports such errors, including a compatible short header, rather than
+returning a successful partial scan.
 
 Before the first stable contract, `P0-13` requires explicit classification:
 safe torn-tail recovery, refusal, quarantine, and operator repair must be

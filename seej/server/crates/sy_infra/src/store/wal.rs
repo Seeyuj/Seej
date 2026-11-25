@@ -12,8 +12,8 @@
 //!
 //! ## Crash Safety
 //! - CRC32 validates record integrity
-//! - Partial writes detected by length mismatch or CRC failure
-//! - Recovery stops at first invalid record
+//! - Recovery repairs only a compatible fragment of a v1 record header
+//! - Incomplete records with a full header, corruption, and I/O errors are fatal
 //! - fsync after each write for durability
 
 use std::fs::{self, File, OpenOptions};
@@ -33,11 +33,9 @@ use tracing::{debug, info, warn};
 const WAL_MAGIC: u32 = 0x57414C31; // "WAL1" in ASCII
 /// Current WAL format version
 const WAL_VERSION: u16 = 1;
-/// Record header size (magic + version + length + event_id + tick) - kept for documentation
-#[allow(dead_code)]
+/// Record header size (magic + version + length + event_id + tick)
 const RECORD_HEADER_SIZE: usize = 4 + 2 + 4 + 8 + 8; // 26 bytes
-/// CRC size - kept for documentation
-#[allow(dead_code)]
+/// CRC size
 const CRC_SIZE: usize = 4;
 /// Maximum serialized payload accepted for a single WAL record.
 pub const MAX_WAL_PAYLOAD_LEN: u32 = 16 * 1024 * 1024;
@@ -60,7 +58,7 @@ pub struct FileEventLog {
     last_tick: Option<Tick>,
     /// Total valid events
     total_events: usize,
-    /// First corruption observed while opening in read-only inspection mode.
+    /// First record error observed while opening in read-only inspection mode.
     read_error: Option<SimError>,
 }
 
@@ -68,6 +66,24 @@ pub struct FileEventLog {
 enum OpenMode {
     Repair,
     ReadOnly,
+}
+
+#[derive(Debug)]
+enum RecordError {
+    ShortHeader(SimError),
+    Rejected(SimError),
+}
+
+impl RecordError {
+    fn into_sim_error(self) -> SimError {
+        match self {
+            Self::ShortHeader(err) | Self::Rejected(err) => err,
+        }
+    }
+}
+
+fn wal_io_error(offset: u64, operation: &str, err: std::io::Error) -> SimError {
+    SimError::PersistenceError(format!("WAL at offset {offset}: {operation}: {err}"))
 }
 
 impl FileEventLog {
@@ -78,9 +94,8 @@ impl FileEventLog {
 
     /// Open a WAL file for read-only inspection.
     ///
-    /// Unlike `new`, this never truncates a corrupt or partial tail. If a corrupt
-    /// record is found, reads fail explicitly so inspection commands cannot
-    /// silently report a repaired prefix.
+    /// Unlike `new`, this never truncates a compatible short header. If a
+    /// record error is found, reads fail explicitly rather than report a prefix.
     pub fn open_read_only<P: AsRef<Path>>(path: P) -> SimResult<Self> {
         Self::open(path, OpenMode::ReadOnly)
     }
@@ -108,64 +123,57 @@ impl FileEventLog {
         Ok(log)
     }
 
-    /// Scan existing WAL file and recover state.
-    /// Stops at first invalid/partial record.
-    fn recover(&mut self, mode: OpenMode) -> SimResult<()> {
-        if !self.path.exists() {
-            return Ok(());
-        }
-
-        let file = File::open(&self.path)
-            .map_err(|e| SimError::PersistenceError(format!("Failed to open WAL: {}", e)))?;
-
+    fn open_reader(&self) -> SimResult<Option<(BufReader<File>, u64)>> {
+        let file = match File::open(&self.path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(wal_io_error(0, "Failed to open WAL", e)),
+        };
         let file_len = file
             .metadata()
-            .map_err(|e| SimError::PersistenceError(format!("Failed to get WAL metadata: {}", e)))?
+            .map_err(|e| wal_io_error(0, "Failed to get WAL metadata", e))?
             .len();
+        Ok(Some((BufReader::new(file), file_len)))
+    }
 
-        let mut reader = BufReader::new(file);
-        let mut offset = 0u64;
-        let mut last_valid_offset = 0u64;
+    /// Scan existing WAL records and repair only a compatible short header.
+    fn recover(&mut self, mode: OpenMode) -> SimResult<()> {
+        let Some((mut reader, file_len)) = self.open_reader()? else {
+            return Ok(());
+        };
+        let mut offset = 0;
 
         while offset < file_len {
-            match self.read_record_at(&mut reader, offset) {
+            match self.read_record_at(&mut reader, offset, file_len) {
                 Ok(events) => {
-                    if let Some(last) = events.last() {
-                        self.next_event_id = last.event_id.as_u64() + 1;
-                        self.last_tick = Some(last.tick);
-                    }
+                    let last = events.last().expect("decoded batches are nonempty");
+                    self.next_event_id = last.event_id.as_u64() + 1;
+                    self.last_tick = Some(last.tick);
                     self.total_events += events.len();
-                    last_valid_offset = reader.stream_position().map_err(|e| {
-                        SimError::PersistenceError(format!("Stream position error: {}", e))
-                    })?;
-                    offset = last_valid_offset;
+                    offset = reader
+                        .stream_position()
+                        .map_err(|e| wal_io_error(offset, "Failed to get stream position", e))?;
                 }
-                Err(e) => {
-                    warn!("WAL recovery stopped at offset {}: {}", offset, e);
-                    if mode == OpenMode::ReadOnly {
-                        self.read_error = Some(e);
-                    }
+                Err(RecordError::ShortHeader(err)) if mode == OpenMode::Repair => {
+                    warn!("Removing partial WAL header: {err}");
+                    let file = OpenOptions::new()
+                        .write(true)
+                        .open(&self.path)
+                        .map_err(|e| wal_io_error(offset, "Failed to open WAL for truncate", e))?;
+                    file.set_len(offset)
+                        .map_err(|e| wal_io_error(offset, "Failed to truncate WAL", e))?;
+                    file.sync_all()
+                        .map_err(|e| wal_io_error(offset, "Failed to sync truncated WAL", e))?;
                     break;
                 }
+                Err(err) if mode == OpenMode::ReadOnly => {
+                    let err = err.into_sim_error();
+                    warn!("WAL inspection stopped: {err}");
+                    self.read_error = Some(err);
+                    break;
+                }
+                Err(err) => return Err(err.into_sim_error()),
             }
-        }
-
-        // If there's garbage at the end, truncate it. This includes offset 0:
-        // a corrupt first record must not poison all future appends.
-        if mode == OpenMode::Repair && last_valid_offset < file_len {
-            warn!(
-                "Truncating WAL from {} to {} bytes (removing partial record)",
-                file_len, last_valid_offset
-            );
-            let file = OpenOptions::new()
-                .write(true)
-                .open(&self.path)
-                .map_err(|e| {
-                    SimError::PersistenceError(format!("Failed to open WAL for truncate: {}", e))
-                })?;
-            file.set_len(last_valid_offset).map_err(|e| {
-                SimError::PersistenceError(format!("Failed to truncate WAL: {}", e))
-            })?;
         }
 
         debug!(
@@ -178,72 +186,84 @@ impl FileEventLog {
         Ok(())
     }
 
-    /// Read a single WAL record at the given offset.
-    fn read_record_at(
+    /// Read a single WAL record at a known boundary before the observed EOF.
+    fn read_record_at<R: Read + Seek>(
         &self,
-        reader: &mut BufReader<File>,
+        reader: &mut R,
         offset: u64,
-    ) -> SimResult<Vec<SimEvent>> {
+        file_len: u64,
+    ) -> Result<Vec<SimEvent>, RecordError> {
+        let invalid = |cause| {
+            RecordError::Rejected(SimError::CorruptedState(format!(
+                "WAL record at offset {offset}: {cause}"
+            )))
+        };
+        let io_error = |operation, e| RecordError::Rejected(wal_io_error(offset, operation, e));
+
         reader
             .seek(SeekFrom::Start(offset))
-            .map_err(|e| SimError::PersistenceError(format!("Seek failed: {}", e)))?;
+            .map_err(|e| io_error("Seek failed", e))?;
 
-        // Read header
-        let magic = reader
-            .read_u32::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read magic failed: {}", e)))?;
+        let remaining = file_len - offset;
+        let header_len = remaining.min(RECORD_HEADER_SIZE as u64) as usize;
+        let mut header = [0; RECORD_HEADER_SIZE];
+        reader
+            .read_exact(&mut header[..header_len])
+            .map_err(|e| io_error("Read WAL header failed", e))?;
 
-        if magic != WAL_MAGIC {
-            return Err(SimError::CorruptedState(format!(
-                "Invalid magic: expected {:08x}, got {:08x}",
-                WAL_MAGIC, magic
+        let magic_len = header_len.min(4);
+        if header[..magic_len] != WAL_MAGIC.to_le_bytes()[..magic_len] {
+            return Err(invalid(format!(
+                "Invalid magic: expected {:02x?}, got {:02x?}",
+                &WAL_MAGIC.to_le_bytes()[..magic_len],
+                &header[..magic_len]
             )));
         }
 
-        let version = reader
-            .read_u16::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read version failed: {}", e)))?;
+        let version = u16::from_le_bytes(header[4..6].try_into().unwrap());
+        let version_len = header_len.saturating_sub(4).min(2);
+        if header[4..4 + version_len] != WAL_VERSION.to_le_bytes()[..version_len] {
+            return Err(invalid(if version_len == 2 {
+                format!("Unsupported WAL version: {version}")
+            } else {
+                format!("Unsupported WAL version prefix: 0x{:02x}", header[4])
+            }));
+        }
 
-        if version != WAL_VERSION {
-            return Err(SimError::CorruptedState(format!(
-                "Unsupported WAL version: {}",
-                version
+        let length_bytes = header_len.saturating_sub(6).min(4);
+        let payload_len = u32::from_le_bytes(header[6..10].try_into().unwrap());
+        // If the prefix is all zeros, the smallest positive completion has a 1
+        // in the first missing byte. A complete all-zero length has no such completion.
+        let min_positive_len = if payload_len == 0 && length_bytes < 4 {
+            1 << (8 * length_bytes)
+        } else {
+            payload_len
+        };
+        if min_positive_len == 0 {
+            return Err(invalid("WAL payload length is zero".into()));
+        }
+        if min_positive_len > MAX_WAL_PAYLOAD_LEN {
+            return Err(invalid(format!(
+                "WAL payload length {min_positive_len} exceeds max record payload {MAX_WAL_PAYLOAD_LEN}"
             )));
         }
 
-        let payload_len = reader
-            .read_u32::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read length failed: {}", e)))?;
-
-        let event_id = reader
-            .read_u64::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read event_id failed: {}", e)))?;
-
-        let tick = reader
-            .read_u64::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read tick failed: {}", e)))?;
-
-        if payload_len > MAX_WAL_PAYLOAD_LEN {
-            return Err(SimError::CorruptedState(format!(
-                "WAL payload length {} exceeds max record payload {}",
-                payload_len, MAX_WAL_PAYLOAD_LEN
-            )));
+        let event_id = u64::from_le_bytes(header[10..18].try_into().unwrap());
+        if header_len >= 18 && event_id == 0 {
+            return Err(invalid("WAL event_id is zero".into()));
+        }
+        if header_len < RECORD_HEADER_SIZE {
+            return Err(RecordError::ShortHeader(SimError::CorruptedState(format!(
+                "WAL record at offset {offset}: partial header ({header_len} of {RECORD_HEADER_SIZE} bytes)"
+            ))));
         }
 
-        let payload_start = reader
-            .stream_position()
-            .map_err(|e| SimError::PersistenceError(format!("Stream position error: {}", e)))?;
-        let file_len = reader
-            .get_ref()
-            .metadata()
-            .map_err(|e| SimError::PersistenceError(format!("Failed to get WAL metadata: {}", e)))?
-            .len();
+        let tick = u64::from_le_bytes(header[18..26].try_into().unwrap());
         let required_remaining = u64::from(payload_len) + CRC_SIZE as u64;
-        let available_remaining = file_len.saturating_sub(payload_start);
+        let available_remaining = remaining - RECORD_HEADER_SIZE as u64;
         if required_remaining > available_remaining {
-            return Err(SimError::PersistenceError(format!(
-                "WAL record length {} exceeds remaining file bytes {}",
-                required_remaining, available_remaining
+            return Err(invalid(format!(
+                "WAL record length {required_remaining} exceeds remaining file bytes {available_remaining}"
             )));
         }
 
@@ -251,30 +271,30 @@ impl FileEventLog {
         let mut payload = vec![0u8; payload_len as usize];
         reader
             .read_exact(&mut payload)
-            .map_err(|e| SimError::PersistenceError(format!("Read payload failed: {}", e)))?;
+            .map_err(|e| io_error("Read payload failed", e))?;
 
         // Read and verify CRC
         let stored_crc = reader
             .read_u32::<LittleEndian>()
-            .map_err(|e| SimError::PersistenceError(format!("Read CRC failed: {}", e)))?;
+            .map_err(|e| io_error("Read CRC failed", e))?;
 
         let computed_crc = self.compute_crc(version, payload_len, event_id, tick, &payload);
 
         if stored_crc != computed_crc {
-            return Err(SimError::CorruptedState(format!(
+            return Err(invalid(format!(
                 "CRC mismatch: stored={:08x}, computed={:08x}",
                 stored_crc, computed_crc
             )));
         }
 
         let WalPayload::Batch { events } = serde_json::from_slice::<WalPayload>(&payload)
-            .map_err(|e| SimError::CorruptedState(format!("Invalid WAL batch payload: {}", e)))?;
+            .map_err(|e| invalid(format!("Invalid WAL batch payload: {e}")))?;
 
-        let last = events.last().ok_or_else(|| {
-            SimError::CorruptedState("WAL batch record contains no events".to_string())
-        })?;
+        let last = events
+            .last()
+            .ok_or_else(|| invalid("WAL batch record contains no events".into()))?;
         if last.event_id.as_u64() != event_id || last.tick.as_u64() != tick {
-            return Err(SimError::CorruptedState(format!(
+            return Err(invalid(format!(
                 "WAL batch header mismatch: header=({}, {}), last=({}, {})",
                 event_id,
                 tick,
@@ -402,38 +422,26 @@ impl FileEventLog {
         Ok(event)
     }
 
-    /// Read all valid events from the WAL file.
+    /// Read all events, or return the first scan error.
     fn read_all_events(&self) -> SimResult<Vec<SimEvent>> {
         if let Some(err) = &self.read_error {
             return Err(err.clone());
         }
 
-        if !self.path.exists() {
+        let Some((mut reader, file_len)) = self.open_reader()? else {
             return Ok(Vec::new());
-        }
-
-        let file = File::open(&self.path)
-            .map_err(|e| SimError::PersistenceError(format!("Failed to open WAL: {}", e)))?;
-
-        let file_len = file
-            .metadata()
-            .map_err(|e| SimError::PersistenceError(format!("Failed to get WAL metadata: {}", e)))?
-            .len();
-
-        let mut reader = BufReader::new(file);
+        };
         let mut events = Vec::new();
         let mut offset = 0u64;
 
         while offset < file_len {
-            match self.read_record_at(&mut reader, offset) {
-                Ok(record_events) => {
-                    offset = reader.stream_position().map_err(|e| {
-                        SimError::PersistenceError(format!("Stream position error: {}", e))
-                    })?;
-                    events.extend(record_events);
-                }
-                Err(_) => break, // Stop at first invalid record
-            }
+            let record_events = self
+                .read_record_at(&mut reader, offset, file_len)
+                .map_err(RecordError::into_sim_error)?;
+            offset = reader
+                .stream_position()
+                .map_err(|e| wal_io_error(offset, "Failed to get stream position", e))?;
+            events.extend(record_events);
         }
 
         Ok(events)
@@ -548,7 +556,8 @@ impl IEventLog for FileEventLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use proptest::prelude::*;
+    use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
     use sy_api::events::EventData;
     use sy_types::RngSeed;
     use tempfile::TempDir;
@@ -601,6 +610,44 @@ mod tests {
         fs::write(path, record).unwrap();
     }
 
+    fn append_bytes(path: &Path, bytes: &[u8]) {
+        OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    }
+
+    fn header(version: u16, payload_len: u32, event_id: u64) -> [u8; RECORD_HEADER_SIZE] {
+        let mut bytes = [0; RECORD_HEADER_SIZE];
+        bytes[..4].copy_from_slice(&WAL_MAGIC.to_le_bytes());
+        bytes[4..6].copy_from_slice(&version.to_le_bytes());
+        bytes[6..10].copy_from_slice(&payload_len.to_le_bytes());
+        bytes[10..18].copy_from_slice(&event_id.to_le_bytes());
+        bytes[18..].copy_from_slice(&1u64.to_le_bytes());
+        bytes
+    }
+
+    fn assert_rejected_unchanged(path: &Path, offset: u64, cause: &str) {
+        let before = fs::read(path).unwrap();
+        let Err(SimError::CorruptedState(message)) = FileEventLog::new(path) else {
+            panic!("opening must report WAL corruption at offset {offset}");
+        };
+        assert!(message.contains(&format!("offset {offset}:")), "{message}");
+        assert!(message.contains(cause), "{message}");
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
+
+    fn assert_reads_reject(log: &FileEventLog, cause: &str) {
+        for error in [
+            log.read_all_valid().unwrap_err(),
+            log.read_from_event_id(EventId::ZERO).unwrap_err(),
+        ] {
+            assert!(error.to_string().contains(cause), "{error}");
+        }
+    }
+
     #[test]
     fn append_and_read() {
         let (_dir, _path, mut log) = temp_wal();
@@ -626,13 +673,16 @@ mod tests {
 
     #[test]
     fn empty_wal_recovers_as_empty() {
-        let (dir, _path, log) = temp_wal();
+        let (_dir, path, log) = temp_wal();
         assert_eq!(log.len(), 0);
-        drop(log);
+        assert!(log.read_all_valid().unwrap().is_empty());
+        assert!(!path.exists(), "opening an absent WAL must be lazy");
 
-        let reopened = FileEventLog::new(dir.path().join("events")).unwrap();
+        fs::write(&path, []).unwrap();
+        let reopened = FileEventLog::new(&path).unwrap();
         assert_eq!(reopened.len(), 0);
         assert_eq!(reopened.last_event_id(), EventId::ZERO);
+        assert!(fs::read(&path).unwrap().is_empty());
     }
 
     #[test]
@@ -683,21 +733,51 @@ mod tests {
     }
 
     #[test]
-    fn recovery_truncates_corrupt_first_record() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("events");
+    fn recovery_rejects_invalid_magic_at_offset_zero() {
+        let (_dir, path, _log) = temp_wal();
         fs::write(&path, b"not-a-valid-wal").unwrap();
+        assert_rejected_unchanged(&path, 0, "Invalid magic");
+    }
 
+    #[test]
+    fn recovery_repairs_compatible_fragment_at_offset_zero() {
+        let (_dir, path, _log) = temp_wal();
+        // Three zero length bytes can be completed to the maximum payload length.
+        let bytes = header(WAL_VERSION, MAX_WAL_PAYLOAD_LEN, 1);
+        fs::write(&path, &bytes[..9]).unwrap();
         let mut log = FileEventLog::new(&path).unwrap();
         assert_eq!(log.len(), 0);
-        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        assert!(fs::read(&path).unwrap().is_empty());
+        assert_eq!(log.append(tick_event(1)).unwrap().event_id, EventId::new(1));
+    }
 
-        log.append(tick_event(1)).unwrap();
-        drop(log);
+    #[test]
+    fn recovery_rejects_unknown_version_at_any_record_boundary() {
+        for with_prefix in [false, true] {
+            let (_dir, path, mut log) = temp_wal();
+            if with_prefix {
+                log.append(tick_event(1)).unwrap();
+            } else {
+                fs::write(&path, []).unwrap();
+            }
+            drop(log);
+            let offset = fs::metadata(&path).unwrap().len();
+            append_bytes(&path, &header(2, 1, 2));
+            assert_rejected_unchanged(&path, offset, "Unsupported WAL version: 2");
+        }
+    }
 
-        let log = FileEventLog::new(&path).unwrap();
-        assert_eq!(log.len(), 1);
-        assert_eq!(log.last_event_id(), EventId::new(1));
+    #[test]
+    fn recovery_rejects_incompatible_short_header_fields() {
+        let (_dir, path, _log) = temp_wal();
+        for (bytes, len, cause) in [
+            (header(2, 1, 1), 5, "Unsupported WAL version prefix"),
+            (header(WAL_VERSION, 0, 1), 10, "WAL payload length is zero"),
+            (header(WAL_VERSION, 1, 0), 18, "WAL event_id is zero"),
+        ] {
+            fs::write(&path, &bytes[..len]).unwrap();
+            assert_rejected_unchanged(&path, 0, cause);
+        }
     }
 
     #[test]
@@ -712,11 +792,20 @@ mod tests {
         write_raw_record(&log, &path, 1, 0, &legacy_payload);
         drop(log);
 
-        let recovered = FileEventLog::new(&path).unwrap();
+        assert_rejected_unchanged(&path, 0, "Invalid WAL batch payload");
+    }
 
-        assert_eq!(recovered.len(), 0);
-        assert_eq!(recovered.last_event_id(), EventId::ZERO);
-        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    #[test]
+    fn recovery_rejects_invalid_batch_with_valid_crc() {
+        let (_dir, path, log) = temp_wal();
+        for (events, cause) in [
+            (Vec::new(), "WAL batch record contains no events"),
+            (vec![tick_event(1)], "WAL batch header mismatch"),
+        ] {
+            let payload = serde_json::to_vec(&WalPayload::Batch { events }).unwrap();
+            write_raw_record(&log, &path, 1, 1, &payload);
+            assert_rejected_unchanged(&path, 0, cause);
+        }
     }
 
     #[test]
@@ -733,7 +822,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_discards_partially_written_batch_record() {
+    fn recovery_rejects_partially_written_batch_record() {
         let (_dir, path, mut log) = temp_wal();
         let events = vec![tick_event(10), tick_event(10), tick_event(10)];
         log.append_batch(events).unwrap();
@@ -747,14 +836,11 @@ mod tests {
             .set_len(len - 1)
             .unwrap();
 
-        let log = FileEventLog::new(&path).unwrap();
-        assert_eq!(log.len(), 0);
-        assert_eq!(log.read_all_valid().unwrap().len(), 0);
-        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        assert_rejected_unchanged(&path, 0, "exceeds remaining file bytes");
     }
 
     #[test]
-    fn recovery_keeps_prefix_before_truncated_tail_record() {
+    fn recovery_rejects_incomplete_record_after_valid_prefix() {
         let (_dir, path, mut log) = temp_wal();
         log.append(tick_event(1)).unwrap();
         drop(log);
@@ -771,106 +857,296 @@ mod tests {
             .set_len(full_len - 1)
             .unwrap();
 
-        let log = FileEventLog::new(&path).unwrap();
-        assert_eq!(log.len(), 1);
-        assert_eq!(log.last_event_id(), EventId::new(1));
-        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+        assert_rejected_unchanged(&path, valid_prefix_len, "exceeds remaining file bytes");
     }
 
     #[test]
-    fn recovery_keeps_prefix_before_crc_invalid_tail_record() {
+    fn recovery_rejects_crc_invalid_tail_record() {
         let (_dir, path, mut log) = temp_wal();
         log.append(tick_event(1)).unwrap();
-        drop(log);
         let valid_prefix_len = fs::metadata(&path).unwrap().len();
-
-        let mut log = FileEventLog::new(&path).unwrap();
         log.append(tick_event(2)).unwrap();
         drop(log);
         let full_len = fs::metadata(&path).unwrap().len();
         flip_byte(&path, full_len - 1);
 
-        let log = FileEventLog::new(&path).unwrap();
-        assert_eq!(log.len(), 1);
-        assert_eq!(log.last_event_id(), EventId::new(1));
-        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+        assert_rejected_unchanged(&path, valid_prefix_len, "CRC mismatch");
     }
 
     #[test]
-    fn read_only_open_reports_corrupt_tail_without_truncating() {
+    fn read_only_open_reports_bad_tail_without_truncating() {
         let (_dir, path, mut log) = temp_wal();
         log.append(tick_event(1)).unwrap();
         drop(log);
-        let valid_prefix_len = fs::metadata(&path).unwrap().len();
+        let prefix = fs::read(&path).unwrap();
 
-        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
-        file.write_all(b"corrupt-tail").unwrap();
-        file.sync_all().unwrap();
-        let corrupt_len = fs::metadata(&path).unwrap().len();
-        assert!(corrupt_len > valid_prefix_len);
-
-        let log = FileEventLog::open_read_only(&path).unwrap();
-        let err = log.read_all_valid().unwrap_err();
-
-        assert!(err.to_string().contains("Invalid magic"));
-        assert_eq!(fs::metadata(&path).unwrap().len(), corrupt_len);
+        for (tail, cause) in [
+            (b"corrupt-tail".as_slice(), "Invalid magic"),
+            (&header(WAL_VERSION, 100, 2)[..10], "partial header"),
+            (&header(2, 100, 2), "Unsupported WAL version: 2"),
+        ] {
+            fs::write(&path, &prefix).unwrap();
+            append_bytes(&path, tail);
+            let before = fs::read(&path).unwrap();
+            let log = FileEventLog::open_read_only(&path).unwrap();
+            assert_reads_reject(&log, cause);
+            assert_eq!(fs::read(&path).unwrap(), before);
+        }
     }
 
     #[test]
-    fn recovery_keeps_prefix_before_magic_invalid_tail_record() {
+    fn recovery_rejects_magic_invalid_tail_record() {
         let (_dir, path, mut log) = temp_wal();
         log.append(tick_event(1)).unwrap();
-        drop(log);
         let valid_prefix_len = fs::metadata(&path).unwrap().len();
-
-        let mut log = FileEventLog::new(&path).unwrap();
         log.append(tick_event(2)).unwrap();
         drop(log);
         flip_byte(&path, valid_prefix_len);
 
-        let log = FileEventLog::new(&path).unwrap();
-        assert_eq!(log.len(), 1);
-        assert_eq!(log.last_event_id(), EventId::new(1));
-        assert_eq!(fs::metadata(&path).unwrap().len(), valid_prefix_len);
+        assert_rejected_unchanged(&path, valid_prefix_len, "Invalid magic");
     }
 
     #[test]
-    fn recovery_truncates_record_with_payload_length_above_limit_without_allocating() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("events");
-        let mut record = Vec::new();
-        record.write_u32::<LittleEndian>(WAL_MAGIC).unwrap();
-        record.write_u16::<LittleEndian>(WAL_VERSION).unwrap();
-        record
-            .write_u32::<LittleEndian>(MAX_WAL_PAYLOAD_LEN + 1)
-            .unwrap();
-        record.write_u64::<LittleEndian>(1).unwrap();
-        record.write_u64::<LittleEndian>(1).unwrap();
-        fs::write(&path, record).unwrap();
-
-        let log = FileEventLog::new(&path).unwrap();
-
-        assert_eq!(log.len(), 0);
-        assert_eq!(log.last_event_id(), EventId::ZERO);
-        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    fn recovery_rejects_short_header_with_payload_length_above_limit() {
+        let (_dir, path, _log) = temp_wal();
+        let bytes = header(WAL_VERSION, MAX_WAL_PAYLOAD_LEN + 1, 1);
+        fs::write(&path, &bytes[..10]).unwrap();
+        assert_rejected_unchanged(&path, 0, "exceeds max record payload");
     }
 
     #[test]
-    fn recovery_truncates_record_with_length_beyond_remaining_file_without_allocating() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("events");
-        let mut record = Vec::new();
-        record.write_u32::<LittleEndian>(WAL_MAGIC).unwrap();
-        record.write_u16::<LittleEndian>(WAL_VERSION).unwrap();
-        record.write_u32::<LittleEndian>(1024).unwrap();
-        record.write_u64::<LittleEndian>(1).unwrap();
-        record.write_u64::<LittleEndian>(1).unwrap();
-        fs::write(&path, record).unwrap();
+    fn recovery_rejects_header_with_length_beyond_remaining_file_without_allocating() {
+        let (_dir, path, _log) = temp_wal();
+        fs::write(&path, header(WAL_VERSION, 1024, 1)).unwrap();
+        assert_rejected_unchanged(&path, 0, "exceeds remaining file bytes");
+    }
 
+    #[test]
+    fn recovery_rejects_length_increase_in_middle_or_last_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        let middle = fs::metadata(&path).unwrap().len() as usize;
+        log.append(tick_event(2)).unwrap();
+        let last = fs::metadata(&path).unwrap().len() as usize;
+        log.append(tick_event(3)).unwrap();
+        drop(log);
+        let original = fs::read(&path).unwrap();
+
+        for (offset, cause) in [
+            (middle, "CRC mismatch"),
+            (last, "exceeds remaining file bytes"),
+        ] {
+            let mut corrupt = original.clone();
+            let field = &mut corrupt[offset + 6..offset + 10];
+            let length = u32::from_le_bytes(field.try_into().unwrap());
+            field.copy_from_slice(&(length + 1).to_le_bytes());
+            fs::write(&path, corrupt).unwrap();
+            assert_rejected_unchanged(&path, offset as u64, cause);
+        }
+    }
+
+    #[test]
+    fn recovery_classifies_every_cut_of_a_real_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        let prefix_len = fs::metadata(&path).unwrap().len() as usize;
+        let second_event = log.append(tick_event(2)).unwrap();
+        drop(log);
+        let full = fs::read(&path).unwrap();
+        let prefix = &full[..prefix_len];
+        let second_len = full.len() - prefix_len;
+
+        for cut in 0..=second_len {
+            let before = &full[..prefix_len + cut];
+            fs::write(&path, before).unwrap();
+            match cut {
+                0 => {
+                    let log = FileEventLog::new(&path).unwrap();
+                    assert_eq!(log.read_all_valid().unwrap().len(), 1);
+                    assert_eq!(fs::read(&path).unwrap(), before);
+                }
+                1..RECORD_HEADER_SIZE => {
+                    let mut log = FileEventLog::new(&path).unwrap();
+                    assert_eq!(fs::read(&path).unwrap(), prefix);
+                    assert_eq!(log.append(tick_event(2)).unwrap().event_id, EventId::new(2));
+                    assert_eq!(fs::read(&path).unwrap(), full);
+                }
+                cut if cut == second_len => {
+                    let log = FileEventLog::new(&path).unwrap();
+                    let events = log.read_all_valid().unwrap();
+                    assert_eq!(events.len(), 2);
+                    assert_eq!(events[1], second_event);
+                    assert_eq!(fs::read(&path).unwrap(), full);
+                }
+                _ => assert_rejected_unchanged(
+                    &path,
+                    prefix_len as u64,
+                    "exceeds remaining file bytes",
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_preserves_a_complete_appended_record() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        let prefix_len = fs::metadata(&path).unwrap().len() as usize;
+        let second = log.append(tick_event(2)).unwrap();
+        drop(log);
+
+        let full = fs::read(&path).unwrap();
+        fs::write(&path, &full[..prefix_len]).unwrap();
+        append_bytes(&path, &full[prefix_len..]);
         let log = FileEventLog::new(&path).unwrap();
+        assert_eq!(
+            log.read_from_event_id(EventId::new(1)).unwrap(),
+            vec![second]
+        );
+        assert_eq!(fs::read(&path).unwrap(), full);
+    }
 
-        assert_eq!(log.len(), 0);
-        assert_eq!(log.last_event_id(), EventId::ZERO);
-        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    #[test]
+    fn reads_propagate_corruption_after_a_healthy_open() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        log.append(tick_event(2)).unwrap();
+        drop(log);
+        let log = FileEventLog::open_read_only(&path).unwrap();
+        assert_eq!(log.read_all_valid().unwrap().len(), 2);
+
+        let len = fs::metadata(&path).unwrap().len();
+        flip_byte(&path, len - 1);
+        let before = fs::read(&path).unwrap();
+        assert_reads_reject(&log, "CRC mismatch");
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    struct FailingReader<'a> {
+        data: Cursor<&'a [u8]>,
+        fail_at: u64,
+        kind: ErrorKind,
+    }
+
+    impl Read for FailingReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let remaining = self.fail_at.saturating_sub(self.data.position()) as usize;
+            if remaining == 0 {
+                return Err(Error::new(self.kind, "injected read failure"));
+            }
+            let len = buf.len().min(remaining);
+            self.data.read(&mut buf[..len])
+        }
+    }
+
+    impl Seek for FailingReader<'_> {
+        fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+            self.data.seek(pos)
+        }
+    }
+
+    #[test]
+    fn read_failures_are_not_repairable() {
+        let (_dir, path, mut log) = temp_wal();
+        log.append(tick_event(1)).unwrap();
+        let bytes = fs::read(path).unwrap();
+        for (file_len, fail_at, kind, stage) in [
+            (10, 3, ErrorKind::UnexpectedEof, "Read WAL header failed"),
+            (
+                bytes.len(),
+                5,
+                ErrorKind::PermissionDenied,
+                "Read WAL header failed",
+            ),
+            (
+                bytes.len(),
+                RECORD_HEADER_SIZE + 1,
+                ErrorKind::UnexpectedEof,
+                "Read payload failed",
+            ),
+            (
+                bytes.len(),
+                RECORD_HEADER_SIZE + 1,
+                ErrorKind::PermissionDenied,
+                "Read payload failed",
+            ),
+        ] {
+            let mut reader = FailingReader {
+                data: Cursor::new(bytes.as_slice()),
+                fail_at: fail_at as u64,
+                kind,
+            };
+            let error = log
+                .read_record_at(&mut reader, 0, file_len as u64)
+                .unwrap_err();
+            let RecordError::Rejected(SimError::PersistenceError(message)) = error else {
+                panic!("expected rejected persistence error, got {error:?}");
+            };
+            assert!(message.contains(stage), "{message}");
+            assert!(message.contains("offset 0"), "{message}");
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn three_record_recovery_is_fail_closed(
+            byte in any::<usize>(),
+            mask in 1u8..=255,
+            cut in any::<usize>(),
+            tail in prop::collection::vec(any::<u8>(), 1..RECORD_HEADER_SIZE),
+        ) {
+            let (_dir, path, log) = temp_wal();
+            let mut full = Vec::new();
+            let mut boundaries = [0; 4];
+            for id in 1..=3 {
+                let mut event = tick_event(id);
+                event.event_id = EventId::new(id);
+                full.extend(log.encode_event_record(&[event]).unwrap());
+                boundaries[id as usize] = full.len();
+            }
+
+            let mut flipped = full.clone();
+            let byte = byte % flipped.len();
+            flipped[byte] ^= mask;
+            fs::write(&path, &flipped).unwrap();
+            prop_assert!(FileEventLog::new(&path).is_err());
+            prop_assert_eq!(fs::read(&path).unwrap(), flipped);
+
+            let cut = cut % (full.len() + 1);
+            let complete = boundaries.partition_point(|&boundary| boundary <= cut) - 1;
+            let boundary = boundaries[complete];
+            fs::write(&path, &full[..cut]).unwrap();
+            let result = FileEventLog::new(&path);
+            if cut - boundary < RECORD_HEADER_SIZE {
+                let recovered = result.unwrap();
+                prop_assert_eq!(recovered.read_all_valid().unwrap().len(), complete);
+                prop_assert_eq!(fs::read(&path).unwrap(), &full[..boundary]);
+            } else {
+                prop_assert!(result.is_err());
+                prop_assert_eq!(fs::read(&path).unwrap(), &full[..cut]);
+            }
+
+            let with_tail = [&full[..], &tail[..]].concat();
+            fs::write(&path, &with_tail).unwrap();
+            // With this size limit every incomplete length field is extendable;
+            // a zero prefix in three bytes can be completed to 1 << 24.
+            let tag = [&WAL_MAGIC.to_le_bytes()[..], &WAL_VERSION.to_le_bytes()[..]].concat();
+            let expected_tag = &tag[..tail.len().min(tag.len())];
+            let compatible = tail.starts_with(expected_tag)
+                && (tail.len() < 10
+                    || (1..=MAX_WAL_PAYLOAD_LEN)
+                        .contains(&u32::from_le_bytes(tail[6..10].try_into().unwrap())))
+                && (tail.len() < 18 || tail[10..18] != [0; 8]);
+            let result = FileEventLog::new(&path);
+            if compatible {
+                prop_assert_eq!(result.unwrap().read_all_valid().unwrap().len(), 3);
+                prop_assert_eq!(fs::read(&path).unwrap(), full);
+            } else {
+                prop_assert!(result.is_err());
+                prop_assert_eq!(fs::read(&path).unwrap(), with_tail);
+            }
+        }
     }
 }
