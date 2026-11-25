@@ -1,48 +1,19 @@
-# Server (Rust Workspace)
+# Server — Rust Workspace
 
-This is the Rust workspace containing all server-side crates.
+This workspace contains the implemented local server prototype and the crates
+that will evolve into a distributed node runtime. Target contracts are
+documented separately and are not yet runnable features.
 
-## Constitution
+## Build and test
 
-### Active External Dependencies
-
-- `serde`, `serde_json` - persistence DTO serialization and inspection output
-- `tracing`, `tracing-subscriber` - logging and observability
-- `clap` - CLI parsing for `server_d` and `sy_cli`
-- `ctrlc` - graceful shutdown handling in `server_d`
-- `crc32fast`, `byteorder` - WAL record encoding and validation
-- `xxhash-rust` - deterministic state hashing for tests/diagnostics
-- `windows-sys` - Windows atomic replacement support in filesystem persistence
-- `assert_cmd`, `predicates`, `tempfile`, `proptest` - tests and recovery scenarios
-
-No async runtime or wire-protocol dependency is active in the Phase 1 workspace.
-`sy_protocol` is preserved as a Phase 2+ placeholder and is excluded from the
-workspace members.
-
-Workspace-level declarations that are not used by active crates should be
-treated as cleanup candidates, not as architectural commitments.
-
-### Forbidden in sy_core
-
-The simulation core (`sy_core`) MUST NOT use:
-- Any async runtime (tokio, async-std)
-- Any I/O (std::fs, std::net)
-- Any randomness from std (use injected IRng)
-- Any time from std (use injected ISimClock)
-
-### Building
+Use the pinned toolchain from this directory:
 
 ```bash
 cargo build --workspace
-```
-
-### Testing
-
-```bash
 cargo test --workspace
 ```
 
-### Running
+Run the implemented local binaries:
 
 ```bash
 cargo run --bin server_d -- create --name "MyWorld" --seed 42
@@ -50,16 +21,71 @@ cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 10
 cargo run --bin sy_cli -- status world_42
 ```
 
-## Crate Overview
+See [the binary guide](../docs/phase1/BINARIES.md) for all verified commands.
 
-| Crate       | Level | Purpose                              |
-|-------------|-------|--------------------------------------|
-| sy_types    | NIV 0 | Stable primitive types               |
-| sy_config   | NIV 0 | Configuration parsing                |
-| sy_protocol | NIV 1 | Phase 2+ wire protocol (excluded)    |
-| sy_api      | NIV 1 | Internal API (commands/events)       |
-| sy_core     | NIV 2 | Pure simulation logic                |
-| sy_infra    | NIV 3 | I/O implementations                  |
-| sy_tools    | NIV 3 | Phase 1 placeholder for operator utilities |
-| sy_testkit  | NIV 3 | Testing harness and mocks            |
-| sy_loader   | NIV 4 | Phase 1 placeholder; `server_d` wires runtime directly |
+## Active dependencies
+
+- `serde`, `serde_json`: current persistence DTO serialization and JSON
+  inspection;
+- `tracing`, `tracing-subscriber`: diagnostics;
+- `clap`: `server_d` and `sy_cli` parsing;
+- `ctrlc`: graceful local shutdown;
+- `crc32fast`, `byteorder`: current WAL encoding and integrity;
+- `xxhash-rust`: deterministic diagnostics and tests, not authentication;
+- `windows-sys`: Windows filesystem replacement behavior;
+- `assert_cmd`, `predicates`, `tempfile`, `proptest`: tests.
+
+No active async runtime, consensus system, transport security, or wire-protocol
+dependency currently implements the D-012 distributed target. Future library
+selection is an implementation decision constrained by the contracts, not a
+promise made by this file.
+
+## Crates today
+
+| Crate | Level | Current purpose |
+| --- | --- | --- |
+| `sy_types` | NIV 0 | stable primitive types |
+| `sy_config` | NIV 0 | configuration |
+| `sy_api` | NIV 1 | current commands, events, errors, and ports |
+| `sy_core` | NIV 2 | pure local transition and replay logic |
+| `sy_infra` | NIV 3 | filesystem, WAL, runtime, RNG, clock, and hashing adapters |
+| `sy_tools` | NIV 3 | operator-tool placeholder |
+| `sy_testkit` | NIV 3 | mocks and scenarios |
+| `sy_loader` | NIV 4 | inert placeholder; `server_d` wires directly |
+| `sy_protocol` | outside workspace | placeholder, not an implemented protocol |
+| `mods/*` | outside workspace | placeholders, not active plugins |
+
+The target inter-node protocol is foundational kernel infrastructure and will
+move into the active architecture when implemented. Ingame netcode remains an
+application plugin. Current exclusion of `sy_protocol` and `mods/*` is a
+repository fact, not a rule that they must stay deferred forever.
+
+`sy_cli` has no mutating world API and opens the WAL read-only, but constructing
+its `FilesystemStore` may create `<data-dir>/worlds`. Its explicit
+`dump --output` path is also not guarded against resolving into or aliasing the
+data directory. Both limitations are tracked by P1-11 in the exit checklist.
+
+## `sy_core` boundary
+
+The pure engine cannot use:
+
+- filesystem or network I/O;
+- wall-clock or process time;
+- environment access;
+- OS or ambient randomness;
+- nondeterministic collection order;
+- a concrete storage, consensus, transport, plugin, or observer.
+
+Use injected, explicit deterministic inputs. The enforced dependency details
+and future provider direction live in
+[DEPENDENCY_RULES.md](../docs/DEPENDENCY_RULES.md).
+
+## Target runtime boundary
+
+The logical world kernel includes responsibilities outside `sy_core`:
+provider composition, command admission, durable status, authority membership,
+replication, confirmed reads, and coordinated migrations.
+
+The first stable runtime may link trusted operator-approved providers
+statically or select them at startup. Dynamic hot loading and isolated
+application plugins are later milestones.

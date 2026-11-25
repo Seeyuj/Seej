@@ -1,5 +1,10 @@
 # sy_infra WAL fuzzing
 
+This harness validates the current local FileEventLog provider. It does not
+exercise the target command journal, distributed consensus, authenticated node
+messages, provider replacement, or retention-aware compaction. Those require
+separate fuzz and fault-injection targets when their implementations exist.
+
 This directory is intentionally isolated from the main workspace because
 `cargo-fuzz` requires nightly and `libfuzzer`.
 
@@ -36,3 +41,6 @@ the same recovery/read path used by `FileEventLog`.
 The `wal_round_trip` target generates structured batches, persists them through
 `append_batch`, reopens the WAL, and checks that persisted ordering and event
 IDs survive decode.
+
+Passing these targets is evidence for the current WAL decoder only; it does not
+close K-07, K-08, K-09, or K-10.

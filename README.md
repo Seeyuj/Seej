@@ -1,89 +1,113 @@
 # Seej
 
-> Deterministic, headless simulation kernel for persistent sandbox worlds.
+> Distributed, deterministic world kernel for persistent sandbox worlds.
 
-Seej is open-source simulation infrastructure for worlds that evolve without players, clients, or rendering engines.
-It focuses on deterministic server execution, explicit persistence, and replayable state transitions.
-Clients are rendering-agnostic consumers: they observe and interact through APIs, but the server remains authoritative.
-In Phase 1, this means: create a world, run ticks, persist state, kill the process, restart it, replay events, and verify identical state.
+Seej is open-source infrastructure for worlds that keep evolving without a
+player, rendering engine, or permanently central coordinator. A logical world
+can run on one node or an explicitly authorized group of nodes. The kernel
+coordinates time, identity, ordered commands, validation, durable state, and
+replication through versioned contracts.
+
+Seej follows a kernel-and-ecosystem model. It ships a minimal working
+distribution and replaceable fundamental providers. World models, agents,
+economies, spatial systems, multiresolution engines, renderers, and ingame
+netcode are optional extensions. The network between Seej nodes is part of the
+kernel infrastructure; player-facing netcode is not.
 
 - GitHub: [https://github.com/Seeyuj/Seej](https://github.com/Seeyuj/Seej)
 - Follow: [https://x.com/Seeyuj](https://x.com/Seeyuj)
 
-## What Works Today (Phase 1)
+## Contract Status
 
-The current repository implements the minimal Phase 1 server slice: a headless,
-deterministic world can be created, ticked, persisted, recovered, and inspected.
-This is not yet a durable Phase 1 sign-off; remaining hardening work is tracked
-in the exit checklist.
+The distributed architecture is the target established by
+[decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel),
+with operational failure semantics fixed by
+[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) and the
+remaining first-stable ambiguities closed by
+[D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics).
+It is **not implemented or frozen yet**. The public
+[kernel contract](seej/docs/CONTRACT.md),
+[node-network contract](seej/docs/NODE_NETWORK.md), and
+[plugin contract](seej/docs/PLUGIN_CONTRACT.md) remain drafts until every
+mandatory item in the
+[Phase 1 exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md) has evidence.
 
-Implemented and testable today:
+Documentation uses three status labels:
 
-- Deterministic tick loop with mandatory world seed
-- Headless authoritative daemon (`server_d`)
-- Snapshot + WAL persistence (`snapshot.json`, `meta.json`, `events`)
-- Crash recovery by replaying WAL events after snapshot cursor
-- Minimal autonomous simulation (zones, entities, systemic degradation rules)
-- Inspection CLI (`sy_cli`) for status, events, entities, zones, and JSON dumps
-- Determinism validation utilities and tests in `sy_core`
+- **Implemented**: present in this repository and covered by named evidence.
+- **Target**: required before the first stable contract and tracked by a gap ID.
+- **Later**: intentionally outside the first stable contract.
 
-Phase 1 closes through two gates (decision D-011):
+## What Works Today
 
-- **Gate 1-K — Kernel Contract**: freeze the kernel contract v0, close the
-  contract-integrity gaps (simulation contract, formal genesis, command
-  journaling and ordering, single-writer ownership, WAL/contract binding,
-  replay oracle), ship the observation surface, provide an anchor world, and
-  gain a first external consumer.
-- **Gate 1-D — Durability Under Load**: production hardening (corruption and
-  I/O failure policies, compaction, fencing, limits, operator tooling), where
-  every item carries an explicit usage trigger.
+The current prototype is a single-process, single-writer headless server. It
+can create a spatial demonstration world, run deterministic ticks, persist a
+snapshot and local WAL, recover after interruption, and inspect the store
+through a CLI that opens its WAL read-only.
 
-Reference docs:
+Implemented today:
 
-- [Kernel Contract (draft v0)](seej/docs/CONTRACT.md)
-- [Phase 1 Scope](seej/docs/phase1/README.md)
-- [Phase 1 Exit Checklist — Gates 1-K and 1-D](seej/docs/phase1/EXIT_CHECKLIST.md)
-- [Observation Slice (first userland brick)](seej/docs/phase1/OBSERVATION_SLICE.md)
-- [Determinism Contract](seej/docs/phase1/DETERMINISM.md)
-- [Persistence and Recovery](seej/docs/phase1/PERSISTENCE.md)
-- [Binary Usage](seej/docs/phase1/BINARIES.md)
+- deterministic tick execution with an explicit seed;
+- the `server_d` headless runtime;
+- local snapshot and WAL persistence;
+- recovery by loading a snapshot and replaying later WAL events;
+- the current zone/entity model and demonstration degradation rules;
+- `sy_cli` status, event, entity, zone, and JSON inspection;
+- determinism, recovery, crash, and WAL fuzz evidence described by the Phase 1
+  documents.
 
-## Architecture
+The prototype does not yet provide a distributed authority group, consensus,
+generic plugin-owned data, a stable public extension ABI, hot loading, or
+plugin isolation. The current zone/entity types and systemic rules are
+prototype behavior, not the future universal world model.
 
-Seej follows strict dependency layering (NIV 0 to NIV 4):
+`sy_cli` opens the WAL read-only, but initializing its current `FilesystemStore`
+may create `<data-dir>/worlds`. In addition, `dump --output` writes to the
+operator-supplied destination without rejecting a path that aliases canonical
+storage. Until gap P1-11 is closed, inspection needs an already existing
+`<data-dir>/worlds` tree and exports must be directed outside the world store.
 
-- **NIV 0**: stable primitives (`sy_types`, `sy_config`)
-- **NIV 1**: API definitions (`sy_api`) and Phase 2+ protocol placeholder (`sy_protocol`)
-- **NIV 2**: pure simulation core (`sy_core`)
-- **NIV 2b**: optional simulation modules (`mods/*`, Phase 2+, outside active workspace)
-- **NIV 3**: infrastructure, tooling, testkit (`sy_infra`, `sy_tools`, `sy_testkit`)
-- **NIV 4**: runtime wiring target (`sy_loader`; Phase 1 wires directly in `server_d`)
+## Target Architecture
 
-Core principles:
+```text
+community capabilities                     operators and observers
+agents · economy · space · UI · netcode     CLI · monitoring · administration
+             |                                          |
+             +---------- versioned contracts -----------+
+                                |
+                 logical distributed world kernel
+        identity · time · commands · validation · transactions
+                    durable history · replication
+                                |
+             +------------------+------------------+
+             |                  |                  |
+          node A             node B             node C
+       pure engine +      pure engine +      pure engine +
+        providers          providers          providers
+```
 
-- **Headless first**: no graphics dependency on the server
-- **Determinism first**: same genesis + same input stream = same state transitions
-- **Snapshot + WAL persistence**: snapshots are recovered, then WAL events after the snapshot cursor are replayed
-- **Strict decoupling**: simulation logic is independent from rendering technologies
-- **One journaled aperture**: the world is a causally closed system; all
-  mutation enters as commands, all change exits as events, and everything is
-  journaled
+`sy_core` is the deterministic transition engine inside this architecture. It
+does not perform filesystem, clock, or network I/O. A node runtime wires it to
+approved providers for persistence, scheduling, validation, membership,
+replication, and other capabilities. Single-node operation is a deployment of
+the same contracts, not a separate product.
 
-Guarantees are tiered (see [CONTRACT.md](seej/docs/CONTRACT.md)): causal
-closure and deterministic re-execution are non-negotiable ("we do not break
-replay"); long-horizon bit-perfect replay across versions and platforms is an
-opt-in guarantee pulled by demand.
+The first distributed reference target uses three authorized nodes and a
+quorum of two under a crash/partition fault model. This reference is allowed to
+use a Raft-style provider, but the contract does not require every deployment
+to use the same implementation.
 
-Documentation structure:
+Read the detailed model in:
 
-- Repository-level docs in [`doc/`](doc/) define project governance and architecture
-- Implementation-level docs in [`seej/docs/phase1/`](seej/docs/phase1/) define current Phase 1 scope and behavior
-
-See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md), [seej/docs/ARCHITECTURE.md](seej/docs/ARCHITECTURE.md), and [seej/docs/phase1/README.md](seej/docs/phase1/README.md).
+- [Project architecture](doc/ARCHITECTURE.md)
+- [Technical architecture](seej/docs/ARCHITECTURE.md)
+- [Kernel contract](seej/docs/CONTRACT.md)
+- [World specification](seej/docs/simulation/WORLD_SPEC.md)
+- [Roadmap](doc/ROADMAP.md)
 
 ## Quick Start
 
-Prerequisite: Rust toolchain installed.
+Prerequisite: the pinned Rust toolchain described by `seej/server/rust-toolchain.toml`.
 
 ```bash
 git clone https://github.com/Seeyuj/Seej.git
@@ -97,43 +121,24 @@ cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 10
 cargo run --bin sy_cli -- status world_42
 ```
 
-## What Seej Is Not
+These commands run the current local prototype. No distributed command-line
+interface is claimed until one is implemented and documented in
+[BINARIES.md](seej/docs/phase1/BINARIES.md).
 
-Seej is not:
+## Project Boundaries
 
-- a game engine
-- a graphics engine
-- a narrative RPG framework
-- a metaverse platform claim
-- a default-content game project
-
-It is a persistent world kernel: server simulation infrastructure that others can build worlds on top of.
-
-## Current Status
-
-- **Phase 0** (conceptual foundations): complete
-- **Phase 1** (minimal headless server slice): implemented; closing through
-  Gate 1-K (kernel contract, observation surface, anchor world, external
-  consumer) with Gate 1-D (durability under load) pulled by usage triggers
-- **Phase 2+** (`sy_protocol`, agents brick, human netcode brick, optional
-  modules): intentionally deferred; brick order is observation → agents →
-  human netcode
-
-Roadmap: [doc/ROADMAP.md](doc/ROADMAP.md)
+Seej is infrastructure rather than a game, graphics engine, narrative
+framework, content pack, or metaverse product. A community extension can build
+any of those experiences while the kernel remains headless and neutral about
+their application rules.
 
 ## Contributing
 
-If you want to help build robust simulation infrastructure:
-
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
-2. Check open [Issues](https://github.com/Seeyuj/Seej/issues)
-3. Open a PR aligned with architecture and decision documents
-
-Key references:
-
-- [doc/DECISIONS.md](doc/DECISIONS.md)
-- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
-- [seej/docs/phase1/README.md](seej/docs/phase1/README.md)
+Read [CONTRIBUTING.md](CONTRIBUTING.md), the
+[decision log](doc/DECISIONS.md), and the
+[exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md) before changing a public
+contract. Contributions must state whether they implement an existing target,
+change a contract, or describe current behavior.
 
 ## License
 

@@ -1,10 +1,17 @@
-# Phase 1 — Persistence and crash recovery (Snapshot + WAL)
+# Phase 1 — Persistence and Recovery
 
-This document describes the persistence contract **as implemented**.
+```text
+status: CURRENT LOCAL PROVIDER + TARGET DISTRIBUTED GUARANTEES
+```
 
-## Files on disk
+This document describes the implemented FileStore format and separates it from
+the persistence guarantees required by the target kernel. Other providers may
+use different physical formats after they pass the same public conformance
+contract.
 
-Given `--data-dir <BASE>` and a `world_id`, files are stored under:
+## Current files
+
+With `--data-dir <BASE>` and `world_id`, the prototype stores:
 
 ```text
 <BASE>/
@@ -12,189 +19,198 @@ Given `--data-dir <BASE>` and a `world_id`, files are stored under:
     <world_id>/
       meta.json
       snapshot.json
-      events           (WAL file; despite the name, it is a file path)
+      events
 ```
 
-The `server_d` binary typically creates worlds under ids like `world_<seed>` (e.g. `world_42`).
+`events` is a WAL file despite its name. `server_d` currently creates IDs
+such as `world_42`; this seed-derived identity is scheduled for replacement.
 
-## Snapshot
+## Current snapshot behavior
 
-### Snapshot contents
+`snapshot.json` contains the serialized `World` and its recovery cursor:
+`snapshot_tick` and `last_event_id`. `meta.json` mirrors inspectable
+metadata.
 
-- `snapshot.json` contains the full serialized `World` state.
-- `snapshot.json` is the authoritative crash-recovery unit. Its embedded
-  `WorldMeta` contains the recovery cursor:
-  - `snapshot_tick: Tick`
-  - `last_event_id: EventId`
-- `meta.json` is an inspectable mirror of the snapshot metadata. Snapshot
-  recovery accepts a missing or stale `meta.json` only when the snapshot embeds a
-  strictly newer coherent cursor for the same world id, seed, creation tick, and
-  format version. Other metadata disagreement fails explicitly.
+Recovery accepts a missing or older `meta.json` only when the snapshot embeds
+a strictly newer coherent cursor for the same current-format world, seed,
+creation tick, and version. Other disagreement fails explicitly.
 
-### Atomic write strategy
+Snapshot and metadata writes use a temporary file, file synchronization,
+atomic replacement, and parent-directory synchronization on Unix. Windows uses
+`MoveFileExW` with replacement and write-through flags. Durable directory,
+WAL creation, and first-append behavior remain open under `P1-10`.
 
-`FilesystemStore::save_snapshot` and `FilesystemStore::save_meta` write using:
-
-- write to `*.tmp`
-- `fsync` the temp file
-- atomic replacement to the final path
-- `fsync` the parent directory on Unix
-
-This minimizes corrupted snapshots on crash/power loss.
-
-On Windows, `FilesystemStore` uses `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` for the replacement step.
-
-Directory and WAL creation durability is not yet a closed Phase 1 invariant.
-Durable sign-off requires explicit OS-specific semantics for world directory
-creation, WAL file creation, and the first append, including parent directory
-fsync where supported and crashpoint tests around those boundaries.
-
-## WAL (Write-Ahead Log)
-
-### Role
-
-The WAL is an **append-only** log of persisted simulation events. It is used for:
-
-- crash recovery (replay after the snapshot cursor),
-- operator inspection (`sy_cli events`),
-- future compaction/rotation (not implemented in Phase 1).
-
-### Binary record format (as implemented)
+## Current WAL format
 
 Each record is:
 
 ```text
-MAGIC   : u32  (little-endian)  0x57414C31  // "WAL1" (on-disk LE bytes: 31 4C 41 57)
-VERSION : u16  (little-endian)  1
-LENGTH  : u32  (little-endian)  payload byte length
-EVENT_ID: u64  (little-endian)  monotonic per WAL
-TICK    : u64  (little-endian)  simulated tick
-PAYLOAD : [u8; LENGTH]          JSON bytes of current WAL batch payload:
-                                {"type":"Batch","data":{"events":[...]}}
-CRC32   : u32  (little-endian)  CRC32 over (MAGIC..PAYLOAD), excluding CRC field
+MAGIC    u32 LE   0x57414C31 ("WAL1"; bytes 31 4C 41 57)
+VERSION  u16 LE   1
+LENGTH   u32 LE   payload byte length
+EVENT_ID u64 LE   last event ID in the batch
+TICK     u64 LE   last event tick in the batch
+PAYLOAD  bytes    JSON {"type":"Batch","data":{"events":[...]}}
+CRC32    u32 LE   CRC32 over MAGIC through PAYLOAD
 ```
 
-`append_batch` writes the whole batch as one WAL record. Recovery therefore either sees the complete batch or discards/truncates the partial record; it must not replay a valid prefix of a partially written batch as a half-tick.
+`append_batch` writes a complete event batch as one record. Recovery validates
+the record header against the final event and never replays a valid-looking
+prefix of a partial batch.
 
-For batch records, the header `EVENT_ID` and `TICK` are the `event_id` and `tick` of the last `SimEvent` in the batch. Recovery rejects a batch whose header does not match the last event.
+FileEventLog assigns monotonically increasing event IDs starting at 1. Legacy
+`WorldLoaded` is a replay no-op. Legacy `WorldSaved` is a no-op only when its
+outer and payload ticks match recovered state. `WorldCreated` is idempotent on
+an already coherent snapshot. `TickProcessed` requires matching outer/payload
+ticks, derived simulation time, and an RNG checkpoint.
 
-### Crash safety behavior
+This is an event-result WAL. It is not yet the durable command and confirmed
+history required by K-08 and K-07.
 
-- When reading, if a record is incomplete or the CRC does not match:
-  - recovery **stops** at the first invalid record,
-  - the implementation may **truncate** the file tail (removing the partial record).
-- This makes “torn writes” detectable and avoids replaying corrupted data.
+## Current recovery algorithm
 
-Phase 1 still needs a stricter corruption and repair policy that separates
-expected torn-write tails from suspicious durable evidence. Suspicious evidence
-must fail closed unless an explicit operator repair mode preserves enough
-diagnostic material to explain the mutation.
+1. Decode `snapshot.json`.
+2. Validate `meta.json` as equal or an allowed older mirror.
+3. Read WAL records through the first invalid record.
+4. Verify durable event IDs are contiguous from 1 and cover the snapshot
+   cursor.
+5. Select events after `snapshot.last_event_id`.
+6. Verify the replay range is contiguous.
+7. Apply each event through `sy_core::replay::apply_event`.
+8. Refuse incoherent ticks, RNG state, cursors, formats, or missing prefix.
 
-### Event IDs
+The current format version is 3 and requires an exact match. No implicit
+migration from an older format exists.
 
-`FileEventLog` assigns `event_id` on append, starting at 1 and incrementing monotonically.
-Infrastructure treats `event_id` as the durable cursor.
+Creation refuses an existing directory, orphan WAL, metadata, or snapshot that
+does not form a coherent current world.
 
-New WAL entries are limited to reconstructable state-transition events. Legacy
-`WorldLoaded` events remain replay-compatible no-ops. Legacy `WorldSaved`
-events remain no-ops only when their event tick and payload tick match the
-current recovered world tick; incoherent `WorldSaved` records are rejected during
-replay. The Phase 1 architecture lock no longer writes lifecycle-only events to
-the WAL.
+## Current torn-tail and corruption behavior
 
-`WorldCreated` is retained as the genesis state-transition event. During replay
-it is idempotent and leaves an already coherent recovered world unchanged; the
-full world state is reconstructed from `snapshot.json`, then advanced by WAL
-events after the snapshot cursor.
+The reader stops at an incomplete record or CRC mismatch and can truncate the
+invalid tail. This protects ordinary torn appends but does not yet distinguish
+every expected partial write from suspicious corruption.
 
-### Snapshot format compatibility
+Before the first stable contract, `P0-13` requires explicit classification:
+safe torn-tail recovery, refusal, quarantine, and operator repair must be
+separate modes that preserve evidence.
 
-`WorldMeta::format_version` is an exact compatibility gate in Phase 1. Loading a snapshot whose format version differs from the current format is refused with an explicit storage error. No implicit v2-to-v3 migration is performed because old snapshots do not contain the per-tick RNG checkpoint contract required for deterministic recovery.
+## Current write failure behavior
 
-## Crash recovery algorithm
+The local persistent runtime rolls back the in-memory transition when WAL
+append fails before acceptance. This is useful evidence, not complete coverage.
 
-Crash recovery is performed by the infrastructure runtime and shared CLI loader:
+Gap `P0-14` requires injected tests for:
 
-1. Load `snapshot.json` into an in-memory `World`.
-2. Load `meta.json`, when present, and verify it either exactly matches the
-   snapshot metadata or is an older mirror left by a crash between
-   `save_snapshot` and `save_meta`.
-3. Read all valid WAL events and verify the durable tail:
-   - the durable last event matches `event_log.last_event_id()`
-   - the WAL prefix is contiguous from `event_id == 1`
-   - the durable last event covers the snapshot cursor
-   - `durable_last_event_id >= snapshot.last_event_id`
-   - otherwise recovery fails with `CorruptedState`
-4. Filter the replay set using the snapshot cursor:
-   - replay events where `event.event_id > snapshot.last_event_id`
-5. Verify the replay range is contiguous through the durable WAL tail.
-6. Apply each event using the deterministic event applier (core):
-   - `sy_core::replay::apply_event(&mut world, &event)`
+- full and read-only media;
+- generic I/O failure;
+- failed WAL append or synchronization;
+- failed snapshot/metadata synchronization;
+- failed replacement or rename.
 
-`WorldSaved` is intentionally replay-safe and must remain a no-op for old WALs
-only when the record is coherent with the recovered world tick.
-`TickProcessed` replay is also strict: the outer event tick must match the
-payload tick, payload `sim_time` must match `SimTime::from_ticks(tick)`, and
-`rng_state_after` must be present. Legacy WAL records that deserialize without
-an RNG checkpoint are refused in Phase 1 recovery unless an explicit migration
-has already rewritten them.
-The snapshot cursor points to the last state event included in the snapshot.
-If the WAL is absent, truncated, or corrupted before that cursor, Phase 1
-refuses recovery rather than moving the cursor backward. Real compaction needs a
-separate, explicit metadata contract.
+The required outcome is no durable success, observer publication, later tick,
+or accepted memory-only mutation after a critical failure. Recovery cannot
+accept a new metadata file against an absent, partial, or older snapshot.
 
-Create refuses to reuse incomplete durable storage. If a world directory, orphan
-WAL, `meta.json`, or `snapshot.json` exists without a coherent snapshot/meta
-pair, `CreateWorld` fails explicitly instead of treating the id as free.
+## Target distributed persistence
 
-This makes recovery robust even if:
-- the snapshot is taken while the WAL already contains events for the same tick,
-- multiple events share the same tick,
-- the process crashes mid-record append.
+The target distinguishes:
 
-## Durable I/O error policy
+1. received proposal;
+2. local durable staging;
+3. confirmed admission with canonical sequence and `Pending` state;
+4. deterministic resolution computation from the confirmed predecessor;
+5. confirmed resolution containing a `Succeeded`, `Refused`, or `Cancelled`
+   decision, events, and complete transition;
+6. ordered materialization of that recorded transition into each state instance
+   and public event/status publication after confirmation.
 
-The current implementation rolls back the in-memory simulation when WAL append
-fails before a command is accepted. Durable Phase 1 sign-off requires injected
-failure tests for non-crash persistence errors such as ENOSPC, EROFS, EIO,
-fsync failure, failed rename, and failed WAL append.
+A local WAL append does not prove distributed confirmation. The authority
+provider defines the quorum rule under
+[NODE_NETWORK.md](../NODE_NETWORK.md). Storage providers expose sufficient
+durability and fencing behavior for that rule.
 
-The required policy is fail-closed:
+Confirmed admission and resolution records bind world identity, genesis,
+execution profile, authority term, configuration version, full command identity
+and fingerprint, producer slot/incarnation, status window, order, decision,
+expiration tick, events, and state/checkpoint cursor. An authorized cancellation
+additionally binds its stable control-operation identity, requester, reason,
+and target command, and uses the same bounded identity and retention rules.
+Recovery resumes a confirmed pending admission and never recomputes a confirmed
+terminal decision as new work.
 
-- no accepted in-memory mutation without a durable WAL commit;
-- no future ticks after a critical persistence failure until recovery policy is
-  explicit;
-- no fresh `meta.json` accepted against a missing, partial, or older snapshot;
-- no silent repair of suspicious durable evidence.
+The target persists or derives three distinct cursors:
 
-Those requirements remain open checklist work until precise `IWorldStore` /
-`IEventLog` failure injection proves rollback or refusal behavior and proves no
-incoherent snapshot/meta/WAL tuple is produced.
+- the authority group's `confirmed_cursor`;
+- each checkpoint's `checkpoint_cursor`, atomically bound to world identity,
+  execution profile, state, and semantic hash;
+- each materialized state instance's `applied_cursor`, advanced atomically with
+  that state.
 
-## Backup and restore policy
+Ordinary recovery validates a checkpoint, creates a state instance at its
+cursor, and materializes the retained confirmed suffix. A Resolution records
+its predecessor and result cursors and semantic hashes. Materialization requires
+the current state to match that predecessor, then advances the state and
+`applied_cursor` together. Applying the recorded suffix to a new instance is
+allowed even if a crashed in-memory instance had applied it; recomputing the
+resolved command through plugin code is not. Gaps, mismatches, or conflicting
+results fail closed.
 
-Phase 1 does not yet define a coherent hot-backup mechanism. Until a tested
-backup command exists, the intended operator policy is cold backup only: stop
-the daemon, copy the complete world directory, then restore and run recovery on
-the copied directory. Raw recursive copy while a writer is active is not
-guaranteed safe.
+Recovery does not invoke external services. It may redeliver stable identified
+events or effect intentions to an explicit asynchronous consumer protocol,
+which handles duplicates.
 
-## Core boundary
+## Retention and compaction
 
-`sy_core` does not own snapshot encoding, WAL append, filesystem paths, metadata
-mirroring, or recovery orchestration. It only applies deterministic simulation
-commands and deterministic replay events. The persistent runtime in `sy_infra`
-commits events to the WAL before accepting the corresponding in-memory state and
-rolls the core simulation back if the WAL append fails.
+The current `truncate_after(event_id)` rewrites the WAL and reassigns IDs. It
+is deprecated and suitable only as an explicit manual recovery mechanism. It is
+not stable compaction.
 
-## Important note: `truncate_after` reassigns IDs
+K-10/P1-19 replace it with retention-aware checkpointing that preserves:
 
-The Phase 1 `IEventLog::truncate_after(event_id)` implementation is a simple rewrite:
-- it reloads events up to `event_id`,
-- deletes the WAL file,
-- rewrites the kept events by appending them again.
+- stable external cursors or explicit expiration;
+- command-ID non-reuse;
+- active obligations;
+- confirmed causal linkage;
+- a coherent recovery point;
+- migration and compatibility metadata.
 
-Because append assigns fresh `event_id`s, the rewritten WAL will have **new** `event_id` values starting at 1.
-This is acceptable for an operator/manual maintenance tool in Phase 1, but it is not a stable “compaction” mechanism yet.
-The trait method is deprecated to prevent accidental automated use.
+Every terminal resolution at tick `R` records the exact canonical
+`expiration_tick = R + status_window_ticks` using checked arithmetic and the
+positive finite window fixed at admission. At that tick, its public result
+becomes `Expired` and compaction may replace the details with a per-command
+non-reuse tombstone. A generation moves through confirmed `Open`, `Sealed`, and
+`Closed` states. Opening a new one or reaching a finite bound seals the current
+one; a sealed generation admits no new IDs but retains pending admissions.
 
+After every command in a sealed generation is terminal and expired, confirmed
+closure advances a durable per-incarnation closed-generation floor. Command
+lookup checks that floor before generation records, allowing old generation
+metadata and tombstones to be deleted safely. Pending admissions and their
+required execution profile are never removed. The persisted limits profile
+bounds world-local producer slots plus non-closed generations, commands,
+retained results, tombstones, and their bytes per producer and per world.
+
+Each producer slot stores a monotonic incarnation high-water mark. Retirement
+requires every generation in the current incarnation to be closed. Reassigning
+the slot confirms a greater incarnation, and command lookup rejects an older
+incarnation before consulting metadata that compaction may have removed. This
+keeps producer churn bounded without making an old command identity reusable.
+
+Full archival is optional. Genesis replay is unavailable when required history
+or artifacts were deliberately removed.
+
+## Backup
+
+Only cold backup is currently supportable as an operator procedure: stop the
+writer, copy the complete world directory, restore it elsewhere, and run
+ordinary recovery. A raw copy while the writer is active is not guaranteed
+coherent. This procedure does not yet have the restore evidence required by
+`P2-02`. Hot backup remains unclaimed until a tested protocol exists.
+
+## Boundaries
+
+`sy_core` owns deterministic application and integrity logic, not file paths,
+JSON, WAL encoding, network replication, snapshots, or backup. FileStore is the
+current `sy_infra` reference provider. Future providers can change bytes and
+layout while preserving the root contract.
