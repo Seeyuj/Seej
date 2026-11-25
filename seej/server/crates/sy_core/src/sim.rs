@@ -137,7 +137,7 @@ impl<R: IRng, C: ISimClock> Simulation<R, C> {
         let world = World::new(cmd.name.clone(), cmd.seed);
         let world_id = world.id().to_string();
 
-        self.rng.restore_seeded(cmd.seed, cmd.seed.as_u64());
+        self.rng.restore_seeded(cmd.seed, world.rng_state);
         self.clock.set_tick(Tick::ZERO);
 
         self.emit(EventData::WorldCreated {
@@ -373,6 +373,24 @@ mod tests {
     use crate::ports::{IRng, ISimClock};
     use sy_api::commands::{EntityProperties, SpawnEntityCmd};
     use sy_types::{Position, SimTime, WorldPos};
+
+    #[test]
+    fn create_world_restores_the_current_format_rng_state() {
+        let seed = RngSeed::new(42);
+        let mut sim = Simulation::new(TestRng::new(RngSeed::new(999)), TestClock::new());
+        sim.process_command(SimCommand::CreateWorld(CreateWorldCmd {
+            name: "New world".to_string(),
+            seed,
+        }))
+        .unwrap();
+
+        let world = sim.world().unwrap();
+        assert_eq!(world.meta.format_version, 4);
+        assert_eq!(world.rng_state, 0xbdd7_3226_2feb_6e95);
+        let world_rng_state = world.rng_state;
+        assert_eq!(sim.rng().seed(), seed);
+        assert_eq!(sim.rng().state(), world_rng_state);
+    }
 
     struct TestRng {
         seed: RngSeed,

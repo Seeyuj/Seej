@@ -3,13 +3,13 @@
 //! Schema and data migrations for storage.
 //!
 //! ## Phase 1
-//! Exact compatibility gate: no implicit migrations.
+//! Supported formats are read as-is; there are no implicit migrations.
 
 use sy_types::WorldMeta;
 
 /// Check if a world needs migration.
 pub fn needs_migration(meta: &WorldMeta) -> bool {
-    meta.format_version != WorldMeta::CURRENT_FORMAT_VERSION
+    !WorldMeta::supports_format(meta.format_version)
 }
 
 /// Migrate world metadata to current version.

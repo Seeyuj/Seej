@@ -318,7 +318,13 @@ pub struct WorldMeta {
 }
 
 impl WorldMeta {
-    pub const CURRENT_FORMAT_VERSION: u32 = 3; // Bumped for per-tick RNG checkpoint support
+    /// Format used when creating new worlds.
+    pub const CURRENT_FORMAT_VERSION: u32 = 4;
+
+    /// Whether a world can be read and continued without migration.
+    pub const fn supports_format(version: u32) -> bool {
+        matches!(version, 3 | 4)
+    }
 }
 
 // ============================================================================

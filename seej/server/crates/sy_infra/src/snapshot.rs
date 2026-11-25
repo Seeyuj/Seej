@@ -148,7 +148,7 @@ pub fn decode_world(data: &[u8]) -> SimResult<World> {
 }
 
 fn validate_snapshot(snapshot: &WorldSnapshotDto) -> SimResult<()> {
-    if snapshot.meta.format_version != WorldMeta::CURRENT_FORMAT_VERSION {
+    if !WorldMeta::supports_format(snapshot.meta.format_version) {
         return Err(SimError::PersistenceError(format!(
             "Unsupported world format {} (current {}). No implicit migration is available.",
             snapshot.meta.format_version,

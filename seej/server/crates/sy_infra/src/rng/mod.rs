@@ -102,6 +102,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn world_genesis_pcg_vectors() {
+        let seed = RngSeed::new(42);
+        for (format, state, first) in [(3, 42, 0), (4, 0xbdd7_3226_2feb_6e95, 3_344_234_869)] {
+            let world = sy_core::World::new_for_format("Vector".to_string(), seed, format).unwrap();
+            assert_eq!(world.meta.format_version, format);
+            assert_eq!(world.rng_state, state);
+
+            let mut rng = Pcg32Rng::uninitialized();
+            rng.restore_seeded(world.meta.seed, world.rng_state);
+            assert_eq!(rng.next_u32(), first);
+        }
+    }
+
+    #[test]
     fn deterministic_sequence() {
         let mut rng1 = Pcg32Rng::new(RngSeed::new(42));
         let mut rng2 = Pcg32Rng::new(RngSeed::new(42));

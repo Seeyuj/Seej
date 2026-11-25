@@ -3,13 +3,16 @@ use std::path::Path;
 use proptest::prelude::*;
 use sy_api::commands::{CreateWorldCmd, EntityProperties, SimCommand, SpawnEntityCmd};
 use sy_api::persistence::{IEventLog, IWorldStore};
-use sy_core::{compute_canonical_hash, World};
+use sy_core::{compute_canonical_hash, ports::IRng, Simulation, World};
 use sy_infra::{
     load_recovered_world,
     snapshot::{decode_world, encode_world},
+    store::migrations::needs_migration,
     FileEventLog, FilesystemStore, Pcg32Rng, PersistentSimulation, UnlimitedClock, XxHasher,
 };
-use sy_types::{EntityKind, EventId, Position, RngSeed, SimError, Tick, WorldPos, ZoneId};
+use sy_types::{
+    EntityKind, EventId, Position, RngSeed, SimError, Tick, WorldMeta, WorldPos, ZoneId,
+};
 use tempfile::TempDir;
 
 type InfraSim = PersistentSimulation<Pcg32Rng, UnlimitedClock, FileEventLog, FilesystemStore>;
@@ -161,6 +164,128 @@ fn current_process_rss_bytes() -> Option<u64> {
 #[cfg(not(any(windows, target_os = "linux")))]
 fn current_process_rss_bytes() -> Option<u64> {
     None
+}
+
+#[test]
+fn legacy_v3_snapshot_continues_and_saves_without_migration() {
+    let seed = RngSeed::new(7);
+    let wid = world_id(seed);
+    let dir = temp_data_dir("legacy_v3");
+    let world_dir = dir.path().join("worlds").join(&wid);
+    std::fs::create_dir_all(&world_dir).unwrap();
+    std::fs::write(
+        world_dir.join("snapshot.json"),
+        br#"{
+            "meta": {
+                "world_id": "world_7", "name": "Legacy", "seed": 7,
+                "current_tick": 0, "sim_time": {"units": 0}, "created_tick": 0,
+                "snapshot_tick": 0, "last_event_id": 0, "format_version": 3
+            },
+            "current_tick": 0, "sim_time": {"units": 0}, "rng_state": 7,
+            "next_entity_id": 1, "entities": {},
+            "zones": {"0": {"id": 0, "name": "Origin", "loaded": true, "entities": []}}
+        }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        world_dir.join("meta.json"),
+        br#"{
+            "world_id": "world_7", "name": "Legacy", "seed": 7,
+            "current_tick": 0, "sim_time": {"units": 0}, "created_tick": 0,
+            "snapshot_tick": 0, "last_event_id": 0, "format_version": 3
+        }"#,
+    )
+    .unwrap();
+
+    let mut recovered = make_sim(dir.path(), &wid);
+    assert!(load_world(&mut recovered, &wid).is_empty());
+    let world = recovered.world().unwrap();
+    assert_eq!(world.meta.format_version, 3);
+    assert_eq!(world.rng_state, 7);
+    assert!(!needs_migration(&world.meta));
+
+    let mut witness = Simulation::new(Pcg32Rng::uninitialized(), UnlimitedClock::new());
+    witness.load_world_state(World::new_for_format("Legacy".to_string(), seed, 3).unwrap());
+    let spawn = SimCommand::SpawnEntity(SpawnEntityCmd {
+        position: WorldPos::origin(),
+        kind: EntityKind::Resource,
+        properties: EntityProperties {
+            amount: Some(100),
+            ..EntityProperties::default()
+        },
+    });
+    recovered.process_command(spawn.clone()).unwrap();
+    let spawn_count = witness.process_command(spawn).unwrap().len();
+
+    let mut actual_events = recovered.process_command(SimCommand::TickN(3)).unwrap();
+    let expected_events = witness.process_command(SimCommand::TickN(3)).unwrap();
+    // The persistent path assigns event IDs; tick events also carry RNG checkpoints.
+    for event in &mut actual_events {
+        event.event_id = EventId::ZERO;
+    }
+    assert_eq!(actual_events, expected_events);
+    assert_ne!(witness.rng().state(), 7);
+
+    recovered.save_world().unwrap();
+    drop(recovered);
+    let mut reloaded = make_sim(dir.path(), &wid);
+    assert!(load_world(&mut reloaded, &wid).is_empty());
+    let (mut reloaded, _, store) = reloaded.into_parts();
+
+    let world = reloaded.world().unwrap();
+    assert_eq!(world.meta.format_version, 3);
+    assert_eq!(store.load_meta(&wid).unwrap(), world.meta);
+    let mut expected_world = witness.world().unwrap().clone();
+    expected_world.meta.snapshot_tick = Tick(3);
+    expected_world.meta.last_event_id = EventId::new((spawn_count + expected_events.len()) as u64);
+    assert_eq!(hash_world(world), hash_world(&expected_world));
+    for _ in 0..16 {
+        assert_eq!(reloaded.rng().next_u32(), witness.rng().next_u32());
+    }
+}
+
+#[test]
+fn v4_snapshot_and_meta_round_trip() {
+    let seed = RngSeed::new(42);
+    let wid = world_id(seed);
+    let dir = temp_data_dir("v4_round_trip");
+    let mut live = make_sim(dir.path(), &wid);
+    create_world_with_entities(&mut live, seed);
+    run_ticks(&mut live, 3);
+    let (expected_hash, _) = hash_and_tick(&mut live);
+    let expected_rng = live.world().unwrap().rng_state;
+    drop(live);
+
+    let mut reloaded = make_sim(dir.path(), &wid);
+    assert!(load_world(&mut reloaded, &wid).is_empty());
+    let (mut reloaded, _, store) = reloaded.into_parts();
+    let world = reloaded.world().unwrap();
+    assert_eq!(world.meta.format_version, 4);
+    assert_eq!(store.load_meta(&wid).unwrap(), world.meta);
+    assert!(!needs_migration(&world.meta));
+    assert_eq!(hash_world(world), expected_hash);
+    assert_eq!(reloaded.rng().state(), expected_rng);
+}
+
+#[test]
+fn unsupported_formats_are_refused() {
+    let seed = RngSeed::new(42);
+    for format in [2, 5] {
+        let mut world = World::new("Unsupported format".to_string(), seed);
+        world.meta.format_version = format;
+        assert!(!WorldMeta::supports_format(format));
+        assert!(needs_migration(&world.meta));
+        let snapshot = encode_world(&world).unwrap();
+        let diagnostic = format!("Unsupported world format {format}");
+        assert!(matches!(
+            decode_world(&snapshot),
+            Err(SimError::PersistenceError(message)) if message.contains(&diagnostic)
+        ));
+        assert!(matches!(
+            World::new_for_format("Unsupported format".to_string(), seed, format),
+            Err(SimError::InvalidOperation(message)) if message == diagnostic
+        ));
+    }
 }
 
 #[test]

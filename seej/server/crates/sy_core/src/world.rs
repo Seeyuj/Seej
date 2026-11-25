@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 
 use sy_api::commands::EntityProperties;
 use sy_types::{
-    EntityId, EntityKind, EntityState, EventId, RngSeed, SimTime, Tick, WorldMeta, WorldPos, ZoneId,
+    EntityId, EntityKind, EntityState, EventId, RngSeed, SimError, SimResult, SimTime, Tick,
+    WorldMeta, WorldPos, ZoneId,
 };
 
 // ============================================================================
@@ -134,12 +135,48 @@ pub struct World {
     pub zones: BTreeMap<ZoneId, Zone>,
 }
 
+/// Initial RNG state for a new world: SplitMix64's finalizer over the seed.
+/// A raw small seed is a degenerate generator state (first output 0).
+fn initial_rng_state(seed: RngSeed) -> u64 {
+    let mut z = seed.as_u64().wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 impl World {
     /// Create a new empty world.
     ///
     /// ## Note
     /// No system clock access - all timestamps are in simulated ticks.
     pub fn new(name: String, seed: RngSeed) -> Self {
+        Self::with_initial_state(
+            name,
+            seed,
+            WorldMeta::CURRENT_FORMAT_VERSION,
+            initial_rng_state(seed),
+        )
+    }
+
+    /// Create an empty world from an explicitly known genesis format.
+    ///
+    /// A snapshot should be loaded with its saved RNG state instead.
+    pub fn new_for_format(name: String, seed: RngSeed, format_version: u32) -> SimResult<Self> {
+        match format_version {
+            3 => Ok(Self::with_initial_state(name, seed, 3, seed.as_u64())),
+            4 => Ok(Self::new(name, seed)),
+            _ => Err(SimError::InvalidOperation(format!(
+                "Unsupported world format {format_version}"
+            ))),
+        }
+    }
+
+    fn with_initial_state(
+        name: String,
+        seed: RngSeed,
+        format_version: u32,
+        rng_state: u64,
+    ) -> Self {
         let world_id = format!("world_{}", seed.as_u64());
 
         let meta = WorldMeta {
@@ -151,14 +188,14 @@ impl World {
             created_tick: Tick::ZERO,     // World created at tick 0
             snapshot_tick: Tick::ZERO,    // Will be updated on save
             last_event_id: EventId::ZERO, // No events yet
-            format_version: WorldMeta::CURRENT_FORMAT_VERSION,
+            format_version,
         };
 
         let mut world = World {
             meta,
             current_tick: Tick::ZERO,
             sim_time: SimTime::ZERO,
-            rng_state: seed.as_u64(),
+            rng_state,
             next_entity_id: 1, // 0 is reserved for INVALID
             entities: BTreeMap::new(),
             zones: BTreeMap::new(),

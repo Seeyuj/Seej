@@ -373,8 +373,10 @@ new state and any return requires another explicit migration. An uncertain
 activation response is resolved from confirmed history.
 
 **Implemented:** local snapshot + WAL recovery, CRC-protected WAL records, and
-atomic snapshot replacement on the supported path. Format version 3 requires
-an exact match; no migration currently exists.
+atomic snapshot replacement on the supported path. New worlds use format v4
+with a mixed initial RNG state. Formats v3 (raw seed at genesis) and v4 are
+read and continued without migration, restoring the RNG state stored in the
+snapshot and preserving the world's format on save.
 
 **Target (P0-14, K-09):** injected common-I/O-failure evidence, explicit
 migrations, compatible group activation, and historical-component checks.

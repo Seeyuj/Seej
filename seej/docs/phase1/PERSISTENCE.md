@@ -80,8 +80,10 @@ history required by K-08 and K-07.
 7. Apply each event through `sy_core::replay::apply_event`.
 8. Refuse incoherent ticks, RNG state, cursors, formats, or missing prefix.
 
-The current format version is 3 and requires an exact match. No implicit
-migration from an older format exists.
+New worlds use format v4 with a mixed initial RNG state. Formats v3 (raw seed
+at genesis) and v4 are read and continued without migration. Recovery uses
+the snapshot's stored RNG state, and saving preserves its format version.
+The seed or the v1 WAL alone does not identify the world's genesis format.
 
 Creation refuses an existing directory, orphan WAL, metadata, or snapshot that
 does not form a coherent current world.
