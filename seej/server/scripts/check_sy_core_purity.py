@@ -151,6 +151,50 @@ def quoted_string_end(source: str, start: int) -> int:
     return len(source)
 
 
+def char_literal_end(source: str, start: int) -> int | None:
+    cursor = start + 1
+    if cursor >= len(source) or source[cursor] in "'\r\n":
+        return None
+
+    if source[cursor] == "\\":
+        cursor += 1
+        if cursor >= len(source):
+            return None
+        escape = source[cursor]
+        cursor += 1
+        hex_digits = "0123456789abcdefABCDEF"
+        if escape == "x":
+            digits = source[cursor : cursor + 2]
+            if len(digits) != 2 or any(digit not in hex_digits for digit in digits):
+                return None
+            cursor += 2
+        elif escape == "u":
+            if not source.startswith("{", cursor):
+                return None
+            cursor += 1
+            digit_count = 0
+            while cursor < len(source) and source[cursor] != "}":
+                digit = source[cursor]
+                if digit in hex_digits:
+                    digit_count += 1
+                    if digit_count > 6:
+                        return None
+                elif digit != "_" or digit_count == 0:
+                    return None
+                cursor += 1
+            if digit_count == 0 or cursor == len(source):
+                return None
+            cursor += 1
+        elif escape not in "nrt0\\'\"":
+            return None
+    else:
+        cursor += 1
+
+    if cursor < len(source) and source[cursor] == "'":
+        return cursor + 1
+    return None
+
+
 def block_comment_end(source: str, start: int) -> int:
     cursor = start + 2
     depth = 1
@@ -190,6 +234,13 @@ def mask_comments_and_literals(source: str) -> str:
             mask_preserve_newlines(chars, cursor, end)
             cursor = end
             continue
+
+        if source[cursor] == "'":
+            char_end = char_literal_end(source, cursor)
+            if char_end is not None:
+                mask_preserve_newlines(chars, cursor, char_end)
+                cursor = char_end
+                continue
 
         if source[cursor] == '"':
             end = quoted_string_end(source, cursor)
@@ -376,6 +427,44 @@ def run_self_test() -> int:
             "HashSet is rejected",
             "pub fn f(values: std::collections::HashSet<u64>) { let _ = values; }",
             "noncanonical-collections",
+        ),
+        (
+            "char literal quote does not hide code",
+            """
+            pub fn f() -> char { '"' }
+            pub fn g() { let _ = std::fs::read_to_string("x"); }
+            """,
+            "filesystem-io",
+        ),
+        (
+            "byte char literal quote does not hide code",
+            """
+            pub fn f() -> u8 { b'"' }
+            pub fn g() { let _ = std::fs::read("x"); }
+            """,
+            "filesystem-io",
+        ),
+        (
+            "escaped quote char literal is handled",
+            r"""
+            pub fn f() -> char { '\'' }
+            pub fn g() { let _ = std::env::var("A"); }
+            """,
+            "environment-access",
+        ),
+        (
+            "lifetimes are not char literals",
+            "pub fn f<'a>(x: &'a str) -> &'a str { let _ = std::net::TcpStream::connect(\"h\"); x }",
+            "networking",
+        ),
+        (
+            "apostrophes in comments and strings stay masked",
+            """
+            // don't use std::fs here
+            pub const A: &str = "it's std::env::var and HashMap";
+            pub fn f<'a>(x: &'a u8) -> char { 'x' }
+            """,
+            None,
         ),
     ]
 
