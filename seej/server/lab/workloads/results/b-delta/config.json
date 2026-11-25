@@ -1,0 +1,13 @@
+{
+  "load": "b",
+  "seed": 42,
+  "keys": 1000000,
+  "ticks": 300,
+  "warmup_ticks": 10,
+  "checkpoint_at": 100,
+  "auto_writes": 100000,
+  "commands": 0,
+  "hot_keys": 0,
+  "hot_percent": 0,
+  "journal": "delta"
+}

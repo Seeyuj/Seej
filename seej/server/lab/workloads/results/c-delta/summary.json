@@ -1,0 +1,72 @@
+{
+  "load": "c",
+  "journal": "delta",
+  "seed": 42,
+  "keys": 1000000,
+  "ticks": 300,
+  "measured_ticks": 290,
+  "auto_writes": 1000,
+  "commands": 1000,
+  "final_root": "b1a728c2fa5b5c0a0ae7a8402d270fdcc18793ffd49dca2fbe5b1db151f74c1a",
+  "genesis_ms": 494.3508,
+  "gen": {
+    "mean_ms": 0.09311275862068963,
+    "p50_ms": 0.08670000000000001,
+    "p99_ms": 0.1328,
+    "max_ms": 0.1484
+  },
+  "compute": {
+    "mean_ms": 2.4998413793103444,
+    "p50_ms": 2.4552,
+    "p99_ms": 3.2006,
+    "max_ms": 3.5
+  },
+  "hash": {
+    "mean_ms": 1.2002882758620699,
+    "p50_ms": 1.1873,
+    "p99_ms": 1.3333,
+    "max_ms": 1.4801
+  },
+  "encode": {
+    "mean_ms": 0.15460103448275858,
+    "p50_ms": 0.14880000000000002,
+    "p99_ms": 0.22870000000000001,
+    "max_ms": 0.2718
+  },
+  "merge": {
+    "mean_ms": 0.31346793103448267,
+    "p50_ms": 0.29369999999999996,
+    "p99_ms": 0.4869,
+    "max_ms": 0.5145
+  },
+  "commit": {
+    "mean_ms": 3.51893620689655,
+    "p50_ms": 3.4594,
+    "p99_ms": 5.686100000000001,
+    "max_ms": 5.8435
+  },
+  "apply": {
+    "mean_ms": 0.9441327586206895,
+    "p50_ms": 0.9222,
+    "p99_ms": 1.3676000000000001,
+    "max_ms": 1.3799000000000001
+  },
+  "total": {
+    "mean_ms": 9.835586896551725,
+    "p50_ms": 8.7386,
+    "p99_ms": 11.773499999999999,
+    "max_ms": 287.9364
+  },
+  "budget_ms": 100,
+  "budget_met": true,
+  "journal_bytes_total": 168326700,
+  "journal_bytes_per_tick_mean": 561089.0,
+  "journal_mb_per_s_at_10hz": 5.61089,
+  "coalesced_bytes_per_tick_mean": 321019.69655172416,
+  "resolutions_per_tick": 1001,
+  "checkpoint_write_ms": 278.8062,
+  "checkpoint_tick_total_ms": 287.9364,
+  "checkpoint_bytes": 144000068,
+  "full_scan_ms": 18.779500000000002,
+  "full_recompute_ms": 213.1912
+}
