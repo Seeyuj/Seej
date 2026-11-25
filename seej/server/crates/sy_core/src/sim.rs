@@ -26,6 +26,8 @@ pub struct Simulation<R: IRng, C: ISimClock> {
     rng: R,
     clock: C,
     pending_events: Vec<SimEvent>,
+    #[cfg(test)]
+    fail_before_tick: Option<Tick>,
 }
 
 impl<R: IRng, C: ISimClock> Simulation<R, C> {
@@ -36,6 +38,8 @@ impl<R: IRng, C: ISimClock> Simulation<R, C> {
             rng,
             clock,
             pending_events: Vec::new(),
+            #[cfg(test)]
+            fail_before_tick: None,
         }
     }
 
@@ -110,12 +114,7 @@ impl<R: IRng, C: ISimClock> Simulation<R, C> {
         let command_result = match cmd {
             SimCommand::CreateWorld(c) => self.cmd_create_world(c),
             SimCommand::Tick => self.cmd_tick(),
-            SimCommand::TickN(n) => {
-                for _ in 0..n {
-                    self.cmd_tick()?;
-                }
-                Ok(())
-            }
+            SimCommand::TickN(n) => (0..n).try_for_each(|_| self.cmd_tick()),
             SimCommand::SpawnEntity(c) => self.cmd_spawn_entity(c),
             SimCommand::DespawnEntity(id) => self.cmd_despawn_entity(id),
             SimCommand::CreateZone(c) => self.cmd_create_zone(c),
@@ -157,6 +156,10 @@ impl<R: IRng, C: ISimClock> Simulation<R, C> {
     fn cmd_tick(&mut self) -> ApiResult<()> {
         {
             let world = self.world.as_mut().ok_or(ApiError::NoWorldLoaded)?;
+            #[cfg(test)]
+            if self.fail_before_tick == Some(world.current_tick.next()) {
+                return Err(ApiError::InternalError("injected tick failure".into()));
+            }
             world.advance_tick();
             self.clock.set_tick(world.current_tick);
         }
@@ -499,5 +502,84 @@ mod tests {
         assert_eq!(world_after.entity_count(), world_before.entity_count());
         assert_eq!(sim.rng().state(), rng_before);
         assert_eq!(sim.clock().current_tick(), clock_before);
+    }
+
+    #[test]
+    fn failed_second_tick_rolls_back_entire_batch() {
+        use crate::compute_canonical_hash;
+        use crate::ports::{IStateHasher, StateHash};
+
+        #[derive(Default)]
+        struct TestHasher(u64);
+
+        impl IStateHasher for TestHasher {
+            fn reset(&mut self) {
+                self.0 = 0;
+            }
+
+            fn update(&mut self, bytes: &[u8]) {
+                for &byte in bytes {
+                    self.0 = self.0.wrapping_mul(1099511628211) ^ u64::from(byte);
+                }
+            }
+
+            fn finalize(&self) -> StateHash {
+                StateHash(self.0)
+            }
+        }
+
+        let hash = |world: &World| compute_canonical_hash(world, &mut TestHasher::default());
+        let setup = || {
+            // This seed makes TestRng deplete the resource on the first tick.
+            let seed = RngSeed::new(32);
+            let mut sim = Simulation::new(TestRng::new(seed), TestClock::new());
+            sim.process_command(SimCommand::CreateWorld(CreateWorldCmd {
+                name: "Tick rollback".to_string(),
+                seed,
+            }))
+            .unwrap();
+            sim.process_command(SimCommand::SpawnEntity(SpawnEntityCmd {
+                position: WorldPos::origin(),
+                kind: EntityKind::Resource,
+                properties: EntityProperties {
+                    amount: Some(2),
+                    ..EntityProperties::default()
+                },
+            }))
+            .unwrap();
+            sim
+        };
+
+        let mut sim = setup();
+        let mut witness = setup();
+        let hash_before = hash(sim.world().unwrap());
+        let tick_before = sim.current_tick();
+        let clock_before = sim.clock().current_tick();
+        let seed_before = sim.rng().seed();
+        let rng_before = sim.rng().state();
+
+        let expected = witness.process_command(SimCommand::Tick).unwrap();
+        assert!(expected
+            .iter()
+            .any(|event| matches!(event.data, EventData::ResourceDepleted { .. })));
+        assert_ne!(witness.rng().state(), rng_before);
+
+        sim.fail_before_tick = Some(Tick(2));
+        let err = sim.process_command(SimCommand::TickN(2)).unwrap_err();
+        assert!(
+            matches!(err, ApiError::InternalError(message) if message == "injected tick failure")
+        );
+        assert_eq!(hash(sim.world().unwrap()), hash_before);
+        assert_eq!(sim.current_tick(), tick_before);
+        assert_eq!(sim.clock().current_tick(), clock_before);
+        assert_eq!(sim.rng().seed(), seed_before);
+        assert_eq!(sim.rng().state(), rng_before);
+        assert!(sim.pending_events.is_empty());
+
+        sim.fail_before_tick = None;
+        assert_eq!(sim.process_command(SimCommand::Tick).unwrap(), expected);
+        assert_eq!(hash(sim.world().unwrap()), hash(witness.world().unwrap()));
+        assert_eq!(sim.clock().current_tick(), witness.clock().current_tick());
+        assert_eq!(sim.rng().state(), witness.rng().state());
     }
 }
