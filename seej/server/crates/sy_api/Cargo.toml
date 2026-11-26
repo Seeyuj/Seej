@@ -2,11 +2,11 @@
 name = "sy_api"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 license.workspace = true
+description = "Draft v1 public plugin/command/observation contract types and traits for Seej."
 
+# Depends strictly on `sy_types` (normal, dev, build — enforced by check_dag.py and CI).
 [dependencies]
-sy_types.workspace = true
-serde.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
+sy_types = { workspace = true }

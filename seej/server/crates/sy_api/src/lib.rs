@@ -1,23 +1,24 @@
-//! # sy_api (NIV 1)
+//! # `sy_api` — Draft v1 Public Contract Boundary
 //!
-//! Internal API definitions: commands, events, errors, validation, and persistence ports.
-//! This is the stable language used within the platform.
+//! **Status:** empty Phase 0 clean-slate skeleton (D-015; contracts are
+//! `DRAFT — NOT FROZEN` until `K-01`).
 //!
-//! ## Modules
-//! - `commands`: Intentions/requests to the simulation
-//! - `events`: Facts representing state changes
-//! - `errors`: Typed API errors
-//! - `persistence`: Abstract persistence contracts
-//! - `validation`: Input validation
+//! `sy_api` depends strictly on `sy_types` (zero external crates). It defines
+//! the target v1 public plugin, command, and observation boundary specified in
+//! `seej/docs/CONTRACT.md` (`0.4.0-draft`) and `seej/docs/PLUGIN_CONTRACT.md`
+//! (`0.3.0-draft`).
+//!
+//! ## Enforced Invariants
+//!
+//! - Zero `unsafe` code (`#![forbid(unsafe_code)]`).
+//! - Zero floating-point math (`#![deny(clippy::float_arithmetic)]` and purity
+//!   gate).
+//! - Every public item documented (`#![deny(missing_docs)]`).
+//! - Pure and headless: no I/O, wall-clock time, OS randomness, or threads.
+//!
+//! Authoritative phase ordering and acceptance criteria live solely in
+//! `doc/ROADMAP.md`.
 
-pub mod commands;
-pub mod errors;
-pub mod events;
-pub mod persistence;
-pub mod validation;
-
-// Re-exports for convenience
-pub use commands::*;
-pub use errors::*;
-pub use events::*;
-pub use persistence::*;
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::float_arithmetic)]

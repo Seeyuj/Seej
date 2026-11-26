@@ -2,18 +2,17 @@ name: Rust CI
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
   push:
     branches: [main]
-    paths:
-      - "seej/server/**"
-      - ".github/workflows/rust.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "seej/server/**"
-      - ".github/workflows/rust.yml"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,8 +23,8 @@ defaults:
     working-directory: seej/server
 
 jobs:
-  sy-core-purity:
-    name: sy_core purity
+  docs:
+    name: Docs & Links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,24 +34,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run purity gate self-test
-        run: python3 scripts/check_sy_core_purity.py --self-test
+      - name: Verify Markdown links, anchors, single AGENTS.md, and EN/FR parity
+        run: python3 -B scripts/check_docs.py
 
-      - name: Check sy_core purity
-        run: python3 scripts/check_sy_core_purity.py
-
-  check:
-    name: Check
+  rust:
+    name: Rust Quality & Purity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo registry
+      - name: Cache cargo registry & target
         uses: actions/cache@v4
         with:
           path: |
@@ -63,170 +64,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Check compilation
-        run: cargo check --workspace --all-targets
+      - name: Run purity self-test & pure-crate scan
+        run: |
+          python3 -B scripts/check_sy_core_purity.py --self-test
+          python3 -B scripts/check_sy_core_purity.py
 
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          components: rustfmt
+      - name: Verify dependency DAG (normal + dev + build)
+        run: python3 -B scripts/check_dag.py
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          components: clippy
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            seej/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            seej/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Run tests
-        run: cargo test --workspace --all-targets
+        run: cargo test --locked --workspace --all-targets
 
-  phase1-ignored:
-    name: Phase 1 ignored tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            seej/server/target
-          key: ${{ runner.os }}-cargo-ignored-${{ hashFiles('seej/server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-ignored-
-            ${{ runner.os }}-cargo-
-
-      - name: Run ignored Phase 1 tests
-        run: cargo test --workspace --all-targets -- --ignored
-
-  # Build on multiple platforms
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            seej/server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('seej/server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Build release
-        run: cargo build --workspace --release
-
-  # Documentation
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            seej/server/target
-          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('seej/server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-doc-
-
-      - name: Build documentation
-        run: cargo doc --workspace --no-deps
+      - name: Build Rustdoc
+        run: cargo doc --locked --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          components: llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Run coverage
-        run: cargo llvm-cov -p sy_core -p sy_infra --all-targets --fail-under-lines 70
-
   supply-chain:
-    name: Supply chain
+    name: Supply Chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -242,97 +103,55 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
 
-      - name: Check dependency policy
-        run: cargo deny check advisories licenses sources
-        working-directory: seej/server
+      - name: Check dependency policy (advisories, licenses, bans, sources)
+        run: cargo deny check advisories licenses bans sources
 
-      - name: Check architectural dependency rules
-        run: |
-          python - <<'PY'
-          import json
-          import pathlib
-          import subprocess
-          import sys
-
-          metadata = json.loads(subprocess.check_output([
-              "cargo", "metadata", "--format-version", "1", "--no-deps"
-          ], text=True))
-          packages = {pkg["name"]: pkg for pkg in metadata["packages"]}
-
-          def deps(name):
-              return {
-                  dep["name"]
-                  for dep in packages[name]["dependencies"]
-                  if dep.get("kind") is None
-              }
-
-          errors = []
-          if deps("sy_core") != {"sy_types", "sy_api"}:
-              errors.append(f"sy_core deps must be exactly sy_types, sy_api; got {sorted(deps('sy_core'))}")
-          for path in [
-              "crates/sy_core/src/ports/event_log.rs",
-              "crates/sy_core/src/ports/store.rs",
-          ]:
-              if pathlib.Path(path).exists():
-                  errors.append(f"sy_core must not own persistence port file: {path}")
-          if "sy_protocol" in deps("sy_api"):
-              errors.append("sy_api must not depend on sy_protocol")
-          if "sy_protocol" in deps("sy_infra"):
-              errors.append("sy_infra must not depend on sy_protocol in Phase 1")
-          for name in packages:
-              if name.startswith("mod_") and "sy_core" in deps(name):
-                  errors.append(f"{name} must not depend on sy_core")
-
-          if errors:
-              print("\n".join(errors), file=sys.stderr)
-              sys.exit(1)
-          PY
-
-  wal-fuzz-build:
-    name: WAL fuzz build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
 
-      - name: Install cargo-fuzz
-        uses: taiki-e/install-action@v2
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
         with:
-          tool: cargo-fuzz
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            seej/server/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('seej/server/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
 
-      - name: Verify cargo-fuzz install
-        run: cargo-fuzz --version
+      - name: Build release
+        run: cargo build --locked --workspace --release
 
-      - name: Build WAL fuzz targets
-        run: cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu
-        working-directory: seej/server/crates/sy_infra/fuzz
-
-  wal-fuzz:
-    name: WAL fuzz smoke
+  manual-deep:
+    name: Manual Deep Checks
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-fuzz
-        uses: taiki-e/install-action@v2
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
-          tool: cargo-fuzz
+          components: llvm-tools-preview
 
-      - name: Verify cargo-fuzz install
-        run: cargo-fuzz --version
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Fuzz WAL decoder
-        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu decode_record -- -max_total_time=180
-        working-directory: seej/server/crates/sy_infra/fuzz
+      - name: Run ignored tests
+        run: cargo test --locked --workspace --all-targets -- --ignored
 
-      - name: Fuzz WAL round-trip
-        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu wal_round_trip -- -max_total_time=180
-        working-directory: seej/server/crates/sy_infra/fuzz
+      # Coverage threshold (--fail-under-lines 70) is deferred while Phase 0 crates have 0 executable lines;
+      # restore --fail-under-lines 70 in Phase 1.1 once executable code lands.
+      - name: Run coverage report
+        run: cargo llvm-cov --locked -p sy_core -p sy_infra --all-targets

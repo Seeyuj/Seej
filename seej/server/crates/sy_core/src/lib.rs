@@ -1,33 +1,24 @@
-//! # sy_core (NIV 2)
+//! # `sy_core` — Pure Deterministic Transition Engine
 //!
-//! Pure simulation logic - the sanctuary.
-//! This crate contains deterministic game logic with no I/O.
+//! **Status:** empty Phase 0 clean-slate skeleton (D-015).
 //!
-//! ## Rules
-//! - No async runtime
-//! - No filesystem or network access
-//! - No randomness from std (use injected IRng)
-//! - No time from std (use injected ISimClock)
-//! - No HashMap (use BTreeMap for deterministic iteration)
+//! `sy_core` is the pure, headless, deterministic heart of Seej. It depends
+//! **strictly on `sy_types` and `sy_api`** (zero external crates across normal,
+//! dev, and build dependencies) and is checked on every PR by
+//! `scripts/check_sy_core_purity.py` and `scripts/check_dag.py`.
 //!
-//! ## Main types
-//! - `World`: Complete simulation state
-//! - `Simulation`: The engine that processes commands and runs ticks
-//! - `replay`: Event replay for state reconstruction
-//! - `determinism`: Determinism verification tools
-//! - `ports::*`: Deterministic RNG/clock/hash interfaces
+//! ## Enforced Invariants
+//!
+//! - Zero `unsafe` code (`#![forbid(unsafe_code)]`).
+//! - Zero floating-point types or math (`#![deny(clippy::float_arithmetic)]`
+//!   and purity gate blocking `f32`/`f64`).
+//! - Zero wall-clock time, environment access, filesystem/I/O, networking,
+//!   OS randomness, OS threads, or randomized hash collections.
+//! - Every public item documented (`#![deny(missing_docs)]`).
+//!
+//! Authoritative phase ordering and acceptance criteria live solely in
+//! `doc/ROADMAP.md`.
 
-pub mod determinism;
-pub mod ports;
-pub mod replay;
-pub mod sim;
-pub mod world;
-
-// Re-exports
-pub use determinism::{
-    compute_canonical_hash, run_deterministic, verify_determinism, Checkpoint,
-    DeterministicRunConfig, DeterministicRunResult, ScheduledCommand,
-};
-pub use replay::{apply_event, replay_events};
-pub use sim::Simulation;
-pub use world::{Entity, World, Zone};
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::float_arithmetic)]

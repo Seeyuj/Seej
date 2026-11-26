@@ -1,200 +1,319 @@
-# Roadmap — Seej
+# Roadmap and Ordered Coding Plan
 
-## Status model
+This document is the single authority for project sequencing, ordered coding
+phases, implementation status, and release evidence. Design contracts in
+`seej/docs/` describe targets and never close a checklist item.
 
-Decision D-012 reopened the project foundation, D-013 fixed the operational
-failure semantics, and D-014 closed the remaining first-stable command,
-migration, recovery, and provider-proof ambiguities. The earlier local Phase 1
-slice remains implemented evidence, but it is not the first stable kernel
-contract.
+## Status Convention and Discipline
 
-Roadmap labels mean:
+- `[x]` — reproducible evidence is committed in this repository.
+- `[ ]` — open target, regardless of how detailed its specification is.
+- Stable gap IDs (`K-*`, `P0-*`, `P1-*`, `P2-*`) are preserved across
+  reorganizations; retired items are marked explicitly with their decision ID.
+- **Strict sequential discipline ([D-015](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam)):**
+  complete and verify each phase in order (`Phase 1.1` → `1.2` → `1.3` → `1.4`
+  → `1.5`, then `Phase 2`, then `Phase 3`). Do not add speculative abstractions,
+  extra crates, or Phase 4 optimizations ahead of their phase.
+- **In-code documentation:** every crate in `seej/server/crates/` carries
+  `#![deny(missing_docs)]` and crate-level Rustdoc aligned with its exact phase
+  below (`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`).
 
-- **Implemented evidence:** exists in the repository; does not imply release
-  readiness.
-- **Active target:** required for the current release gate.
-- **Later:** sequenced after the first stable contract.
-- **Optional ecosystem:** may be built by the community and is not a Seej
-  release obligation.
+---
 
-The detailed proof state is maintained in
-[the Phase 1 exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md).
+## Phase 0 — Clean-Slate Foundation & Guardrails (Complete)
 
-## Foundation 0 — Local deterministic prototype
+The legacy spatial prototype (`Entity`/`Zone`, JSON snapshots, dual
+`sim.rs`/`replay.rs`, `server_d`/`sy_cli` fixtures) has been removed per D-015.
+The repository now starts from a minimal 4-crate workspace skeleton
+(`sy_types`, `sy_api`, `sy_core`, `sy_infra`) with active guardrails:
 
-**Status: implemented evidence**
+| Done | Criterion | Evidence | Reproduce from repository root |
+| --- | --- | --- | --- |
+| [x] | `P0-01` pure-stack gate | [`check_sy_core_purity.py`](../seej/server/scripts/check_sy_core_purity.py) (built-in self-test suite across all `.rs` files in `sy_types`/`sy_api`/`sy_core` incl. `f32`/`f64`, float literals, `std::thread`, `std::process`, char literals) + [`check_dag.py`](../seej/server/scripts/check_dag.py) (normal + dev + build deps) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
+| [x] | `P1-01` repository CI & unified check | [`check.py`](../seej/server/scripts/check.py) + [`check_docs.py`](../seej/server/scripts/check_docs.py) + [`.github/workflows/rust.yml`](../.github/workflows/rust.yml) (`--locked`, `deny` incl. `bans`, open-source PR workflow) | `python3 -B seej/server/scripts/check.py` |
+| [x] | `P1-02` pinned toolchain | [`rust-toolchain.toml`](../rust-toolchain.toml) & [`seej/server/rust-toolchain.toml`](../seej/server/rust-toolchain.toml) (`1.95.0`) + `rust-version = "1.95.0"` | `rustc --version` |
+| [x] | `P2-01` inert placeholders retired | Removed dead placeholders (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) and retired prototype archived at tag `archive/prototype-v1-final` (`5841a00`) | `git show --stat archive/prototype-v1-final` |
+| [x] | D-015 baseline & empirical benchmarks | [DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam) & [BENCHMARKS.md](../seej/docs/BENCHMARKS.md); raw harnesses pinned at `archive/lab-campaign-1` (`1c98282`) & `archive/lab-campaign-2` (`5856396`) | `git show archive/lab-campaign-1:seej/server/lab/workloads/RESULTS.md` & `git show archive/lab-campaign-2:seej/server/lab/workloads/RESULTS-layout.md` |
 
-The repository already demonstrates:
+---
 
-- a headless Rust transition engine;
-- explicit seed and deterministic tick execution;
-- local snapshot and WAL persistence;
-- recovery after forced process interruption;
-- a single-writer runtime and inspection CLI;
-- tests, purity checks, fuzz targets, and dependency gates.
+## Gate 1-K — First Stable Kernel & Plugin Contract (Phases 1–3)
 
-This foundation intentionally uses a spatial entity/zone model and built-in
-resource/creature degradation rules. Those choices prove the local mechanics;
-they do not define the future universal world contract.
+Every unchecked item below blocks freezing the v1 contract (`K-01`). Detailed
+pre-D-015 acceptance criteria for these IDs (including `K-08` crash boundaries,
+finite generation-seal thresholds, per-stable-version migration paths, and
+bounded authenticated inter-node messages) are preserved at archive tag
+`archive/pre-d015-docs` (`9662a60`, `seej/docs/phase1/EXIT_CHECKLIST.md`) as
+reference until each phase re-specifies and closes them with executable tests.
 
-Completion of this historical slice is not revoked. Its architectural
-assumptions are superseded where D-012 says so.
+### Phase 1 — Minimal Generic Core & Crash-Safe Local Store
 
-## Foundation 1 — Generic kernel contracts
+> **Open design decisions to settle before Phase 1.2 (do not implement traits
+> before resolving):**
+> 1. **Ownership of the single `apply(WriteSet)` and in-memory layout:** decide
+>    whether `sy_core` owns the sole in-memory mutation path while `StateStore`
+>    handles durability only, avoiding multiple diverging `apply` implementations.
+> 2. **Public vs. internal crate boundary:** decide where internal seams
+>    (`StateStore`, `AuthorityLog`, `Executor`) live so third-party plugins
+>    importing `sy_api` cannot import internal traits.
+> 3. **On-demand trait introduction (Cordis rule):** start with a minimal
+>    vertical slice and introduce each internal trait only in the phase where
+>    its first real provider and consumer exist.
+> 4. **Pure-crate testing & fixtures (`P0-01` / `K-03`, before Phase 1.3):**
+>    with zero dev-dependencies and `include_bytes!` banned across pure crates,
+>    decide whether `K-03` fixtures live as inline Rust constants in `sy_core`
+>    or in a separate conformance test crate (e.g. `sy_infra` / `sy_testkit`).
 
-**Status: active target**
+Outcome: an empty or non-spatial world runs locally on the generic narrow waist
+(`OrderedTable` + `ObligationRegistry` + single `apply(WriteSet)` +
+`EntropyScope`) with a fail-closed durable store and injected storage faults.
 
-Outcome: an empty or non-spatial world can run through public, versioned
-capability contracts without depending on internal Rust types.
+#### Phase 1.1 — Stable Primitives, Checked Counters & Profile Types (`sy_types`)
 
-Required work:
+- [ ] **P0-04: Fail-closed canonical counters.** Checked arithmetic on `Tick`,
+  `EventId`, `AdmissionSeq`, `AuthorityTerm`, `ConfigVersion`, producer
+  incarnation, generation, and expiration counters (never wrap or saturate).
+- [ ] **P0-03: Deterministic numeric discipline.** Eliminate `f32`/`f64` from
+  canonical decisions; pure integer/fixed-point primitives.
+- [ ] **P0-07: Decouple `world_id` from seed.** Independent `WorldId` and
+  `NodeId`; reject world/genesis/history mismatch; replicas keep `world_id`,
+  clones allocate a new one.
+- [ ] **P0-06: Formalize `GenesisSpec`.** Versioned, hashable genesis recording
+  initial domains, contracts, randomness policy, and initial authority profile.
+- [ ] **P0-05: Persist the execution profile.** Strongly typed
+  `ExecutionProfile` binding contract versions, `ProofMode` (`delta` v1 default,
+  future `root`), hash algorithm, entropy algorithm, active plugin fingerprints,
+  and retention policy.
+- [ ] **P1-15: Persist the limits profile.** Finite `LimitsProfile` including
+  the isolated reserved control-plane budget for `CancelCommand` and migration
+  control.
+- [ ] **P1-06: Version persisted variants.** Stable tags and typed refusal for
+  unknown mandatory variants.
+- [ ] **P1-07: Separate persisted DTOs from internal Rust types.**
 
-- separate `world_id`, seed, genesis hash, and node identity;
-- formalize generic owner domains and structured or opaque payload envelopes;
-- define durable command IDs, fingerprints, ordering, statuses, authorized
-  cancellation, late refusal, generation lifecycle, exact expiration, and
-  finite producer slots and world limits;
-- define deterministic validation and atomic transactions across owners;
-- move spatial entities and degradation rules into example/test extensions;
-- provide replaceable fundamental providers loaded at startup;
-- preserve `sy_core` as the pure transition engine;
-- separate semantic state hashes from storage and authority metadata;
-- define retained checkpoints, cursor expiry, and recovery semantics.
+#### Phase 1.2 — Target v1 Public Plugin Seam (Draft) (`sy_api`)
 
-Evidence includes a public-interface substitution fixture for every fundamental
-provider boundary and one real external extension that owns data and commands
-without internal dependencies. Alternative providers may be conformance-only;
-the stable gate does not require duplicate production implementations.
+- [ ] **Public logical state & flat-batch plugin contract (`K-06` foundation):**
+  partitioned `OrderedTable` `(DomainId, TableId, PartitionKey, RecordKey) ->
+  OpaqueBytes`, extensible `TableKind`, `ObligationRegistry`, immutable
+  `StateView`, `WriteSet`, `PluginManifest`, pure batch entrypoint
+  `(StateView, InputBatch, EntropyScope, Context) -> Decision + WriteSet +
+  EventBatch + OutboxIntents`, explicit `Sequential` vs. `SnapshotTMinus1` read
+  semantics, optional `AccessHint`, and delta-oriented cross-domain validator
+  traits.
+- [ ] **Public command & resolution types:** `CommandEnvelope`, `Admission`,
+  `Resolution` (`Succeeded`, `Refused`, `Cancelled`), `CancelCommand`,
+  `CloseTick`, and lookup/transient outcomes (`Conflict`, `Expired`,
+  `GenerationSealed`, `LimitExceeded`, `NotFound`, `Unavailable`,
+  `WorldPaused`).
+- [ ] **Internal infrastructure seams (`K-05` foundation):** clean, internal
+  (non-frozen) `StateStore`, `AuthorityLog`, and `Executor` Rust traits.
 
-## Foundation 2 — Distributed kernel
+#### Phase 1.3 — Pure Transition Engine & Single Mutation Path (`sy_core`)
 
-**Status: active target; required before first stable contract**
+- [ ] **K-06: Generic data ownership and transactions.** Single canonical
+  `apply(WriteSet)` mutator (no `world.clone()`, no dual `sim`/`replay` logic),
+  `CandidateOverlay`, atomic cross-owner transactions, stale-base full
+  recomputation, zero fabricated `Refused` on plugin panic/failure, and
+  active-obligation blocking on owner removal.
+- [ ] **Derived `EntropyScope`:** counter-based integer PRF/PRNG derived from
+  canonical coordinates with `.fork(stable_key)` and cause-derived IDs.
+- [ ] **P0-12: Generic world integrity validator.** Pure validator invoked after
+  decode, recovery, migration, and before authority claims.
+- [ ] **P1-04: Separate semantic, storage, and authority digests.** Incremental
+  per-record semantic root independent of physical storage layout.
+- [ ] **P1-20: Minimum causal chain and distinct cursors.** Bind `pre_root`,
+  `post_root`, `events_root`, profile hash, and distinct `confirmed_cursor`,
+  `checkpoint_cursor`, and `applied_cursor`.
+- [ ] **P1-13: Bound and validate external commands before pure execution.**
+- [ ] **P1-14: Enforce size and cardinality limits.** Bound payloads, events,
+  transactions, checkpoints, messages, producer slots, non-closed generations,
+  pending commands, tombstones, and reserved control-plane budgets.
+- [ ] **K-03: Deterministic contract fixtures.** Fixed expected fixtures for an
+  empty world, a non-spatial extension (no position, zone, creature, or
+  resource), cross-owner transactions, obligation enforcement, and an explicit
+  $T-1$ autonomous pass proving partition-order independence.
+- [ ] **P2-06: Application-rule boundary enforced in tests/CI.** Verify zero
+  application ontology in `sy_core` and zero plugin imports of `sy_core`.
 
-Outcome: the kernel itself operates as an authorized network of nodes while
-preserving one history per world.
+#### Phase 1.4 — Durable Local `StateStore`, Fail-Closed WAL & Checkpoints (`sy_infra`)
 
-Reference proof:
+- [ ] **Partitioned local `StateStore`:** benchmark candidate storage engines
+  (`redb`, `Fjall`, or custom paged partitioned store) against real workloads
+  and implement atomic `apply(WriteSet)` + `pin_cut`.
+- [ ] **P0-13: Separate torn-tail recovery from corruption.** Fail-closed
+  binary WAL with explicit modes for safe short-header torn-tail, refusal,
+  quarantine, and operator repair preserving forensic evidence, plus fresh
+  `cargo-fuzz` decoder/round-trip targets restored to CI.
+- [ ] **P1-18: Zero automatic WAL rewriting.** Never truncate past valid records
+  or rewrite confirmed history silently.
+- [ ] **P0-02: Tick-bound checkpoints.** Checkpoint cadence depends only on
+  canonical ticks, never wall-clock time.
+- [ ] **P1-09: Bind checkpoint integrity.** Detect torn, swapped, stale, or
+  mismatched checkpoint/manifest/log/authority artifacts.
+- [ ] **P1-10: Durable world creation.** Test directory, manifest, initial
+  confirmation, and first checkpoint boundaries.
+- [ ] **P0-14: Common I/O failure injection.** Inject full/read-only media,
+  append, sync, rename, and read errors via `StateStore`/`AuthorityLog` fault
+  doubles; prove fail-closed with zero accepted undurable state.
 
-- same contracts in one-node and three-node deployments;
-- three authorized nodes, quorum two;
-- explicit discovery, admission, and membership changes;
-- Raft-style reference consensus for crash faults and network partitions;
-- coordinator replacement and stale-authority fencing;
-- no mutation without quorum;
-- node catch-up after interruption;
-- confirmed reads with freshness;
-- local storage failure containment;
-- compatibility checks for kernel, contracts, providers, and plugins.
+#### Phase 1.5 — Replay Oracle, Golden Vectors & Safe Local CLI (`sy_infra`, `server_d`, `sy_cli`)
 
-The first distributed implementation replicates the complete world. Sharding,
-Byzantine consensus, permissionless validators, automatic divergent-history
-merge, and synchronous cross-world transactions are separate future designs.
+- [ ] **P0-15: Replay / re-simulation oracle.** Recompute retained transitions
+  from checkpoint or genesis + commands + exact profile and compare semantic
+  roots.
+- [ ] **P1-05: Golden compatibility fixtures.** Explicit accept, migrate, and
+  refuse vectors across stable versions.
+- [ ] **P1-11: Safe non-mutating local inspection.** Opening an inspector never
+  creates directories or mutates files, never exposes unconfirmed local tails,
+  and rejects export paths resolving inside or aliasing canonical storage.
+- [ ] **P1-16: Example application plugin outside `sy_core`.** Optional
+  reference/example domain plugin demonstrating public-contract usage without
+  touching `sy_core` internals.
 
-The inter-node protocol is foundational work in this stage. Ingame netcode is
-not.
+---
 
-## Foundation 3 — Durability and migration gate
+### Phase 2 — Single-World Distributed Authority & DST
 
-**Status: active target; required before first stable contract**
+Outcome: one-node and three-node (quorum 2) deployments obey the exact same
+contract, proven under a single-threaded Deterministic Simulation Testing (DST)
+harness plus real multi-process tests.
 
-Outcome: the documented guarantees survive common operational failures and
-future kernel releases.
+#### Phase 2.1 — Internal Seam Doubles & Single-Threaded DST
 
-Required work:
+- [ ] **K-05: Internal seam testability & fault-injection conformance (refined
+  by D-015).** Clean internal seams (`StateStore`, `AuthorityLog`, `Executor`)
+  verified against in-memory and fault-injecting doubles covering normal and
+  failure semantics (replaces D-014's nine frozen public provider contracts).
 
-- fail closed on full or read-only storage, I/O errors, failed append,
-  synchronization, and rename;
-- distinguish torn-tail recovery from suspicious corruption;
-- preserve coherent snapshot, manifest, confirmed log, and authority metadata;
-- implement bounded retention through open/sealed/closed producer generations
-  and reusable slots with monotonic producer incarnations, without command-ID
-  reuse, pending-command loss, or unbounded tombstones;
-- maintain migrations for kernel-owned data from every stable version;
-- coordinate migration preparation, complete old-profile application-command
-  drain, world-wide source barrier, activation, and abort across a fixed
-  authority membership configuration;
-- require plugin-owned migration paths and exact historical component
-  fingerprints;
-- publish conformance fixtures for accepted and refused versions;
-- bind confirmed resolutions to their before/after semantic states;
-- prove cold backup and restore;
-- publish the baseline recovery procedure for every first-stable failure mode.
+#### Phase 2.2 — Durable Command Lifecycle & Reserved Control Plane
 
-## First stable contract
+- [ ] **P0-08: Persist durable command envelopes.**
+- [ ] **P0-09: Canonicalize concurrent input order per world.**
+- [ ] **K-08: Durable command lifecycle & reserved control path.** Full command
+  identity, producer slot/incarnation, `intention_fingerprint`, target tick,
+  positive status window, durable `Pending` admission, terminal resolution
+  (`Succeeded`/`Refused`/`Cancelled`), `CancelCommand` on its **reserved control
+  budget** (never starved by full application quotas), explicit `CloseTick(T)`
+  blocking while a `Pending` command targets `T`, cancel-vs-execution race,
+  exact checked expiry, confirmed `Open`/`Sealed`/`Closed` generations, slot
+  retirement/reassignment, and suffix materialization without command
+  re-execution.
 
-The first stable release occurs only when Gate 1-K and its mandatory evidence
-are complete. It includes:
+#### Phase 2.3 — Single-World Authority, Fencing & Joint Membership
 
-- minimal runnable distribution;
-- generic owner data and public commands;
-- trusted operator-approved providers loaded at startup;
-- distributed operation on the reference three-node profile;
-- common storage-failure safety;
-- command status, authorized cancellation, bounded producer incarnations and
-  generations, and retention;
-- confirmed causal linkage;
-- read-only confirmed observation and resynchronization;
-- stable kernel data migrations;
-- tested cold backup/restore and a baseline operator recovery procedure;
-- a genuine third-party extension.
+- [ ] **P0-10: Enforce exclusive local writer lock & distributed authority fencing.**
+- [ ] **P0-11: Bind confirmed records to world, genesis, profile, term, config, and cursor.**
+- [ ] **P1-17: Persist fencing state across restarts.**
+- [ ] **K-07: Single-world distributed authority proof.** Prove one-node and
+  three-node (quorum 2) operation: group-committed `TickCommit`, coordinator
+  crash and replacement, minority read-only partition, stale-term/config
+  fencing, learner catch-up, joint membership transition (including interruption
+  between joint and final configs), full restart from durable term/vote/config,
+  quorum read barriers, profile-mismatch refusal, and local-storage failure
+  containment.
 
-The stable promise does not include hot loading, plugin isolation, agents,
-multiresolution, rendering, or ingame netcode.
+#### Phase 2.4 — Adversarial Replication & Multi-Process Proof
 
-## Evolution 2 — Safe plugin lifecycle
+- [ ] **P1-12: Adversarial recovery and replication fixtures** (duplicate,
+  missing, reordered, wrong-world, wrong-profile, stale-term, wrong-checkpoint)
+  verified under both single-threaded DST and real multi-process crash tests.
 
-**Status: later**
+---
 
-- isolated application-plugin runtime with explicit permissions;
-- native execution only by operator approval;
-- hot installation, activation, pause, state transfer, replacement, and
-  removal;
-- obligation-aware lifecycle transactions;
-- resource metering and failure containment;
-- component distribution and artifact-management tooling.
+### Phase 3 — Observation, Migrations, Compaction & External Extension → Freeze v1
 
-The process may stay running during a controlled world pause. No component with
-unresolved owned data or obligations is silently detached.
+Outcome: external observers and a real third-party write plugin consume the
+public contract, kernel data migrates safely with mandatory boundary
+checkpoints, and operators have tested backup/recovery procedures.
 
-## Evolution 3 — Operational scale
+#### Phase 3.1 — Confirmed Observation Surface
 
-**Status: later, pulled by real use**
+- [ ] **K-02: Confirmed observation surface.** Read-only state and event access
+  from a confirmed prefix with stable event IDs, cursor, freshness
+  (current-confirmed via quorum read barrier vs. explicitly stale), rate limits,
+  reconnect deduplication, cursor expiration, and pinned coherent
+  resynchronization. Strictly neutral to canonical simulation.
 
-- richer observability and divergence tooling;
-- online backup when a coherent protocol exists;
-- large-history compaction and archival services;
-- load, chaos, and platform matrices derived from declared support profiles;
-- performance work supported by measurements;
-- optional world sharding under a new consistency contract;
-- explicit asynchronous cross-world coordination.
+#### Phase 3.2 — 5-Phase Coordinated Migrations
 
-Replication is never advertised as computation scaling unless measurements and
-a dedicated execution contract prove it.
+- [ ] **K-09: Compatibility and 5-phase migrations.** `MigrationPrepare`
+  (`WorldPaused`), complete drain/cancellation of old-profile `Pending`
+  commands, `MigrationBarrier`, deterministic candidate derivation on quorum,
+  `MigrationActivate` with **mandatory boundary checkpoint**, pre-activation
+  abort, post-activation recovery, fixed membership during migration, and
+  incompatible/missing plugin refusal.
 
-## Optional ecosystem
+#### Phase 3.3 — Retention-Aware Compaction
 
-The community may develop these independently against stable contracts:
+- [ ] **K-10 & P1-19: Retention-aware compaction.** Bounded retention preserving
+  recovery points, obligations, tombstones until generation closure,
+  per-incarnation closed-generation floors, per-slot incarnation high-water
+  marks, and observer resynchronization under continuous producer churn.
 
-- spatial and non-spatial world models;
-- agents, AI systems, economies, and narratives;
-- multiresolution and causal-resolution engines;
-- administration interfaces and observability tools;
-- 2D, 3D, web, Unreal, Godot, or other renderers;
-- ingame netcode, player sessions, prediction, and interpolation;
-- import/export, research, or simulation-specific toolchains.
+#### Phase 3.4 — External Write Extension & Operator Procedures
 
-Seej does not reserve an official implementation or impose application policy
-for these categories.
+- [ ] **K-04: Real external write extension.** Independently maintained plugin
+  declaring non-spatial data, owned commands, and validators, participating in
+  a cross-owner transaction, surviving recovery, and importing only the frozen
+  public contract (zero dependency on `sy_core` internals).
+- [ ] **P2-02: Tested cold backup and restore procedure.**
+- [ ] **P2-03: Baseline operator recovery runbook** (corruption, storage error,
+  failed migration, lost quorum, stale node, missing plugin).
 
-## Decision rules for roadmap changes
+#### Phase 3.5 — Freeze the v1 Public Contract
 
-A roadmap change must state:
+- [ ] **K-01: Freeze the v1 public contract.** Freeze `CONTRACT.md`,
+  `PLUGIN_CONTRACT.md`, and public schemas only after Phases 1–3 pass and every
+  documented command, link, anchor, and failure-matrix test is verified.
 
-1. which contract or user need it serves;
-2. whether it changes the first stable promise;
-3. its failure behavior and compatibility impact;
-4. the gap ID and objective evidence;
-5. whether an earlier decision is superseded.
+---
 
-Documentation cannot close a gate. Only committed implementation and
-reproducible evidence can.
+## Phase 4 — Post-v1 Scale, Isolation & Federation (Gate 1-D, Usage-Pulled)
+
+Deferred until triggered by real workloads or measurements; none blocks v1
+freeze, and all are additive over the frozen v1 plugin contract:
+
+### Phase 4.1 — Dense Workload Scale (e.g. Load B — $10^5$ writes/tick)
+- [ ] **Async off-path CoW checkpoints** (eliminate the 237–435 ms synchronous
+  144 MB checkpoint stall — 1,485 ms outlier — measured in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
+- [ ] **Compact verified-tick proof mode (`root`)** in execution profiles once
+  plugin determinism is enforced by isolation or verified profiles.
+- [ ] **Multi-core parallel `Executor`** (`Block-STM` + optional `BoundedDelta`
+  for K-06 transactions; parallel `BSP` over partitions for declared $T-1$
+  passes), verified against the single-thread reference oracle.
+- [ ] **High-write storage backends & `TableKind::Columnar`** (e.g. LSM /
+  chunked columnar tables) behind the internal `StateStore` seam.
+
+### Phase 4.2 — Untrusted / Dynamic Plugins (Evolution 2)
+- [ ] **Isolated plugin execution (WASM)** with deterministic fuel metering,
+  NaN canonicalization, and flat-batch memory-buffer transport.
+- [ ] **Hot plugin installation, pause, replacement, and obligation transfer.**
+
+### Phase 4.3 — Multi-World P2P Federation
+- [ ] **Inter-world federation protocol:** asynchronous authenticated envelopes
+  and cross-world obligations between independent CP worlds.
+
+### Phase 4.4 — Cross-Platform Parity & Diagnostics
+- [ ] **P1-03:** Cross-platform semantic root parity fixtures (Linux, Windows, macOS).
+- [ ] **P1-08:** Portable numeric persistence policy if any non-canonical float
+  payload remains.
+- [ ] **P1-21:** Deterministic flight recorder.
+- [ ] **P1-22:** Read-only `doctor` verification command.
+- [ ] **P1-23:** Divergence bisector across retained histories.
+- [ ] **P2-04:** Structured recovery diagnostics.
+- [ ] **P2-05:** Extended chaos/failure matrix beyond baseline scenarios.
+- [ ] **P0-16:** Expanded crashpoint/chaos matrix across all boundaries.
+
+---
+
+## Optional Community Ecosystem
+
+Never Seej kernel release obligations; communities build these independently
+over the frozen v1 plugin and observation contracts:
+
+- Spatial models (2D/3D grids, octrees, graphs) and non-spatial world models;
+- Economies, ecologies, physics, narratives, agents, and LLM integrations;
+- Multiresolution / causal-resolution aggregation engines;
+- 2D/3D/web/Unreal/Godot renderers and administration dashboards;
+- Ingame player netcode (prediction, interpolation, client sessions).

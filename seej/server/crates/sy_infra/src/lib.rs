@@ -1,28 +1,21 @@
-//! # sy_infra (NIV 3)
+//! # `sy_infra` — Persistence, Authority, Execution, and Observation Adapters
 //!
-//! Real I/O implementations for the core's port interfaces.
+//! **Status:** empty Phase 0 clean-slate skeleton (D-015).
 //!
-//! ## Phase 1 Modules
-//! - `rng`: Deterministic RNG (PCG32)
-//! - `clock`: Simulation clock implementations
-//! - `store`: Persistence (filesystem, WAL)
-//! - `observability`: Logging and metrics
+//! `sy_infra` will host all real I/O and runtime infrastructure outside the
+//! pure engine (`sy_core`): durable local storage, fail-closed WAL and
+//! single-world authority replication, batched execution, single-threaded
+//! Deterministic Simulation Testing (DST), confirmed observation, and backup
+//! procedures.
 //!
-//! ## Phase 2+ Modules (disabled)
-//! - `net`: Network - wire protocol mapping
+//! ## Enforced Invariants
+//!
+//! - Every public item documented (`#![deny(missing_docs)]`).
+//! - External crates are added only with explicit approval when their
+//!   implementing phase starts and must pass `deny.toml` license/advisory/ban
+//!   checks.
+//!
+//! Authoritative phase ordering and acceptance criteria live solely in
+//! `doc/ROADMAP.md`.
 
-pub mod clock;
-pub mod hash;
-// pub mod net;  // Phase 2 - Network layer
-pub mod observability;
-pub mod rng;
-pub mod runtime;
-pub mod snapshot;
-pub mod store;
-
-// Re-exports
-pub use clock::{FixedStepClock, UnlimitedClock};
-pub use hash::XxHasher;
-pub use rng::Pcg32Rng;
-pub use runtime::{load_recovered_world, load_snapshot_world, PersistentSimulation};
-pub use store::{FileEventLog, FilesystemStore};
+#![deny(missing_docs)]

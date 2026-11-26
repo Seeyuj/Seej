@@ -2,8 +2,12 @@
 name = "sy_core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 license.workspace = true
+description = "Pure deterministic world transition engine for Seej (zero external dependencies)."
 
+# Strictly `sy_types` and `sy_api` only (normal, dev, build — enforced by check_dag.py and CI).
 [dependencies]
-sy_types.workspace = true
-sy_api.workspace = true
+sy_types = { workspace = true }
+sy_api = { workspace = true }

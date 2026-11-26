@@ -2,7 +2,10 @@
 name = "sy_types"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 license.workspace = true
+description = "Stable value primitives, checked counters, and canonical identifiers for the Seej world kernel."
 
+# Strictly zero dependencies (normal, dev, build — enforced by check_dag.py and CI).
 [dependencies]
-serde.workspace = true

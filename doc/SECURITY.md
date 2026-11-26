@@ -1,201 +1,99 @@
 # Security Policy
 
-Security is a structural property of Seej's authority, persistence, provider,
-and compatibility contracts. A corrupted canonical world is worse than an
-explicitly unavailable world.
+Security is a structural property of Seej's authority, persistence, plugin, and
+compatibility contracts. A silently corrupted world is worse than an explicitly
+unavailable world.
 
 ## Scope
 
-The project security scope includes maintained Seej code and bundled
-fundamental providers:
+In scope: maintained Seej kernel code, storage/consensus adapters, CLI/operator
+tools, public contract boundaries, and repository build/supply-chain controls.
+Vulnerabilities in Seej's validation, permission, or isolation boundaries remain
+in scope even when triggered by a third-party plugin.
 
-- pure transition and validation logic;
-- local and distributed persistence;
-- node identity, admission, membership configuration, authority terms, and
-  replication;
-- public command, observation, provider, and plugin boundaries;
-- migrations, retention, backup, recovery, and operator tools;
-- build and dependency controls maintained by the repository.
+Out of scope unless adopted: community plugins, renderers, ingame netcode, and
+operator host infrastructure.
 
-Community plugins, renderers, ingame clients, custom deployment systems, and
-third-party services are not maintained by Seej unless explicitly adopted.
-Vulnerabilities in Seej's isolation, permission, validation, or plugin boundary
-remain in scope even when a third-party plugin triggers them.
+## Current and Target Security Posture
 
-Operators remain responsible for host security, network policy, credentials,
-backup custody, approved plugins, and deployment-specific availability.
+- **Current repository state (`seej/server/` — Phase 0 clean slate):**
+  empty 4-crate Rust workspace skeleton (`sy_types`, `sy_api`, `sy_core`,
+  `sy_infra`) with active build/purity/supply-chain guardrails
+  (`check_sy_core_purity.py` across all 3 pure crates, `check_dag.py` across
+  normal/dev/build deps, `check_docs.py`, `cargo-audit`, and `cargo deny check
+  advisories licenses bans sources`). No runtime daemon, storage engine,
+  consensus, authentication, or plugin isolation exists yet.
+- **Target v1 (Gate 1-K):** crash-fault-tolerant (CFT) authority groups of 1 or
+  3 operator-authenticated nodes (quorum 2). Byzantine authorized nodes are
+  outside the v1 fault model; unauthenticated admission, privilege bypass,
+  message tampering, and stale-authority writes are security defects.
+- **Startup plugins in v1:** trusted, operator-approved native components loaded
+  at startup with manifest/fingerprint verification. They run with process
+  privileges and must never be described as sandboxed.
+- **Later (Gate 1-D / Evolution 2):** isolated application-plugin execution
+  (e.g. WASM with deterministic fuel metering and explicit permissions).
 
-## Current and target security posture
+## Assets and Invariants
 
-The current repository is a local, single-writer prototype. It does not
-implement distributed node authentication, consensus, generic plugin
-isolation, or hot loading.
+Protect at minimum:
 
-The first distributed reference profile trusts admitted operators and handles
-crash faults, storage failures, and network partitions. It is not Byzantine or
-permissionless. A malicious authorized kernel node is outside that first fault
-model, while privilege bypass, unauthenticated admission, message tampering,
-and stale-authority writes remain security defects.
+- one confirmed history and stable `world_id` per world;
+- command identity, bounded producer slots/incarnations/generations, exact
+  expiry, and non-reuse of expired IDs;
+- authorization, idempotency, and the **reserved control budget** of kernel
+  control operations (`CancelCommand`) so application quota exhaustion cannot
+  cause permanent denial of service;
+- checkpoints, retained history, active obligations, and migration barriers;
+- authority terms, confirmed membership configurations, and component
+  fingerprints;
+- transport credentials, signing keys, and redacted diagnostics (never log
+  secrets).
 
-The first stable release may execute only trusted providers explicitly approved
-by the operator at startup. Isolated application-plugin execution is later.
-Until it exists, native plugins have process-level privileges and must not be
-described as sandboxed.
+## Trust Boundaries
 
-The current `sy_cli` opens the WAL read-only, but constructing its
-`FilesystemStore` may create `<data-dir>/worlds`. Its `dump --output` path also
-does not reject a destination inside or aliasing the world store. Until P1-11
-closes both gaps, operators must inspect an already existing
-`<data-dir>/worlds` tree and export outside canonical storage.
+- **Nodes:** discovery never grants membership. Inter-node messages and
+  connections must be bounded, authenticated, and replay-protected, binding an
+  authenticated `node_id`, world, authority term, configuration version, and
+  compatible execution profile. Stale or minority nodes cannot confirm mutations
+  or claim current reads.
+- **Producers & observers:** all external input is untrusted. Authenticate,
+  enforce payload/cardinality limits, and validate before pure execution.
+  Observers receive only permitted domains and confirmed prefixes with explicit
+  freshness; read load triggers rate limiting/refusal before affecting
+  canonical simulation.
+- **Plugins:** installation does not imply permission. Plugins cannot mutate
+  another owner's tables directly, cannot drop active obligations, and cannot
+  run with mismatched artifacts/fingerprints.
+- **Storage:** fail closed on full/read-only media, append, sync, rename, or
+  generic I/O errors. Separate safe torn-tail recovery from corruption and
+  quarantine; never silently repair suspicious evidence. Storage CRCs and
+  semantic state roots are integrity checks, not peer authentication.
 
-## Assets and invariants
+## Vulnerability Reporting
 
-Protect at least:
+Do **not** report security vulnerabilities through public issues, discussions,
+or pull requests.
 
-- one confirmed history and stable identity per world;
-- command identity, bounded producer incarnation, order, status, and non-reuse
-  after expiration or producer retirement;
-- authorization and idempotency of kernel control operations such as command
-  cancellation;
-- checkpoint, retained history, active obligations, and migration metadata;
-- authority membership/configuration and monotonic election terms;
-- component manifests, versions, and artifact fingerprints;
-- credentials, signing material, and transport keys;
-- operator diagnostics that may contain sensitive world metadata.
+Report privately to: **security@seej.org**
 
-Security-sensitive code must fail explicitly. Diagnostic logs are not a
-canonical store and must not contain secrets.
+Include affected commit/version, impacted boundary, potential world-state
+impact, safe reproduction steps, and suggested mitigation if available.
+Maintainers will acknowledge, assess, and coordinate remediation; no fixed SLA
+is guaranteed.
 
-## Trust boundaries
+## Operator Responsibilities
 
-### Nodes
+Operators secure hosts, credentials, transport endpoints, backup custody,
+approved plugin lists, and archived historical artifacts required for
+re-simulation. Until plugin isolation exists, isolate native plugins at the OS
+or container level and follow documented recovery procedures rather than
+manually editing canonical store files.
 
-Discovery does not grant authority. Membership is an explicit confirmed
-operation. Connections bind to an authenticated `node_id`, authorized world,
-authority term, membership configuration, and compatible execution profile.
+## Related Documents
 
-A stale or minority node cannot confirm mutations or claim a current read.
-Messages are bounded, authenticated, replay-protected as required, and checked
-against world and profile identity.
-
-### Producers and observers
-
-Every external input is untrusted. Authenticate and authorize as required by
-world policy, enforce payload/cardinality limits, validate before canonical
-execution, and avoid error details that expose secrets.
-
-Observers receive only permitted domains and a confirmed cursor with freshness.
-Read activity cannot mutate state or weaken simulation behavior.
-
-### Providers and plugins
-
-Installation does not imply permission. Manifests declare capabilities,
-ownership, dependencies, limits, permissions, versions, migrations, and
-fingerprints.
-
-A plugin cannot directly mutate another owner's data. Opaque payloads remain
-bounded and integrity-protected. Removal cannot discard or merely archive
-active obligations while a world continues: they require a confirmed transfer
-or resolution. Missing or mismatched required artifacts block activation,
-migration, or re-simulation.
-
-### Storage
-
-Persistence errors fail closed. Full/read-only media, append, synchronization,
-rename, and generic I/O failures cannot produce reported success or accepted
-memory-only state. Torn-tail recovery is distinct from suspicious corruption
-and operator repair.
-
-Storage CRC and semantic state hashes are integrity tools, not peer
-authentication or signatures.
-
-## Security requirements
-
-Contributions affecting a trust boundary must consider:
-
-- authentication and authorization;
-- least privilege and explicit permissions;
-- input and resource bounds;
-- denial of service and backpressure;
-- duplicate, delayed, reordered, and replayed messages;
-- command retry and timeout ambiguity;
-- cancellation races and bounded producer-slot, incarnation, and
-  command-generation exhaustion;
-- stale authority and split-brain resistance;
-- storage failure and crash consistency;
-- complete old-profile drain, world-wide migration barrier, abort before
-  activation, recovery after activation, and mixed-version refusal;
-- dependency and artifact provenance;
-- secret handling and diagnostic redaction.
-
-Do not hardcode keys, tokens, credentials, or stable deployment identities.
-CORS or network location is not authorization.
-
-## Vulnerability reporting
-
-Do not report a vulnerability through a public issue, discussion, pull request,
-or other public channel.
-
-Report privately by email:
-
-**security@seej.org**
-
-Include:
-
-- a clear description and affected version or commit;
-- impacted boundary and potential world-state consequences;
-- reproduction steps or proof of concept when safe;
-- whether confidentiality, integrity, authority, or availability is affected;
-- suggested mitigation when available.
-
-Examples include persistent-data loss or corruption, authority bypass,
-unauthorized node admission, stale writes, command duplication, permission
-escape, arbitrary code execution, secret disclosure, or denial of service that
-can compromise durable state.
-
-Maintainers will acknowledge, assess, coordinate a fix or mitigation, and
-publish information when appropriate. No fixed response or correction time is
-guaranteed.
-
-Researchers should avoid accessing unrelated data, damaging worlds, retaining
-secrets, or disclosing exploitable details before coordinated remediation.
-
-## Supported versions and migrations
-
-During the foundation phase, only the active development line is supported for
-security fixes. After stable releases exist, the project will publish an
-explicit supported-version policy.
-
-The contract promise to migrate kernel-owned data from every stable format does
-not promise indefinite security maintenance of every old executable. Operators
-may need to perform supported stepwise migrations to reach a maintained
-release.
-
-Plugin security support and data migrations remain the plugin publisher's
-responsibility. Seej refuses incompatible activation but cannot supply missing
-third-party fixes or artifacts.
-
-## Operator responsibilities
-
-Operators must:
-
-- secure hosts, accounts, credentials, and transport endpoints;
-- authorize nodes and plugins using least privilege;
-- retain recovery data and required historical plugin artifacts;
-- test restore and migration procedures;
-- monitor quorum, storage health, authority changes, and failed validation;
-- keep maintained components updated;
-- isolate native plugins at the deployment level until Seej sandboxing exists;
-- follow the documented recovery process instead of silently repairing
-  suspicious evidence.
-
-## Related documents
-
-- [Decision D-012](DECISIONS.md#d-012--distributed-extensible-world-kernel)
-- [Decision D-013](DECISIONS.md#d-013--operational-failure-semantics)
-- [Decision D-014](DECISIONS.md#d-014--first-stable-boundary-semantics)
-- [Node-network contract](../seej/docs/NODE_NETWORK.md)
-- [Plugin contract](../seej/docs/PLUGIN_CONTRACT.md)
-- [Persistence behavior](../seej/docs/phase1/PERSISTENCE.md)
-- [Exit checklist](../seej/docs/phase1/EXIT_CHECKLIST.md)
-- [Contribution guide](../CONTRIBUTING.md)
+- [doc/DECISIONS.md](DECISIONS.md)
+- [doc/ARCHITECTURE.md](ARCHITECTURE.md)
+- [doc/ROADMAP.md](ROADMAP.md)
+- [seej/docs/CONTRACT.md](../seej/docs/CONTRACT.md)
+- [seej/docs/PLUGIN_CONTRACT.md](../seej/docs/PLUGIN_CONTRACT.md)
+- [seej/docs/BENCHMARKS.md](../seej/docs/BENCHMARKS.md)

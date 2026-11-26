@@ -1,144 +1,84 @@
 # Seej
 
-> Distributed, deterministic world kernel for persistent sandbox worlds.
+> **Language:** **English (authoritative)** | [Français](doc/fr/README.md)
 
-Seej is open-source infrastructure for worlds that keep evolving without a
-player, rendering engine, or permanently central coordinator. A logical world
-can run on one node or an explicitly authorized group of nodes. The kernel
-coordinates time, identity, ordered commands, validation, durable state, and
-replication through versioned contracts.
+> Deterministic, persistent world kernel with a minimal core and one target v1 plugin boundary.
 
-Seej follows a kernel-and-ecosystem model. It ships a minimal working
-distribution and replaceable fundamental providers. World models, agents,
-economies, spatial systems, multiresolution engines, renderers, and ingame
-netcode are optional extensions. The network between Seej nodes is part of the
-kernel infrastructure; player-facing netcode is not.
+Seej is open-source infrastructure for persistent sandbox worlds that evolve
+without a player, renderer, or global central coordinator. A logical world runs
+on one authorized node or a small authority group (three nodes, quorum two)
+under one confirmed history. World models, spatial systems, economies, agents,
+multiresolution policies, renderers, and ingame netcode stay outside the kernel
+as plugins and consumers.
 
-- GitHub: [https://github.com/Seeyuj/Seej](https://github.com/Seeyuj/Seej)
-- Follow: [https://x.com/Seeyuj](https://x.com/Seeyuj)
+- Repository: [https://github.com/Seeyuj/Seej](https://github.com/Seeyuj/Seej)
+- Updates: [https://x.com/Seeyuj](https://x.com/Seeyuj)
 
-## Contract Status
+## Design Philosophy
 
-The distributed architecture is the target established by
-[decision D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel),
-with operational failure semantics fixed by
-[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) and the
-remaining first-stable ambiguities closed by
-[D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics).
-It is **not implemented or frozen yet**. The public
-[kernel contract](seej/docs/CONTRACT.md),
-[node-network contract](seej/docs/NODE_NETWORK.md), and
-[plugin contract](seej/docs/PLUGIN_CONTRACT.md) remain drafts until every
-mandatory item in the
-[Phase 1 exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md) has evidence.
+Seej combines three disciplined systems principles — reconciled with distributed
+consistency and determinism rather than slogans:
 
-Documentation uses three status labels:
+- **Small core, one target public seam (Unix / Linux):** keep the kernel small
+  and cohesive; freeze only the **public plugin and external contract** in v1
+  (like Linux's syscall ABI) while keeping internal infrastructure seams
+  (`StateStore`, `AuthorityLog`, `Executor`) clean, tested, and evolvable.
+- **Composable capabilities over a single mutation substrate (`dsh` / Cordis):**
+  application features are plugins, not core patches, composed over one
+  unprivileged mutation primitive — ordered, logged write-sets applied through
+  a single deterministic path.
+- **Autonomous worlds, shared-nothing nodes:** no global registry or SPOF.
+  Each world maintains strong consistency (CP) inside its own shared-nothing
+  authority group; decentralization and peer-to-peer cooperation live between
+  autonomous worlds via asynchronous envelopes.
 
-- **Implemented**: present in this repository and covered by named evidence.
-- **Target**: required before the first stable contract and tracked by a gap ID.
-- **Later**: intentionally outside the first stable contract.
+## Status
 
-## What Works Today
+Documentation uses three labels:
 
-The current prototype is a single-process, single-writer headless server. It
-can create a spatial demonstration world, run deterministic ticks, persist a
-snapshot and local WAL, recover after interruption, and inspect the store
-through a CLI that opens its WAL read-only.
+- **Implemented:** present in `seej/server/` and backed by committed tests.
+- **Target:** required before the v1 contract freeze (tracked in
+  [doc/ROADMAP.md](doc/ROADMAP.md)).
+- **Later:** usage-pulled hardening or optional ecosystem work.
 
-Implemented today:
+**Today (Phase 0 complete — clean-slate foundation):** per
+[D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam),
+the legacy spatial prototype has been retired (preserved at archive tag
+`archive/prototype-v1-final`). `seej/server/` holds an empty 4-crate Rust
+workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) with strict
+lints, pure-crate purity checks, full dependency-DAG checks, pinned Rust
+`1.95.0`, and open-source PR CI — ready to begin **Phase 1.1** in
+[doc/ROADMAP.md](doc/ROADMAP.md). No runtime daemon, storage backend, consensus
+engine, or plugin host is implemented yet.
 
-- deterministic tick execution with an explicit seed;
-- the `server_d` headless runtime;
-- local snapshot and WAL persistence;
-- recovery by loading a snapshot and replaying later WAL events;
-- the current zone/entity model and demonstration degradation rules;
-- `sy_cli` status, event, entity, zone, and JSON inspection;
-- determinism, recovery, crash, and WAL fuzz evidence described by the Phase 1
-  documents.
+## Quick Start (Run Full Validation Suite)
 
-The prototype does not yet provide a distributed authority group, consensus,
-generic plugin-owned data, a stable public extension ABI, hot loading, or
-plugin isolation. The current zone/entity types and systemic rules are
-prototype behavior, not the future universal world model.
-
-`sy_cli` opens the WAL read-only, but initializing its current `FilesystemStore`
-may create `<data-dir>/worlds`. In addition, `dump --output` writes to the
-operator-supplied destination without rejecting a path that aliases canonical
-storage. Until gap P1-11 is closed, inspection needs an already existing
-`<data-dir>/worlds` tree and exports must be directed outside the world store.
-
-## Target Architecture
-
-```text
-community capabilities                     operators and observers
-agents · economy · space · UI · netcode     CLI · monitoring · administration
-             |                                          |
-             +---------- versioned contracts -----------+
-                                |
-                 logical distributed world kernel
-        identity · time · commands · validation · transactions
-                    durable history · replication
-                                |
-             +------------------+------------------+
-             |                  |                  |
-          node A             node B             node C
-       pure engine +      pure engine +      pure engine +
-        providers          providers          providers
-```
-
-`sy_core` is the deterministic transition engine inside this architecture. It
-does not perform filesystem, clock, or network I/O. A node runtime wires it to
-approved providers for persistence, scheduling, validation, membership,
-replication, and other capabilities. Single-node operation is a deployment of
-the same contracts, not a separate product.
-
-The first distributed reference target uses three authorized nodes and a
-quorum of two under a crash/partition fault model. This reference is allowed to
-use a Raft-style provider, but the contract does not require every deployment
-to use the same implementation.
-
-Read the detailed model in:
-
-- [Project architecture](doc/ARCHITECTURE.md)
-- [Technical architecture](seej/docs/ARCHITECTURE.md)
-- [Kernel contract](seej/docs/CONTRACT.md)
-- [World specification](seej/docs/simulation/WORLD_SPEC.md)
-- [Roadmap](doc/ROADMAP.md)
-
-## Quick Start
-
-Prerequisite: the pinned Rust toolchain described by `seej/server/rust-toolchain.toml`.
+Requires Rust `1.95.0` (pinned in `rust-toolchain.toml`) and Python 3:
 
 ```bash
-git clone https://github.com/Seeyuj/Seej.git
-cd Seej/seej/server
-
-cargo build --workspace
-cargo test --workspace
-
-cargo run --bin server_d -- create --name "MyWorld" --seed 42
-cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 100
-cargo run --bin sy_cli -- status world_42
+python3 -B seej/server/scripts/check.py
 ```
 
-These commands run the current local prototype. No distributed command-line
-interface is claimed until one is implemented and documented in
-[BINARIES.md](seej/docs/phase1/BINARIES.md).
+This single command runs the purity gate (self-test suite + pure-crate scan),
+dependency-DAG check (normal + dev + build), Markdown link/parity checks,
+`cargo fmt`, `cargo clippy`, `cargo test`, strict Rustdoc (`-D warnings`), and
+`cargo deny` (when installed).
 
-## Project Boundaries
+## Documentation Map
 
-Seej is infrastructure rather than a game, graphics engine, narrative
-framework, content pack, or metaverse product. A community extension can build
-any of those experiences while the kernel remains headless and neutral about
-their application rules.
+Every document has one authoritative role — no duplicated specifications:
 
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md), the
-[decision log](doc/DECISIONS.md), and the
-[exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md) before changing a public
-contract. Contributions must state whether they implement an existing target,
-change a contract, or describe current behavior.
+| Document | Role |
+| --- | --- |
+| [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | System model, state narrow waist, seams, dependency rules, and repo layout |
+| [doc/DECISIONS.md](doc/DECISIONS.md) | Architectural decision log (`D-001` through `D-015`) and archive traceability |
+| [doc/ROADMAP.md](doc/ROADMAP.md) | Ordered coding plan (`Phase 0`–`Phase 4`) and authoritative release checklist |
+| [seej/docs/CONTRACT.md](seej/docs/CONTRACT.md) | Draft (`0.4.0-draft`) kernel, command, authority, recovery, migration, and observation contract |
+| [seej/docs/PLUGIN_CONTRACT.md](seej/docs/PLUGIN_CONTRACT.md) | Draft (`0.3.0-draft`) target v1 public plugin boundary, domain ownership, and transactions |
+| [seej/docs/BENCHMARKS.md](seej/docs/BENCHMARKS.md) | Empirical lab measurements grounding D-015 storage, hashing, and proof-mode choices |
+| [doc/SECURITY.md](doc/SECURITY.md) | Threat model, trust boundaries, operational posture, and vulnerability reporting |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution rules, validation checks, and governance |
+| [doc/CODE_OF_CONDUCT.md](doc/CODE_OF_CONDUCT.md) | Community standards |
 
 ## License
 
