@@ -1,20 +1,21 @@
 # Architecture
 
-> *Miroir français de [`doc/ARCHITECTURE.md`](../ARCHITECTURE.md). La version
-> anglaise fait foi en cas d'écart.*
+> **Traduction non normative** de [`doc/ARCHITECTURE.md`](../ARCHITECTURE.md).
+> La version anglaise fait foi en cas d'écart.
 
 ```text
-statut : ARCHITECTURE CIBLE (D-015) — LE WORKSPACE EST EN PHASE 0 VIERGE (PRÊT POUR LA PHASE 1.1)
+statut : ARCHITECTURE CIBLE (D-015) — LE WORKSPACE EST UN SQUELETTE VIDE PHASE 0 (PRÊT POUR LA PHASE 1.1)
 ```
 
 Ce document est le blueprint architectural unique de Seej. Il consolide les
 frontières système, le modèle d'état logique, le flux d'exécution, la
-séparation entre coutures internes et frontière publique gelée, les règles de
-dépendance et l'arborescence du dépôt. Les garanties normatives vivent dans
+séparation entre coutures internes et frontière publique ciblée, les règles de
+dépendance et l'arborescence du dépôt. Les brouillons normatifs vivent dans
 [CONTRACT.md](CONTRACT.md) et [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md) ;
 l'historique et les mesures fondatrices vivent dans
 [DECISIONS.md](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) et
-[BENCHMARKS.md](BENCHMARKS.md).
+[BENCHMARKS.md](BENCHMARKS.md) ; l'ordre des phases faisant foi vit uniquement
+dans [ROADMAP.md](ROADMAP.md).
 
 ## Philosophie et frontières
 
@@ -40,7 +41,8 @@ modèles applicatifs** (dans les plugins et consommateurs) :
 plugins applicatifs & consommateurs          opérateurs & observateurs
 espace · économie · IA · multirés · netcode  CLI · monitoring · flux
                  |                                      |
-                 +---- UNE FRONTIÈRE PUBLIQUE GELÉE ----+
+                 +--- UNE FRONTIÈRE PUBLIQUE v1 CIBLE --+
+                 |        (BROUILLON — NON GELÉ)        |
                                     |
                      noyau logique de monde (par monde)
          identité · tick · commandes · write-set · racines · obligations
@@ -78,15 +80,15 @@ ensemble de domaines propriétaires versionnés exposant deux primitives logique
 
 ### Chemin de mutation unique (fin du `world.clone()` et de la dérive de replay)
 
-L'exécution en direct et la reprise après crash partagent **un seul** chemin de
-mutation canonique :
+L'exécution en direct et la reprise après crash sont conçues pour partager
+**un seul** chemin de mutation canonique :
 
 ```text
 StateView immuable (à base_cursor)
   -> évaluation batch plugin -> CandidateOverlay / WriteSet + Events + Decision
   -> validation inter-domaines sur le candidat complet
   -> confirmation durable (group commit par tick)
-  -> StateStore::apply(WriteSet)  [même fonction en direct et en reprise]
+  -> apply(WriteSet)  [même chemin canonique en direct et en reprise]
 ```
 
 - **Zéro `world.clone()` :** un échec, une base périmée ou un crash plugin ne
@@ -99,8 +101,8 @@ StateView immuable (à base_cursor)
 ### Entropie dérivée (`EntropyScope`)
 
 Un RNG global mutable casse l'isolation entre plugins et bloque le
-parallélisme. Le cœur dérive l'entropie déterministe à partir de coordonnées
-canoniques :
+parallélisme. Le cœur cible dérive l'entropie déterministe à partir de
+coordonnées canoniques :
 
 ```text
 EntropyScope(world_seed, entropy_epoch, tick, admission_seq | phase, domain_id)
@@ -120,15 +122,18 @@ et les événements sont collectés localement puis numérotés dans l'ordre can
 - **Passes de tick autonomes** lisant un instantané immuable $T-1$ puis
   réduisant leurs intentions en ordre canonique (style BSP) : elles **doivent
   déclarer explicitement cette sémantique dès la v1**, même sur l'exécuteur
-  séquentiel. Sinon, passer de 1 cœur à $N$ cœurs changerait ce que la règle
-  observe.
+  séquentiel. Sinon, passer de 1 cœur à $N$ cœurs plus tard changerait les
+  sorties observables.
 
 ### Exécuteur séquentiel batché en v1 + Deterministic Simulation Testing (DST)
 
-La v1 livre un **exécuteur séquentiel batché** (1 group commit par tick) :
+La cible v1 livre un **exécuteur séquentiel batché** (1 group commit par tick ;
+non encore implémenté dans le squelette Phase 0). Cela offre deux avantages :
 
-1. Il encaisse déjà 10 000 commandes/s sur 1 million de clés en ~6–12 ms/tick
-   sur un seul cœur (voir [BENCHMARKS.md](BENCHMARKS.md)).
+1. Les benchmarks de laboratoire jetables montrent qu'un chemin séquentiel
+   mono-thread peut tenir 10 000 commandes/s sur 1 million de clés en
+   **8,62–21,74 ms p99** (médiane **6,64–9,95 ms**, voir
+   [BENCHMARKS.md](BENCHMARKS.md)).
 2. Il débloque le **Deterministic Simulation Testing (DST) mono-thread** —
    simuler un cluster complet de 3 nœuds, des partitions réseau, du
    réordonnancement de paquets et des pannes disque injectées de façon
@@ -162,25 +167,26 @@ interne `Executor` en Phase 4.1 (Gate 1-D) avec un oracle absolu :
 Un tick confirmé scelle un lot compact de résolutions ancrées par
 `pre_state_root`, `post_state_root` et `events_root` :
 
-- **Les racines sont gelées dans le contrat ; le mode de preuve et l'algorithme
-  de hash vivent dans le profil d'exécution.**
+- **Les racines sont gelées dans le contrat cible v1 ; le mode de preuve et
+  l'algorithme de hash vivent dans le profil d'exécution.**
   - **Mode de preuve par défaut v1 (`delta`) :** chaque `Resolution` porte le
     `WriteSet` canonique explicite, permettant une reprise mécanique sans
     ré-exécuter les plugins natifs (préserve la sûreté D-014 tant que les
     plugins ne sont pas isolés).
   - **Mode de preuve compact futur (`root` / SMR vérifié) :** profil opt-in pour
     les charges autonomes denses (ex. $10^5$ écritures/tick, où les benchmarks
-    montrent que `delta` produit 14,4 Mo/tick et sature la traîne disque) une
-    fois le déterminisme garanti par isolation ou profils vérifiés.
+    montrent que `delta` produit 14,4 Mo/tick et échoue au budget de 100 ms sur
+    la latence de queue disque) une fois le déterminisme garanti par isolation
+    ou profils vérifiés.
 - **Hash d'état incrémental par enregistrement :** les benchmarks ont montré que
   le rehash complet par partition détruit les charges de commandes dispersées
-  (115–169 ms/tick contre 6–8 ms). L'algorithme exact reste un paramètre de
+  (115–169 ms médiane contre 6–10 ms). L'algorithme exact reste un paramètre de
   profil versionné.
 - **Checkpoints :** `MigrationActivate` commite un checkpoint frontière
   obligatoire afin qu'une reprise ordinaire ne traverse jamais deux profils.
   Sortir l'écriture du checkpoint hors du chemin critique du tick (CoW
-  asynchrone) est nécessaire à grande échelle (240–435 ms de gel mesurés pour
-  144 Mo synchrones).
+  asynchrone) est nécessaire à grande échelle (**237–435 ms** de gel mesurés
+  pour 144 Mo synchrones, avec une pointe à **1 485 ms**).
 
 ### Trois curseurs distincts
 
@@ -191,22 +197,22 @@ Un tick confirmé scelle un lot compact de résolutions ancrées par
    instance locale d'état (ne peut servir de lecture *current* tant qu'elle est
    en retard sur la barrière de lecture du quorum).
 
-## Coutures internes vs frontière publique gelée
+## Coutures internes vs frontière publique ciblée
 
 Selon la règle Linux (*ABI syscall stable, aucune API interne stable pour les
 pilotes*) et la règle des 3 rôles de Cordis (*une couture exige définition,
 fournisseur et consommateur*) :
 
-- **Frontière publique gelée en v1 (1 frontière) :**
+- **Frontière publique visée pour le gel à `K-01` (actuellement BROUILLON — NON GELÉ) :**
   - Le **Contrat Plugin, Commandes et Observation** ([CONTRACT.md](CONTRACT.md)
     et [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md)).
-- **Coutures internes (3 coutures — testées, non gelées publiquement en v1) :**
+- **Coutures internes cibles (non gelées publiquement en v1) :**
   1. `StateStore` — coupes MVCC (`pin_cut`), `apply(WriteSet)` atomique,
-     streaming de chunks, calcul de racine incrémental (testé avec doubles en
-     mémoire et injection de pannes `P0-14`).
+     streaming de chunks, calcul de racine incrémental (cible : vérifié avec
+     doubles en mémoire et injection de pannes `P0-14`).
   2. `AuthorityLog` — WAL group-commit, réplication 1 nœud / Raft 3 nœuds,
      termes d'autorité, membership conjoint, fencing et barrières de lecture
-     (testé via doubles réseau/stockage DST).
+     (cible : vérifié via doubles réseau/stockage DST `K-05` / `K-07`).
   3. `Executor` — exécution séquentielle batchée en v1 ; `Block-STM` / `BSP`
      parallèle et sandboxing Wasmtime plus tard sans casser les plugins.
 
@@ -217,13 +223,13 @@ fournisseur et consommateur*) :
 ```text
 primitives stables (sy_types — zéro dépendance)
         ^
-contrats publics & traits internes (sy_api — dépend uniquement de sy_types)
+brouillon de contrats publics (sy_api — dépend strictement de sy_types)
         ^
-moteur déterministe pur (sy_core — dépend uniquement de sy_types, sy_api)
+moteur déterministe pur (sy_core — dépend strictement de sy_types, sy_api)
         ^
 adaptateurs d'infrastructure (sy_infra)
         ^
-futurs binaires de nœud (server_d, sy_cli — ajoutés en Phase 1.5)
+futurs binaires de nœud (server_d, sy_cli)
 ```
 
 Les plugins applicatifs dépendent **uniquement** des contrats publics — jamais
@@ -231,22 +237,22 @@ de `sy_core`, `sy_infra`, des internes d'un autre plugin ou du runtime.
 
 ### Matrice workspace contrôlée (`seej/server/`)
 
-| Crate | Dépendances autorisées | Phase de codage d'entrée |
-| --- | --- | --- |
-| `sy_types` | aucune (contrôlé strictement en CI) | Phase 1.1 |
-| `sy_api` | `sy_types` (contrôlé strictement en CI) | Phase 1.2 |
-| `sy_core` | `sy_types`, `sy_api` (zéro crate externe, contrôlé strictement en CI) | Phase 1.3 |
-| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ crates externes ajoutés selon besoin) | Phase 1.4 |
+| Crate | Dépendances autorisées (normal, dev et build) |
+| --- | --- |
+| `sy_types` | aucune (contrôlé par `scripts/check_dag.py` et CI) |
+| `sy_api` | `sy_types` (contrôlé par `scripts/check_dag.py` et CI) |
+| `sy_core` | `sy_types`, `sy_api` (zéro crate externe, contrôlé par `scripts/check_dag.py` et CI) |
+| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ crates externes ajoutés uniquement à leur phase) |
 
-### Pureté de `sy_core`
+### Règles de pureté (`sy_types`, `sy_api`, `sy_core`)
 
-`sy_core` ne doit jamais accéder au système de fichiers, au réseau, à l'horloge
-murale/processus, aux variables d'environnement, au hasard OS, aux threads OS
-ou aux collections hachées aléatoires (`HashMap`/`HashSet`). Contrôlé par
-`seej/server/scripts/check_sy_core_purity.py` (17 auto-tests) et le contrôle de
-dépendances CI dans `.github/workflows/rust.yml`. Chaque crate impose
-`#![deny(missing_docs)]` ; les crates purs imposent en plus
-`#![forbid(unsafe_code)]`.
+Les trois crates purs ne doivent jamais accéder au système de fichiers, au
+réseau, à l'horloge murale/processus, aux variables d'environnement, au hasard
+OS, aux threads OS, aux collections hachées aléatoires (`HashMap`/`HashSet`) ni
+aux types flottants non contraints (`f32`/`f64`). Contrôlé par
+`seej/server/scripts/check_sy_core_purity.py` (18 auto-tests),
+`#![deny(clippy::float_arithmetic)]`, `#![forbid(unsafe_code)]` et
+`seej/server/scripts/check_dag.py`. Chaque crate impose `#![deny(missing_docs)]`.
 
 ### Raccourcis interdits
 
@@ -260,30 +266,32 @@ dépendances CI dans `.github/workflows/rust.yml`. Chaque crate impose
 
 ```text
 .
-├── README.md                  # vue d'ensemble (EN)
-├── AGENTS.md                  # invariants et vérifications (EN)
+├── README.md                  # vue d'ensemble & sélecteur de langue (EN par défaut)
+├── AGENTS.md                  # unique guide racine des agents (carte, checks, règles)
 ├── CONTRIBUTING.md            # contribution et gouvernance (EN)
-├── .github/workflows/rust.yml # gates CI (pureté, fmt, clippy, test, doc, audit, deny, DAG)
+├── rust-toolchain.toml        # Rust 1.95.0 épinglé à la racine
+├── .omp/RULES.md              # interdits absolus permanents
+├── .github/workflows/rust.yml # CI PR open-source (docs, pureté, DAG, rust, supply-chain, build)
 ├── doc/
 │   ├── ARCHITECTURE.md        # blueprint unique (EN)
 │   ├── DECISIONS.md           # journal des décisions D-001 à D-015 (EN)
-│   ├── ROADMAP.md             # plan de codage ordonné (Phase 0–4) & checklist (EN)
+│   ├── ROADMAP.md             # plan de codage ordonné unique (Phase 0–4) & checklist (EN)
 │   ├── SECURITY.md            # politique de sécurité (EN)
 │   ├── CODE_OF_CONDUCT.md     # code de conduite
-│   └── fr/                    # miroir français de la documentation
+│   └── fr/                    # miroir français non normatif de la documentation
 └── seej/
     ├── docs/
     │   ├── CONTRACT.md        # brouillon v1 contrat noyau & autorité (EN)
-    │   ├── PLUGIN_CONTRACT.md # brouillon v1 frontière publique plugin (EN)
+    │   ├── PLUGIN_CONTRACT.md # brouillon v1 frontière publique plugin ciblée (EN)
     │   └── BENCHMARKS.md      # mesures empiriques fondant D-015 (EN)
-    └── server/                # workspace Rust vierge (squelette Phase 0)
+    └── server/                # workspace Rust vierge (squelette vide Phase 0)
         ├── Cargo.toml
-        ├── deny.toml          # politique licences/advisories (MIT/Apache/BSD)
+        ├── deny.toml          # politique advisories, licences, bans, sources
         ├── rust-toolchain.toml
-        ├── scripts/check_sy_core_purity.py
+        ├── scripts/           # check.py, check_sy_core_purity.py, check_dag.py, check_docs.py
         └── crates/
-            ├── sy_types/      # Phase 1.1 primitives & compteurs vérifiés
-            ├── sy_api/        # Phase 1.2 couture publique gelée & traits internes
-            ├── sy_core/       # Phase 1.3 moteur de transition déterministe pur
-            └── sy_infra/      # Phase 1.4+ stockage, autorité, exécuteur & DST
+            ├── sy_types/
+            ├── sy_api/
+            ├── sy_core/
+            └── sy_infra/
 ```

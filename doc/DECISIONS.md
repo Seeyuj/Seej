@@ -8,6 +8,11 @@ roadmap (see [ROADMAP.md](ROADMAP.md)) or a contract (see
 
 ## Decision Index
 
+> **Traceability note:** Entries `D-001` through `D-014` below were condensed
+> into concise summaries by `D-015` without changing their accepted intent.
+> Their full verbatim pre-D-015 text is preserved permanently at immutable tag
+> `archive/pre-d015-docs` (`9662a60`).
+
 | ID | Decision | Status |
 | --- | --- | --- |
 | [D-001](#d-001--the-project-is-a-platform-not-a-game) | Platform, not a game | Accepted |
@@ -201,8 +206,10 @@ Added concrete boundary mechanisms to D-013:
   confirmed `Open` / `Sealed` / `Closed` generations, tombstones, closed
   generation floors, and finite persisted limits.
 - Distinguished `confirmed_cursor`, `checkpoint_cursor`, and `applied_cursor`.
-- Clarified current `sy_cli` read-only gaps (`FilesystemStore::new` directory
-  creation and unguarded `dump --output` aliasing) under `P1-11`.
+- Clarified the retired prototype's `sy_cli` read-only gaps
+  (`FilesystemStore::new` directory creation and unguarded `dump --output`
+  aliasing) under `P1-11`, retained as acceptance criteria for the clean-slate
+  CLI.
 
 ---
 
@@ -230,28 +237,35 @@ structural problems:
    with full quotas could reject `CancelCommand` with `LimitExceeded` while
    ticks could no longer advance to expire old records.
 
-Two throwaway single-threaded benchmark campaigns (`lab/wal-fail-closed-load-b`
-`1c98282` and `lab/state-layout-b` `5856396`, Ryzen 9 5900X, Crucial P2 NVMe,
-Rust 1.95.0, 1,000,000 keys × 128 B, 10 Hz / 100 ms tick budget, 24/24
-root-verified recoveries) established five concrete facts:
+Two throwaway single-threaded benchmark campaigns preserved at immutable tags
+`archive/lab-campaign-1` (`1c98282`, 6/6 clean recoveries) and
+`archive/lab-campaign-2` (`5856396`, 24/24 clean recoveries — warm OS cache, no
+fault injection), on Ryzen 9 5900X + Crucial P2 NVMe + Rust 1.95.0, 1,000,000
+keys × 128 B, 10 Hz / 100 ms tick budget, established five concrete facts (full
+tables in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)):
 
 - **Command/mixed loads (A: 1,000 cmds/tick; C: 1,000 cmds + 1,000 autonomous
-  writes + 80% hot keys)** easily meet the 100 ms budget on one thread in
-  `delta` mode: **p99 = 8.6–11.8 ms**, journal **4.2–5.6 MB/s**, replay
-  **2.1–3.4 ms/tick**.
+  writes + 80% hot keys)** meet the 100 ms budget on one thread in `delta` mode
+  across all non-rehash runs: **p99 = 8.62–21.74 ms** (`A`: `8.62–10.83 ms`,
+  `C`: `11.77–21.74 ms`, median `6.64–9.95 ms`; **4.6×–11.6× headroom**),
+  journal **4.17–5.61 MB/s**, clean replay **2.06–3.35 ms/tick**.
 - **Dense autonomous load (B: 100,000 writes/tick)** fails the 100 ms budget in
-  `delta` mode across all 8 runs: 14.4 MB/tick synchronous writes trigger
-  erratic NVMe tail latency (**commit p99 up to 240–400 ms**) and project
-  144 MB/s before replication.
-- **State layout dominates dense load CPU cost:** switching from `BTreeMap` +
-  overlay to contiguous per-partition storage with in-place undo brings B in
-  `root` mode from **147.1 ms → 79.0 ms p99** (66.1 ms median) on one thread.
+  `delta` mode across **all 9 runs** (1 in Campaign 1 + 8 in Campaign 2):
+  14.4 MB/tick synchronous writes produce full-tick **p99 = 113.41–482.78 ms**
+  (commit `sync_data` p99 up to **283.10–400.12 ms**, max **689.37 ms**) and
+  project 144 MB/s before replication.
+- **State layout dominates dense load CPU cost, while replay ratio `< 0.5`
+  remains unmet:** switching from `BTreeMap` + overlay to contiguous
+  per-partition storage with in-place undo brings B in `root` mode from
+  **147.07 ms → 78.95 ms p99** (66.13 ms median) on one thread, though **no
+  variant reached the `< 0.5` replay-ratio target on B** (best: **0.55** in
+  `delta` / **0.62** in `root` with `partitioned/acc-cached`).
 - **Full per-partition rehashing breaks scattered command loads** when
   per-resolution roots are required (A/C jump from **6–10 ms → 115–169 ms**
   median; even B is slower at 51 ms vs. 29 ms for cached per-record digests).
 - **Synchronous full checkpoints (144 MB)** stall tick 100 for **237–435 ms**
-  (outlier 1,485 ms) across all six workloads, proving checkpoint I/O must move
-  off the tick critical path at scale.
+  across Campaign 2 (outlier **1,485 ms**; Campaign 1: **247–326 ms**), proving
+  checkpoint I/O must move off the tick critical path at scale.
 
 ### Decision
 
@@ -269,12 +283,12 @@ root-verified recoveries) established five concrete facts:
 3. **Freeze roots in the contract; keep proof mode and hash algorithm in the
    execution profile:**
    `Resolution` binds `pre_state_root`, `post_state_root`, and `events_root`.
-   - **Proof mode** is selected by the versioned execution profile: explicit
-     `WriteSet` materialization (`delta`) is the **v1 default** (keeping D-014
-     recovery safe while startup plugins are unisolated native Rust and
-     handling A/C workloads with ~10× headroom); a compact verified-tick proof
-     mode (`root`) remains an explicit future profile option for dense
-     workloads once isolation/determinism requirements are met.
+   - **Mode / proof:** explicit `WriteSet` materialization (`delta`) is the
+     **v1 default** (keeping D-014 recovery safe while startup plugins are
+     unisolated native Rust and handling A/C workloads with 4.6×–11.6×
+     headroom); a compact verified-tick proof mode (`root`) remains an explicit
+     future profile option for dense workloads once isolation/determinism
+     requirements are met.
    - **Hash algorithm** is a versioned profile parameter, never frozen to one
      cryptographic primitive in the root contract. While per-resolution roots
      are active, the hash must update incrementally per modified record rather
@@ -330,10 +344,21 @@ root-verified recoveries) established five concrete facts:
 
 ### Consequences
 
-- Documentation is consolidated into a single non-redundant set (with a French
-  mirror in `doc/fr/` and empirical lab evidence preserved in
-  [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)); `CONTRACT.md` advances to
+- Documentation is consolidated into a single non-redundant set (with a
+  non-normative French mirror in `doc/fr/` and empirical lab evidence preserved
+  in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)); `CONTRACT.md` advances to
   `0.4.0-draft` and `PLUGIN_CONTRACT.md` to `0.3.0-draft` (both unfrozen).
+- **Archived baselines:** full pre-D-015 decision text and detailed Gate 1-K
+  acceptance criteria (`seej/docs/phase1/EXIT_CHECKLIST.md` — including `K-08`
+  crash boundaries, finite generation-seal thresholds, per-stable-version
+  migration paths, and bounded authenticated replay-protected inter-node
+  messages) remain archived at immutable tag `archive/pre-d015-docs` (`9662a60`)
+  and serve as reference acceptance criteria until each phase re-specifies and
+  closes them with executable tests. The last runnable local prototype (with
+  its fail-closed WAL, RNG v4, and `TickN` rollback fixes) is archived at
+  `archive/prototype-v1-final` (`5841a00`), and the two lab campaigns are
+  archived at `archive/lab-campaign-1` (`1c98282`) and `archive/lab-campaign-2`
+  (`5856396`).
 - `K-05` is refocused from nine public provider replacements to internal-seam
   conformance and fault-injection doubles (`StateStore`, `AuthorityLog`,
   `Executor`); `P2-01` is retired with the removal of the inert `sy_loader`

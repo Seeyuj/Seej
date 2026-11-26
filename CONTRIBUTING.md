@@ -51,19 +51,16 @@ A contribution is incompatible when it:
 
 ## Validation
 
-Run commands from `seej/server/` using the pinned toolchain:
+Run the unified validation script from the repository root (pins Rust `1.95.0`
+via `rust-toolchain.toml`):
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-python3 scripts/check_sy_core_purity.py --self-test
-python3 scripts/check_sy_core_purity.py
+python3 -B seej/server/scripts/check.py
 ```
 
-For documentation-only changes, verify all local links, anchors, commands, and
-implemented-vs-target labels.
+For documentation-only changes, `python3 -B seej/server/scripts/check_docs.py`
+verifies all local links, Unicode anchors, single root `AGENTS.md`, and EN/FR
+ID parity.
 
 ## Workflow & Governance
 

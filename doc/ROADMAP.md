@@ -27,13 +27,13 @@ The legacy spatial prototype (`Entity`/`Zone`, JSON snapshots, dual
 The repository now starts from a minimal 4-crate workspace skeleton
 (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) with active guardrails:
 
-| Done | Criterion | Evidence | Reproduce from `seej/server/` |
+| Done | Criterion | Evidence | Reproduce from repository root |
 | --- | --- | --- | --- |
-| [x] | `P0-01` pure-core gate | [`scripts/check_sy_core_purity.py`](../seej/server/scripts/check_sy_core_purity.py) (17 self-tests incl. `std::thread` and char literals) + CI dep DAG check | `python3 scripts/check_sy_core_purity.py --self-test` && `python3 scripts/check_sy_core_purity.py` |
-| [x] | `P1-01` repository CI | [`.github/workflows/rust.yml`](../.github/workflows/rust.yml) (purity, fmt, clippy, test, doc, audit, deny, DAG) | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace --all-targets`; `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` |
-| [x] | `P1-02` pinned toolchain | [`rust-toolchain.toml`](../seej/server/rust-toolchain.toml) (`1.95.0`) | `rustc --version` |
-| [x] | `P2-01` inert placeholders retired | Removed dead placeholders (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) and legacy prototype per D-015 | `cargo metadata --no-deps` |
-| [x] | D-015 baseline & empirical benchmarks | [DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam) and [BENCHMARKS.md](../seej/docs/BENCHMARKS.md) | Clean 4-crate workspace compiles & passes Rustdoc with `-D warnings` |
+| [x] | `P0-01` pure-stack gate | [`check_sy_core_purity.py`](../seej/server/scripts/check_sy_core_purity.py) (18 self-tests across `sy_types`/`sy_api`/`sy_core` incl. `f32`/`f64`, `std::thread`, char literals) + [`check_dag.py`](../seej/server/scripts/check_dag.py) (normal + dev + build deps) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
+| [x] | `P1-01` repository CI & unified check | [`check.py`](../seej/server/scripts/check.py) + [`check_docs.py`](../seej/server/scripts/check_docs.py) + [`.github/workflows/rust.yml`](../.github/workflows/rust.yml) (`--locked`, `deny` incl. `bans`, open-source PR workflow) | `python3 -B seej/server/scripts/check.py` |
+| [x] | `P1-02` pinned toolchain | [`rust-toolchain.toml`](../rust-toolchain.toml) & [`seej/server/rust-toolchain.toml`](../seej/server/rust-toolchain.toml) (`1.95.0`) + `rust-version = "1.95.0"` | `rustc --version` |
+| [x] | `P2-01` inert placeholders retired | Removed dead placeholders (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) and retired prototype archived at tag `archive/prototype-v1-final` (`5841a00`) | `git show --stat archive/prototype-v1-final` |
+| [x] | D-015 baseline & empirical benchmarks | [DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam) & [BENCHMARKS.md](../seej/docs/BENCHMARKS.md); raw harnesses pinned at `archive/lab-campaign-1` (`1c98282`) & `archive/lab-campaign-2` (`5856396`) | `git show archive/lab-campaign-1:seej/server/lab/workloads/RESULTS.md` & `git show archive/lab-campaign-2:seej/server/lab/workloads/RESULTS-layout.md` |
 
 ---
 
@@ -254,8 +254,8 @@ Deferred until triggered by real workloads or measurements; none blocks v1
 freeze, and all are additive over the frozen v1 plugin contract:
 
 ### Phase 4.1 — Dense Workload Scale (e.g. Load B — $10^5$ writes/tick)
-- [ ] **Async off-path CoW checkpoints** (eliminate the 240–435 ms synchronous
-  144 MB checkpoint stall measured in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
+- [ ] **Async off-path CoW checkpoints** (eliminate the 237–435 ms synchronous
+  144 MB checkpoint stall — 1,485 ms outlier — measured in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
 - [ ] **Compact verified-tick proof mode (`root`)** in execution profiles once
   plugin determinism is enforced by isolation or verified profiles.
 - [ ] **Multi-core parallel `Executor`** (`Block-STM` + optional `BoundedDelta`

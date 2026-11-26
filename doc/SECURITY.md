@@ -17,10 +17,12 @@ operator host infrastructure.
 ## Current and Target Security Posture
 
 - **Current repository state (`seej/server/` — Phase 0 clean slate):**
-  4-crate Rust workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`)
-  with active build/purity/supply-chain guardrails (`check_sy_core_purity.py`,
-  `cargo-audit`, `cargo-deny`, dependency-DAG checks). No runtime daemon,
-  storage engine, consensus, authentication, or plugin isolation exists yet.
+  empty 4-crate Rust workspace skeleton (`sy_types`, `sy_api`, `sy_core`,
+  `sy_infra`) with active build/purity/supply-chain guardrails
+  (`check_sy_core_purity.py` across all 3 pure crates, `check_dag.py` across
+  normal/dev/build deps, `check_docs.py`, `cargo-audit`, and `cargo deny check
+  advisories licenses bans sources`). No runtime daemon, storage engine,
+  consensus, authentication, or plugin isolation exists yet.
 - **Target v1 (Gate 1-K):** crash-fault-tolerant (CFT) authority groups of 1 or
   3 operator-authenticated nodes (quorum 2). Byzantine authorized nodes are
   outside the v1 fault model; unauthenticated admission, privilege bypass,
@@ -49,7 +51,8 @@ Protect at minimum:
 
 ## Trust Boundaries
 
-- **Nodes:** discovery never grants membership. Connections bind to an
+- **Nodes:** discovery never grants membership. Inter-node messages and
+  connections must be bounded, authenticated, and replay-protected, binding an
   authenticated `node_id`, world, authority term, configuration version, and
   compatible execution profile. Stale or minority nodes cannot confirm mutations
   or claim current reads.

@@ -1,7 +1,7 @@
 # Journal des décisions
 
-> *Miroir français de [`doc/DECISIONS.md`](../DECISIONS.md). La version anglaise
-> fait foi en cas d'écart.*
+> **Traduction non normative** de [`doc/DECISIONS.md`](../DECISIONS.md). La
+> version anglaise fait foi en cas d'écart.
 
 Ce document consigne les décisions architecturales structurantes de Seej : ce
 qui a été décidé, pourquoi, ce que cela implique et ce que les décisions
@@ -10,6 +10,11 @@ ultérieures ont remplacé. Ce n'est ni une feuille de route (voir
 [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md)).
 
 ## Index des décisions
+
+> **Note de traçabilité :** les entrées `D-001` à `D-014` ci-dessous ont été
+> condensées en résumés concis par `D-015` sans modifier leur intention
+> acceptée. Leur texte intégral pré-D-015 est archivé de façon permanente au
+> tag immuable `archive/pre-d015-docs` (`9662a60`).
 
 | ID | Décision | Statut |
 | --- | --- | --- |
@@ -219,9 +224,10 @@ A ajouté des mécanismes de frontière concrets à D-013 :
   tombales (*tombstones*), planchers de générations fermées et limites
   persistées finies.
 - Distinction entre `confirmed_cursor`, `checkpoint_cursor` et `applied_cursor`.
-- Clarification des écarts lecture seule actuels de `sy_cli` (création de
-  répertoire par `FilesystemStore::new` et aliasing non gardé de
-  `dump --output`) sous `P1-11`.
+- Clarification des écarts lecture seule du prototype retiré `sy_cli`
+  (création de répertoire par `FilesystemStore::new` et aliasing non gardé de
+  `dump --output`) sous `P1-11`, conservés comme critères d'acceptation pour
+  la future CLI.
 
 ---
 
@@ -252,30 +258,40 @@ problèmes structurels :
    `CancelCommand` avec `LimitExceeded` alors que les ticks ne pouvaient plus
    avancer pour faire expirer les anciens enregistrements.
 
-Deux campagnes de benchmarks jetables mono-thread (`lab/wal-fail-closed-load-b`
-`1c98282` et `lab/state-layout-b` `5856396`, Ryzen 9 5900X, NVMe Crucial P2,
-Rust 1.95.0, 1 000 000 clés × 128 o, budget tick 10 Hz / 100 ms, 24/24 reprises
-vérifiées par racine) ont établi cinq faits concrets :
+Deux campagnes de benchmarks jetables mono-thread conservées aux tags immuables
+`archive/lab-campaign-1` (`1c98282`, 6/6 reprises propres) et
+`archive/lab-campaign-2` (`5856396`, 24/24 reprises propres — cache OS chaud,
+sans injection de pannes), sur Ryzen 9 5900X + NVMe Crucial P2 + Rust 1.95.0,
+1 000 000 clés × 128 o, budget tick 10 Hz / 100 ms, ont établi cinq faits
+concrets (tableaux complets dans [BENCHMARKS.md](BENCHMARKS.md)) :
 
 - **Les charges de commandes et mixtes (A : 1 000 cmd/tick ; C : 1 000 cmd +
-  1 000 écritures autonomes + 80 % de clés chaudes)** tiennent largement le
-  budget de 100 ms sur un thread en mode `delta` : **p99 = 8,6–11,8 ms**,
-  journal **4,2–5,6 Mo/s**, rejeu **2,1–3,4 ms/tick**.
+  1 000 écritures autonomes + 80 % de clés chaudes)** tiennent le budget de
+  100 ms sur un thread en mode `delta` sur toutes les variantes hors rehash :
+  **p99 = 8,62–21,74 ms** (`A` : `8,62–10,83 ms`, `C` : `11,77–21,74 ms`,
+  médiane `6,64–9,95 ms` ; **marge 4,6×–11,6×**), journal **4,17–5,61 Mo/s**,
+  rejeu propre **2,06–3,35 ms/tick**.
 - **La charge autonome dense (B : 100 000 écritures/tick)** échoue au budget de
-  100 ms en mode `delta` sur les 8 exécutions : 14,4 Mo/tick d'écritures
-  synchrones déclenchent une latence de queue NVMe erratique (**commit p99
-  jusqu'à 240–400 ms**) et projettent 144 Mo/s avant réplication.
-- **L'organisation mémoire de l'état domine le coût CPU en charge dense :**
-  passer de `BTreeMap` + overlay à un stockage contigu par partition avec undo
-  en place ramène B en mode `root` de **147,1 ms à 79,0 ms p99** (66,1 ms
-  médiane) sur un thread.
+  100 ms en mode `delta` sur **les 9 exécutions** (1 en Campagne 1 + 8 en
+  Campagne 2) : 14,4 Mo/tick d'écritures synchrones donnent un **p99 tick
+  complet de 113,41–482,78 ms** (commit `sync_data` p99 jusqu'à
+  **283,10–400,12 ms**, max **689,37 ms**) et projettent 144 Mo/s avant
+  réplication.
+- **L'organisation mémoire de l'état domine le coût CPU en charge dense, tandis
+  que la cible de ratio de rejeu `< 0,5` n'est pas atteinte :** passer de
+  `BTreeMap` + overlay à un stockage contigu par partition avec undo en place
+  ramène B en mode `root` de **147,07 ms à 78,95 ms p99** (66,13 ms médiane)
+  sur un thread, mais **aucune variante n'atteint le ratio `< 0,5` visé sur B**
+  (meilleur : **0,55** en `delta` / **0,62** en `root` avec
+  `partitioned/acc-cached`).
 - **Le rehash complet par partition casse les charges de commandes dispersées**
   dès lors que des racines par résolution sont exigées (A/C passent de
   **6–10 ms à 115–169 ms** médiane ; même B est plus lent à 51 ms contre 29 ms
   avec empreintes par enregistrement mises en cache).
 - **Les checkpoints complets synchrones (144 Mo)** figent le tick 100 pendant
-  **237–435 ms** (pointe à 1 485 ms) sur les six charges, prouvant que l'I/O
-  de checkpoint doit sortir du chemin critique du tick à grande échelle.
+  **237–435 ms** sur la Campagne 2 (pointe à **1 485 ms** ; Campagne 1 :
+  **247–326 ms**), prouvant que l'I/O de checkpoint doit sortir du chemin
+  critique du tick à grande échelle.
 
 ### Décision
 
@@ -298,9 +314,9 @@ vérifiées par racine) ont établi cinq faits concrets :
      matérialisation explicite de `WriteSet` (`delta`) est la **valeur par
      défaut en v1** (préservant la sûreté de reprise D-014 tant que les plugins
      au démarrage sont en Rust natif non isolé et couvrant les charges A/C avec
-     une marge ~10×) ; un mode de preuve compact vérifié par tick (`root`)
-     reste une option de profil future explicite pour les charges denses une
-     fois les exigences d'isolation/déterminisme remplies.
+     une marge de 4,6×–11,6×) ; un mode de preuve compact vérifié par tick
+     (`root`) reste une option de profil future explicite pour les charges
+     denses une fois les exigences d'isolation/déterminisme remplies.
    - **Algorithme de hash** paramétré dans le profil versionné, jamais figé sur
      une unique primitive cryptographique dans le contrat racine. Tant que des
      racines par résolution sont actives, le hash doit se mettre à jour de
@@ -364,9 +380,20 @@ vérifiées par racine) ont établi cinq faits concrets :
 ### Conséquences
 
 - La documentation est consolidée en un jeu unique sans redondance (avec un
-  miroir français dans `doc/fr/` et les preuves empiriques conservées dans
-  [BENCHMARKS.md](BENCHMARKS.md)) ; `CONTRACT.md` passe en `0.4.0-draft` et
-  `PLUGIN_CONTRACT.md` en `0.3.0-draft` (tous deux non gelés).
+  miroir français non normatif dans `doc/fr/` et les preuves empiriques
+  conservées dans [BENCHMARKS.md](BENCHMARKS.md)) ; `CONTRACT.md` passe en
+  `0.4.0-draft` et `PLUGIN_CONTRACT.md` en `0.3.0-draft` (tous deux non gelés).
+- **Bases archivées :** le texte intégral des décisions pré-D-015 et les
+  critères d'acceptation détaillés de Gate 1-K (`seej/docs/phase1/EXIT_CHECKLIST.md`
+  — y compris les frontières de crash `K-08`, les seuils finis de scellement de
+  génération, les chemins de migration depuis chaque version stable et les
+  messages inter-nœuds bornés, authentifiés et protégés contre le rejeu)
+  restent archivés au tag immuable `archive/pre-d015-docs` (`9662a60`) comme
+  référence d'acceptation jusqu'à leur re-spécification et fermeture par tests
+  phase par phase. Le dernier prototype local exécutable (avec ses correctifs
+  WAL *fail-closed*, RNG v4 et rollback `TickN`) est archivé au tag
+  `archive/prototype-v1-final` (`5841a00`), et les deux campagnes labo aux tags
+  `archive/lab-campaign-1` (`1c98282`) et `archive/lab-campaign-2` (`5856396`).
 - `K-05` est recentré des neuf remplacements de fournisseurs publics vers la
   conformité des coutures internes et les doubles à injection de pannes
   (`StateStore`, `AuthorityLog`, `Executor`) ; `P2-01` est retiré avec la

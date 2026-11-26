@@ -1,7 +1,7 @@
 # Benchmarks empiriques (preuves de laboratoire D-015)
 
-> *Miroir français de [`seej/docs/BENCHMARKS.md`](../../seej/docs/BENCHMARKS.md).
-> La version anglaise fait foi en cas d'écart.*
+> **Traduction non normative** de [`seej/docs/BENCHMARKS.md`](../../seej/docs/BENCHMARKS.md).
+> La version anglaise fait foi en cas d'écart.
 
 ```text
 status: RÉFÉRENCE EMPIRIQUE — MESURÉE SUR HARNAIS JETABLE AVANT RÉÉCRITURE DU CŒUR
@@ -9,9 +9,12 @@ status: RÉFÉRENCE EMPIRIQUE — MESURÉE SUR HARNAIS JETABLE AVANT RÉÉCRITUR
 
 Pour ancrer [D-015](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée)
 dans des mesures réelles avant d'écrire le noyau v1 sur base vierge, deux
-campagnes autonomes mono-thread (`seej_lab_workloads` sur les branches
-`lab/wal-fail-closed-load-b` `1c98282` et `lab/state-layout-b` `5856396`, hors
-workspace/CI) ont évalué trois charges synthétiques.
+campagnes autonomes mono-thread (`seej_lab_workloads`, hors workspace/CI) ont
+évalué trois charges synthétiques. Les deux harnais bruts, rapports et résumés
+JSON sont conservés de façon permanente à des tags Git immuables :
+
+- **Campagne 1 :** tag `archive/lab-campaign-1` (`1c98282`, `seej/server/lab/workloads/RESULTS.md`) — 6 séries (témoin `BTreeMap` × `delta`/`root`), **6/6 reprises propres**.
+- **Campagne 2 :** tag `archive/lab-campaign-2` (`5856396`, `seej/server/lab/workloads/RESULTS-layout.md`) — 24 séries (4 variantes stockage/hash + resérie B/`delta` en ordre inverse), **24/24 reprises propres**.
 
 ---
 
@@ -20,11 +23,13 @@ workspace/CI) ont évalué trois charges synthétiques.
 - **Matériel / chaîne :** AMD Ryzen 9 5900X + NVMe Crucial P2 1 To, Windows 11,
   `rustc 1.95.0 --release`, exécution mono-thread.
 - **Taille d'état :** **1 000 000 clés × 128 o** (1 000 partitions × 1 000
-  enregistrements ; checkpoint ~144 Mo).
-- **Cadence cible :** **budget de tick 10 Hz / 100 ms**.
-- **Vérification de reprise :** **24/24 reprises** (checkpoint au tick 100 +
-  200 ticks de rejeu) ont reproduit exactement la racine d'état sémantique de
-  l'exécution directe.
+  enregistrements ; checkpoint 144 000 068 octets).
+- **Cadence cible :** **budget de tick 10 Hz / 100 ms** (300 ticks, 10
+  d'échauffement, 290 mesurés, checkpoint complet au tick 100).
+- **Vérification de reprise :** chaque reprise propre (checkpoint au tick 100 +
+  200 ticks rejoués, cache OS chaud, **sans injection de pannes**) a reproduit
+  exactement la racine d'état sémantique de son exécution directe (`6/6` en
+  Campagne 1 ; `24/24` en Campagne 2).
 
 Charges testées :
 
@@ -49,44 +54,49 @@ Variantes stockage & hachage testées :
 
 ## Résultats mesurés
 
-| Charge & variante | `delta` p99 (ms) | `root` p99 (ms) | `delta` octets/tick | `root` octets/tick | Meilleur rejeu (ms/tick) |
+| Charge & variante | `delta` p99 (ms) | `root` p99 (ms) | `delta` octets/tick | `root` octets/tick | Rejeu (ms/tick) & ratio (/100 ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **A** — `btree/acc` | 10,0–10,8 | 8,8–9,2 | 417 Ko (4,2 Mo/s) | 129 Ko (1,3 Mo/s) | 2,78 (`delta`) |
-| **A** — `partitioned/acc-cached` | **8,6** | **7,6** | 417 Ko | 129 Ko | **2,06** (`delta`) |
-| **A** — `partitioned/rehash` | 162,6 | 166,8 | 417 Ko | 129 Ko | — (cassé par le rehash par cmd) |
-| **C** — `btree/acc` | 11,8–12,4 | 10,7–11,7 | 561 Ko (5,6 Mo/s) | 129 Ko | 3,35 (`delta`) |
-| **C** — `partitioned/acc-cached` | 21,7* (p50 **8,4**) | 29,4* (p50 **7,6**) | 561 Ko | 129 Ko | **~2,5–3,7** |
-| **B** — `btree/acc` | 161–445 | 140–147 | **14,4 Mo (144 Mo/s)** | **89 o** | 113–129 (ratio > 1,1) |
-| **B** — `partitioned/acc` | 130–348 | **95,1** | 14,4 Mo | 89 o | 70–82 |
-| **B** — `partitioned/acc-cached` | 279–383 | **79,0** (p50 **66,1**) | 14,4 Mo | 89 o | **54,6** (`delta`) / **61,8** (`root`) |
-| **B** — `partitioned/rehash` | 113–483 | 98,5 | 14,4 Mo | 89 o | 73,7–77,7 |
+| **A** — `btree/acc` | 10,01–10,83 | 8,82–9,20 | 417 Ko (4,17 Mo/s) | 129 Ko (1,29 Mo/s) | 2,78 (`delta`, 0,028) |
+| **A** — `partitioned/acc-cached` | **8,62** | **7,55** | 417 Ko | 129 Ko | **2,06** (`delta`, 0,021) |
+| **A** — `partitioned/rehash` | 162,58 | 166,81 | 417 Ko | 129 Ko | — (cassé par le rehash par cmd) |
+| **C** — `btree/acc` | 11,77–12,36 | 10,72–11,69 | 561 Ko (5,61 Mo/s) | 129 Ko | 3,35 (`delta`, 0,034) |
+| **C** — `partitioned/acc-cached` | 21,74* (p50 **8,38**) | 29,42* (p50 **7,59**) | 561 Ko | 129 Ko | **~2,5–3,7** (0,025–0,037) |
+| **B** — `btree/acc` | 161,13–444,59 | 139,69–147,07 | **14,4 Mo (144 Mo/s)** | **89 o** | 113,12–129,44 (ratio **1,13–1,29**) |
+| **B** — `partitioned/acc` | 129,64–348,07 | **95,13** | 14,4 Mo | 89 o | 69,85–82,34 (ratio **0,70–0,82**) |
+| **B** — `partitioned/acc-cached` | 279,18–383,31 | **78,95** (p50 **66,13**) | 14,4 Mo | 89 o | **54,62** `delta` (**0,55**) / **61,79** `root` (**0,62**) |
+| **B** — `partitioned/rehash` | 113,41–482,78 | 98,48 | 14,4 Mo | 89 o | 73,65–77,71 (ratio **0,74–0,78**) |
 
-*\*Sur C (`partitioned/acc-cached`), toutes les phases CPU sont restées ≤ 7,6 ms max ; le saut du p99 provient de deux pointes de latence NVMe `sync_data` de 50–60 ms décalées au rang 288/290 par le checkpoint au tick 100.*
+*\*Sur C (`partitioned/acc-cached`), le p99 est monté à 21,74 ms (`delta`) et 29,42 ms (`root`) alors que la médiane baissait (`8,38` / `7,59 ms`). Comme consigné dans `RESULTS-layout.md`, cela a été mesuré une seule fois et n'est pas expliqué par ces mesures.*
 
 ---
 
 ## Enseignements empiriques guidant D-015
 
-1. **Les charges de commandes et mixtes (A et C) passent avec une marge ~10× en
-   mode `delta`** sur un seul cœur, validant `delta` comme valeur par défaut
-   sûre en v1 tant que les plugins au démarrage restent en Rust natif non isolé.
-2. **La charge autonome dense B échoue en `delta` sur la latence de queue
-   disque** (14,4 Mo/tick d'écritures synchrones donnant un p99 jusqu'à
-   283–400 ms et 144 Mo/s avant réplication), confirmant que le mode de preuve
-   (`delta` vs futur `root`) doit vivre dans le profil d'exécution versionné
-   plutôt que d'être codé en dur.
-3. **Le stockage contigu par partition domine le coût CPU en charge dense :**
-   il réduit le p99 de B en `root` de **147 ms à 79 ms** sur un thread. À
-   l'inverse, le rehash complet par partition détruit les charges de commandes
-   dispersées (**115–169 ms** sur A/C) lorsque des racines par résolution sont
-   maintenues — prouvant que les racines doivent se mettre à jour de façon
-   incrémentale par enregistrement modifié.
-4. **Les checkpoints complets synchrones (144 Mo) bloquent chaque charge
-   pendant 237–435 ms** (une pointe à 1 485 ms), confirmant que des checkpoints
-   CoW asynchrones hors chemin critique sont nécessaires avant le passage à
-   grande échelle en production (Phase 4.1 / Gate 1-D).
+1. **Les charges de commandes et mixtes (A et C) passent en mode `delta` avec
+   une marge de 4,6×–11,6×** sur un seul cœur (`p99 = 8,62–21,74 ms`, médiane
+   `6,64–9,95 ms`), validant `delta` comme valeur par défaut sûre en v1 tant
+   que les plugins au démarrage restent en Rust natif non isolé.
+2. **La charge autonome dense B échoue en `delta` sur les 9 exécutions** (1 en
+   Campagne 1 + 8 en Campagne 2) : le p99 du tick complet va de **113,41 à
+   482,78 ms** (tiré par la latence variable du `sync_data` de 14,4 Mo/tick
+   jusqu'à **283,10–400,12 ms** p99, max **689,37 ms**, et 144 Mo/s projetés
+   avant réplication), confirmant que le mode de preuve (`delta` vs futur
+   `root`) doit vivre dans le profil d'exécution versionné.
+3. **Le stockage contigu par partition domine le coût CPU en charge dense, mais
+   la cible de ratio de rejeu `< 0,5` sur B n'est PAS atteinte :** ce layout
+   réduit le p99 de B en `root` de **147,07 ms à 78,95 ms** sur un thread, mais
+   aucune variante testée n'atteint `< 0,5` (meilleur : **0,55** en `delta` /
+   **0,62** en `root`). À l'inverse, le rehash complet par partition détruit
+   les charges de commandes dispersées (**115–169 ms** médiane sur A/C) —
+   prouvant que les racines doivent se mettre à jour incrémentalement par
+   enregistrement modifié.
+4. **Les checkpoints complets synchrones (144 Mo) bloquent le tick 100 pendant
+   237–435 ms** sur la Campagne 2 (une pointe à **1 485 ms** ; Campagne 1 :
+   **247–326 ms**), confirmant que des checkpoints CoW asynchrones hors chemin
+   critique sont nécessaires à grande échelle (Phase 4.1 / Gate 1-D).
 5. **Limites de ces mesures :** mono-thread, état en RAM, accumulateur BLAKE3
-   additif expérimental (pas un schéma cryptographique de production), cache OS
-   chaud à la reprise, pas de surcoût réseau/quorum et aucun moteur embarqué
-   (`redb`/`Fjall`) encore mesuré — les vrais benchmarks de moteur de stockage
-   auront lieu au démarrage de la **Phase 1.4** ([ROADMAP.md](ROADMAP.md)).
+   additif expérimental (pas un schéma cryptographique de production), rejeu
+   propre avec cache OS chaud sans injection de pannes, pas de surcoût
+   réseau/quorum et aucun moteur embarqué (`redb`/`Fjall`) encore mesuré — les
+   vrais benchmarks de moteur de stockage auront lieu au démarrage de la
+   **Phase 1.4** ([ROADMAP.md](ROADMAP.md)).

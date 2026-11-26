@@ -1,31 +1,32 @@
 # Contrat public plugin de Seej
 
-> *Miroir français de [`seej/docs/PLUGIN_CONTRACT.md`](../../seej/docs/PLUGIN_CONTRACT.md).
-> La version anglaise fait foi en cas d'écart.*
+> **Traduction non normative** de [`seej/docs/PLUGIN_CONTRACT.md`](../../seej/docs/PLUGIN_CONTRACT.md).
+> La version anglaise fait foi en cas d'écart.
 
 ```text
 contract_version: 0.3.0-draft
 status:           BROUILLON — NON GELÉ (écart K-01)
 ```
 
-Ce document définit l'**unique frontière publique gelée en v1** : le contrat
-entre le noyau de monde Seej et les plugins applicatifs. Il doit rester
-utilisable par des auteurs tiers sans lire `sy_core` ni le code interne de
-stockage ou de consensus.
+Ce document définit l'**unique frontière publique visée pour le gel en v1**
+(actuellement `BROUILLON — NON GELÉ` jusqu'à `K-01`) : le contrat entre le
+noyau de monde Seej et les plugins applicatifs. Il doit rester utilisable par
+des auteurs tiers sans lire `sy_core` ni le code interne de stockage ou de
+consensus.
 
 ---
 
-## 1. Une seule couture publique gelée
+## 1. Une seule couture publique visée pour le gel
 
 Selon [D-015](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) :
 
-- **Gelé en v1 :** le **contrat plugin applicatif** défini ici (ainsi que les
-  schémas publics de commandes et d'observation dans
-  [CONTRACT.md](CONTRACT.md)).
-- **Interne en v1 (non gelé publiquement) :** `StateStore`, `AuthorityLog` et
-  `Executor`. Ces composants restent des traits Rust internes propres testés
-  avec des doubles en mémoire et à injection de pannes (`K-05`), libres
-  d'évoluer sans casser les plugins.
+- **Frontière publique visée pour le gel v1 (`K-01`) :** le **contrat plugin
+  applicatif** défini ici (ainsi que les schémas publics de commandes et
+  d'observation dans [CONTRACT.md](CONTRACT.md)).
+- **Coutures internes cibles en v1 (non gelées publiquement) :** `StateStore`,
+  `AuthorityLog` et `Executor`. Ces composants sont conçus comme des traits
+  Rust internes destinés à être vérifiés avec des doubles en mémoire et à
+  injection de pannes (`K-05`), libres d'évoluer sans casser les plugins.
 - **Modèle de confiance et chargement :** la v1 ne charge au démarrage du
   processus que des plugins natifs de confiance approuvés par l'opérateur. Le
   chargement à chaud, le remplacement à chaud et l'exécution isolée (ex. WASM

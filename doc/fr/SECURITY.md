@@ -1,7 +1,7 @@
 # Politique de sécurité
 
-> *Miroir français de [`doc/SECURITY.md`](../SECURITY.md). La version anglaise
-> fait foi en cas d'écart.*
+> **Traduction non normative** de [`doc/SECURITY.md`](../SECURITY.md). La
+> version anglaise fait foi en cas d'écart.
 
 La sécurité est une propriété structurelle des contrats d'autorité, de
 persistance, de plugins et de compatibilité de Seej. Un monde corrompu en
@@ -21,11 +21,12 @@ netcode ingame et infrastructure hôte des opérateurs.
 ## Posture de sécurité actuelle et cible
 
 - **État actuel du dépôt (`seej/server/` — Phase 0 socle vierge) :** squelette
-  workspace Rust en 4 crates (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) avec
-  garde-fous actifs de compilation, pureté et chaîne d'approvisionnement
-  (`check_sy_core_purity.py`, `cargo-audit`, `cargo-deny`, contrôle du DAG de
-  dépendances). Aucun démon, moteur de stockage, consensus, authentification ou
-  isolation de plugin n'existe encore.
+  workspace Rust vide en 4 crates (`sy_types`, `sy_api`, `sy_core`, `sy_infra`)
+  avec garde-fous actifs de compilation, pureté et chaîne d'approvisionnement
+  (`check_sy_core_purity.py` sur les 3 crates purs, `check_dag.py` sur
+  normal/dev/build, `check_docs.py`, `cargo-audit` et `cargo deny check
+  advisories licenses bans sources`). Aucun démon, moteur de stockage,
+  consensus, authentification ou isolation de plugin n'existe encore.
 - **Cible v1 (Gate 1-K) :** groupes d'autorité tolérants aux pannes franches
   (CFT) de 1 ou 3 nœuds authentifiés par les opérateurs (quorum 2). Les nœuds
   autorisés byzantins sont hors modèle de panne v1 ; l'admission non
@@ -58,11 +59,12 @@ Protéger au minimum :
 
 ## Frontières de confiance
 
-- **Nœuds :** la découverte n'accorde jamais le membership. Les connexions se
-  lient à un `node_id` authentifié, au monde, au terme d'autorité, à la version
-  de configuration et à un profil d'exécution compatible. Un nœud périmé ou
-  minoritaire ne peut ni confirmer de mutations ni prétendre à une lecture
-  courante.
+- **Nœuds :** la découverte n'accorde jamais le membership. Les messages et
+  connexions inter-nœuds doivent être bornés, authentifiés et protégés contre
+  le rejeu, en liant un `node_id` authentifié, le monde, le terme d'autorité,
+  la version de configuration et un profil d'exécution compatible. Un nœud
+  périmé ou minoritaire ne peut ni confirmer de mutations ni prétendre à une
+  lecture courante.
 - **Producteurs et observateurs :** toute entrée externe est non fiable.
   Authentifier, appliquer les limites de taille/cardinalité et valider avant
   l'exécution pure. Les observateurs ne reçoivent que les domaines autorisés et
@@ -86,7 +88,8 @@ Signaler en privé à : **security@seej.org**
 
 Inclure le commit/version affecté, la frontière touchée, l'impact potentiel sur
 l'état du monde, des étapes de reproduction sûres et une piste de remédiation si
-disponible.
+disponible. Les mainteneurs accuseront réception, évalueront et coordonneront
+la remédiation ; aucun SLA fixe n'est garanti.
 
 ## Responsabilités de l'opérateur
 

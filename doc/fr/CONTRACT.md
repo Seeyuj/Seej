@@ -1,7 +1,7 @@
 # Contrat noyau et autorité de Seej
 
-> *Miroir français de [`seej/docs/CONTRACT.md`](../../seej/docs/CONTRACT.md).
-> La version anglaise fait foi en cas d'écart.*
+> **Traduction non normative** de [`seej/docs/CONTRACT.md`](../../seej/docs/CONTRACT.md).
+> La version anglaise fait foi en cas d'écart.
 
 ```text
 contract_version: 0.4.0-draft

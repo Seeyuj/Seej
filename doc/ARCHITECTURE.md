@@ -1,17 +1,18 @@
 # Architecture
 
 ```text
-status: TARGET ARCHITECTURE (D-015) — WORKSPACE IS AT CLEAN-SLATE PHASE 0 (READY FOR PHASE 1.1)
+status: TARGET ARCHITECTURE (D-015) — WORKSPACE IS AN EMPTY PHASE 0 SKELETON (READY FOR PHASE 1.1)
 ```
 
 This document is the single architectural blueprint for Seej. It consolidates
 system boundaries, the logical state model, execution flow, internal vs. public
-seams, dependency rules, and repository layout. Normative guarantees live in
-[CONTRACT.md](../seej/docs/CONTRACT.md) and
+seams, dependency rules, and repository layout. Normative draft contracts live
+in [CONTRACT.md](../seej/docs/CONTRACT.md) and
 [PLUGIN_CONTRACT.md](../seej/docs/PLUGIN_CONTRACT.md); historical decisions
 and measurement rationale live in
 [DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam)
-and [BENCHMARKS.md](../seej/docs/BENCHMARKS.md).
+and [BENCHMARKS.md](../seej/docs/BENCHMARKS.md); authoritative phase ordering
+lives solely in [ROADMAP.md](ROADMAP.md).
 
 ## Philosophy and Boundaries
 
@@ -37,7 +38,8 @@ application models** (in plugins and consumers):
 community plugins & consumers               operators & observers
 space · economy · AI · multires · netcode   CLI · monitoring · streams
                  |                                      |
-                 +---- ONE FROZEN PUBLIC BOUNDARY ------+
+                 +--- ONE TARGET v1 PUBLIC BOUNDARY ----+
+                 |         (DRAFT — NOT FROZEN)         |
                                     |
                      logical world kernel (per world)
            identity · tick · commands · write-set · roots · obligations
@@ -73,14 +75,15 @@ owner domains exposing two logical primitives:
 
 ### Single mutation path (eliminates full-world cloning and replay drift)
 
-Live execution and crash recovery share **one** canonical mutation path:
+Live execution and crash recovery are designed to share **one** canonical
+mutation path:
 
 ```text
 immutable StateView (at base_cursor)
   -> plugin batch evaluation -> CandidateOverlay / WriteSet + Events + Decision
   -> cross-domain validation on complete candidate
   -> durable confirmation (group-committed per tick)
-  -> StateStore::apply(WriteSet)  [same function in live execution and recovery]
+  -> apply(WriteSet)  [same canonical path in live execution and recovery]
 ```
 
 - **No `world.clone()`:** failed commands, stale base cursors, or plugin
@@ -93,7 +96,7 @@ immutable StateView (at base_cursor)
 ### Derived entropy (`EntropyScope`)
 
 Global mutable RNG state breaks plugin isolation and blocks parallelism. The
-core derives deterministic entropy from canonical coordinates:
+target core derives deterministic entropy from canonical coordinates:
 
 ```text
 EntropyScope(world_seed, entropy_epoch, tick, admission_seq | phase, domain_id)
@@ -116,12 +119,12 @@ local buffers and receive canonical IDs in deterministic order.
 
 ### Sequential v1 + Deterministic Simulation Testing (DST)
 
-v1 ships a **batched sequential executor** (1 group commit per tick). This
-delivers two major advantages proven in production engines (TigerBeetle,
-FoundationDB):
+Target v1 ships a **batched sequential executor** (1 group commit per tick; not
+yet implemented in the Phase 0 skeleton). This delivers two major advantages:
 
-1. It already handles 10k commands/sec on 1M keys in ~6–12 ms/tick on one core
-   (see [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
+1. Throwaway lab benchmarks show a single-threaded sequential path can handle
+   10k commands/sec on 1M keys in **8.62–21.74 ms p99** (median **6.64–9.95 ms**,
+   see [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
 2. It enables **single-threaded Deterministic Simulation Testing (DST)** —
    running a simulated 3-node cluster, network partitions, message reordering,
    and injected disk failures reproducibly from a single seed.
@@ -152,25 +155,26 @@ Phase 4.1 (Gate 1-D) with an absolute oracle: `root(1 core) == root(N cores)`.
 A confirmed tick commits a compact batch of resolutions anchored by
 `pre_state_root`, `post_state_root`, and `events_root`:
 
-- **Roots are frozen in the contract; proof mode and hash algorithm live in the
-  execution profile.**
+- **Roots are frozen in the target v1 contract; proof mode and hash algorithm
+  live in the execution profile.**
   - **Default v1 proof mode (`delta`):** `Resolution` carries the explicit
     canonical `WriteSet`, so ordinary recovery materializes state mechanically
     without invoking native plugins (preserving D-014 safety while plugins are
     unisolated).
   - **Future compact proof mode (`root` / verified tick SMR):** opt-in profile
-    for dense autonomous workloads (e.g. $10^5$ writes/tick, where benchmarks
-    show `delta` produces 14.4 MB/tick and saturates disk tail latency) once
-    determinism is enforced by isolation or verified profiles.
-- **Incremental per-record state hash:** benchmarks showed full per-partition
-  rehashing breaks scattered command workloads (115–169 ms/tick vs. 6–8 ms).
-  The hash algorithm itself stays a versioned profile parameter (never frozen
-  permanently to one cryptographic primitive).
+    for dense autonomous workloads (e.g. $10^5$ writes/tick, where lab
+    benchmarks show `delta` produces 14.4 MB/tick and fails the 100 ms budget
+    on disk tail latency) once determinism is enforced by isolation or verified
+    profiles.
+- **Incremental per-record state hash:** lab benchmarks showed full
+  per-partition rehashing breaks scattered command workloads (115–169 ms median
+  vs. 6–10 ms). The hash algorithm itself stays a versioned profile parameter
+  (never frozen permanently to one cryptographic primitive).
 - **Checkpoints:** `MigrationActivate` commits a mandatory boundary checkpoint
   so ordinary recovery never spans two execution profiles. Moving full
   checkpoint I/O off the tick critical path (async CoW snapshot) is required
-  before large-state production scale (benchmarks showed 240–435 ms stalls for
-  a synchronous 144 MB checkpoint).
+  before large-state production scale (lab benchmarks measured **237–435 ms**
+  stalls, with one **1,485 ms** outlier, for a synchronous 144 MB checkpoint).
 
 ### Three distinct cursors
 
@@ -181,23 +185,23 @@ A confirmed tick commits a compact batch of resolutions anchored by
    state instance (cannot serve current confirmed reads while lagging the
    quorum read barrier).
 
-## Internal Seams vs. Frozen Public Boundary
+## Internal Seams vs. Target Public Boundary
 
 Following Linux's rule (*stable user/syscall ABI, no frozen internal driver
 API*) and Cordis's 3-role rule (*a seam requires definition, provider, and
 consumer*):
 
-- **Frozen public boundary in v1 (1 boundary):**
+- **Target public boundary to freeze at `K-01` (currently DRAFT — NOT FROZEN):**
   - The **Plugin, Command, and Observation Contract**
     ([CONTRACT.md](../seej/docs/CONTRACT.md) and
     [PLUGIN_CONTRACT.md](../seej/docs/PLUGIN_CONTRACT.md)).
-- **Internal engineering seams (3 seams — tested, not frozen publicly in v1):**
+- **Target internal engineering seams (not frozen publicly in v1):**
   1. `StateStore` — MVCC snapshot cuts (`pin_cut`), atomic `apply(WriteSet)`,
-     chunk streaming, incremental root maintenance (tested with in-memory +
-     fault-injecting doubles for `P0-14`).
+     chunk streaming, incremental root maintenance (target: verified with
+     in-memory and fault-injecting doubles for `P0-14`).
   2. `AuthorityLog` — WAL group-commit, 1-node / 3-node Raft replication,
-     authority terms, joint membership, fencing, and read barriers (tested with
-     DST network/storage doubles).
+     authority terms, joint membership, fencing, and read barriers (target:
+     verified with DST network/storage doubles for `K-05` / `K-07`).
   3. `Executor` — batched sequential execution in v1; parallel `Block-STM` /
      `BSP` and Wasmtime sandboxing later without changing plugin semantics.
 
@@ -208,13 +212,13 @@ consumer*):
 ```text
 stable primitives (sy_types — zero dependencies)
         ^
-public contracts & internal traits (sy_api — depends only on sy_types)
+draft public contracts (sy_api — depends strictly on sy_types)
         ^
-pure deterministic engine (sy_core — depends only on sy_types, sy_api)
+pure deterministic engine (sy_core — depends strictly on sy_types, sy_api)
         ^
 infrastructure adapters (sy_infra)
         ^
-future node binaries (server_d, sy_cli — added in Phase 1.5)
+future node binaries (server_d, sy_cli)
 ```
 
 Application plugins depend **only** on public contract packages — never on
@@ -222,22 +226,22 @@ Application plugins depend **only** on public contract packages — never on
 
 ### Enforced workspace matrix (`seej/server/`)
 
-| Crate | Allowed dependencies | Entry coding phase |
-| --- | --- | --- |
-| `sy_types` | none (strictly enforced by CI) | Phase 1.1 |
-| `sy_api` | `sy_types` (strictly enforced by CI) | Phase 1.2 |
-| `sy_core` | `sy_types`, `sy_api` (zero external deps, strictly enforced by CI) | Phase 1.3 |
-| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ external crates added when needed) | Phase 1.4 |
+| Crate | Allowed dependencies (normal, dev, and build) |
+| --- | --- |
+| `sy_types` | none (enforced by `scripts/check_dag.py` and CI) |
+| `sy_api` | `sy_types` (enforced by `scripts/check_dag.py` and CI) |
+| `sy_core` | `sy_types`, `sy_api` (zero external deps, enforced by `scripts/check_dag.py` and CI) |
+| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ external crates added only when their phase starts) |
 
-### Pure-engine rules (`sy_core`)
+### Pure-stack rules (`sy_types`, `sy_api`, `sy_core`)
 
-`sy_core` must never access filesystem, network, wall-clock/process time,
-environment variables, OS randomness, OS threads, or randomized hash
-collections (`HashMap`/`HashSet`). Enforced by
-`seej/server/scripts/check_sy_core_purity.py` (17 self-test cases) and the CI
-dependency check in `.github/workflows/rust.yml`. Every crate enforces
-`#![deny(missing_docs)]`; pure crates additionally enforce
-`#![forbid(unsafe_code)]`.
+The three pure crates must never access filesystem, network, wall-clock/process
+time, environment variables, OS randomness, OS threads, randomized hash
+collections (`HashMap`/`HashSet`), or unconstrained floating-point types
+(`f32`/`f64`). Enforced by `seej/server/scripts/check_sy_core_purity.py`
+(18 self-test cases), `#![deny(clippy::float_arithmetic)]`,
+`#![forbid(unsafe_code)]`, and `seej/server/scripts/check_dag.py`. Every crate
+enforces `#![deny(missing_docs)]`.
 
 ### Forbidden shortcuts
 
@@ -251,30 +255,32 @@ dependency check in `.github/workflows/rust.yml`. Every crate enforces
 
 ```text
 .
-├── README.md                  # project overview & quick start
-├── AGENTS.md                  # operating invariants & verification commands
+├── README.md                  # project overview & language switcher (EN default)
+├── AGENTS.md                  # single root agent guide (map, checks, rules)
 ├── CONTRIBUTING.md            # contribution discipline & governance
-├── .github/workflows/rust.yml # CI gates (purity, fmt, clippy, test, doc, audit, deny, DAG)
+├── rust-toolchain.toml        # pinned Rust 1.95.0 at repository root
+├── .omp/RULES.md              # permanent hard prohibitions
+├── .github/workflows/rust.yml # open-source PR CI (docs, purity, DAG, rust, supply-chain, build)
 ├── doc/
 │   ├── ARCHITECTURE.md        # this blueprint (single architecture reference)
 │   ├── DECISIONS.md           # architectural decision log (D-001 through D-015)
-│   ├── ROADMAP.md             # ordered coding plan (Phase 0–4) & exit checklist
+│   ├── ROADMAP.md             # single authoritative coding plan (Phase 0–4) & exit checklist
 │   ├── SECURITY.md            # threat model & vulnerability reporting
 │   ├── CODE_OF_CONDUCT.md     # community standards
-│   └── fr/                    # French mirror of core documentation
+│   └── fr/                    # non-normative French documentation mirror
 └── seej/
     ├── docs/
     │   ├── CONTRACT.md        # draft v1 kernel, authority, command & observation contract
-    │   ├── PLUGIN_CONTRACT.md # draft v1 frozen public plugin boundary
+    │   ├── PLUGIN_CONTRACT.md # draft v1 target public plugin boundary
     │   └── BENCHMARKS.md      # empirical lab measurements grounding D-015
-    └── server/                # clean-slate Rust workspace (Phase 0 skeleton)
+    └── server/                # clean-slate Rust workspace (empty Phase 0 skeleton)
         ├── Cargo.toml
-        ├── deny.toml          # license & advisory policy (MIT/Apache/BSD)
+        ├── deny.toml          # advisories, licenses, bans, sources policy
         ├── rust-toolchain.toml
-        ├── scripts/check_sy_core_purity.py
+        ├── scripts/           # check.py, check_sy_core_purity.py, check_dag.py, check_docs.py
         └── crates/
-            ├── sy_types/      # Phase 1.1 primitives & checked counters
-            ├── sy_api/        # Phase 1.2 frozen public seam & internal traits
-            ├── sy_core/       # Phase 1.3 pure deterministic transition engine
-            └── sy_infra/      # Phase 1.4+ storage, authority, executor & DST
+            ├── sy_types/
+            ├── sy_api/
+            ├── sy_core/
+            └── sy_infra/
 ```

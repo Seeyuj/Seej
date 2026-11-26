@@ -1,7 +1,7 @@
 # Feuille de route et plan de codage ordonné
 
-> *Miroir français de [`doc/ROADMAP.md`](../ROADMAP.md). La version anglaise
-> fait foi en cas d'écart.*
+> **Traduction non normative** de [`doc/ROADMAP.md`](../ROADMAP.md). La version
+> anglaise fait foi en cas d'écart.
 
 Ce document est l'autorité unique pour le séquencement du projet, les phases de
 codage ordonnées, le statut d'implémentation et les preuves de sortie. Les
@@ -34,13 +34,13 @@ Le prototype spatial historique (`Entity`/`Zone`, snapshots JSON, double chemin
 Le dépôt repart désormais d'un squelette workspace minimal en 4 crates
 (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) avec ses garde-fous actifs :
 
-| Fait | Critère | Preuve | Reproduire depuis `seej/server/` |
+| Fait | Critère | Preuve | Reproduire depuis la racine du dépôt |
 | --- | --- | --- | --- |
-| [x] | `P0-01` porte de pureté | [`scripts/check_sy_core_purity.py`](../../seej/server/scripts/check_sy_core_purity.py) (17 auto-tests dont `std::thread` et littéraux `char`) + contrôle CI du DAG de dépendances | `python3 scripts/check_sy_core_purity.py --self-test` && `python3 scripts/check_sy_core_purity.py` |
-| [x] | `P1-01` CI du dépôt | [`.github/workflows/rust.yml`](../../.github/workflows/rust.yml) (pureté, fmt, clippy, test, doc, audit, deny, DAG) | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace --all-targets`; `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` |
-| [x] | `P1-02` chaîne épinglée | [`rust-toolchain.toml`](../../seej/server/rust-toolchain.toml) (`1.95.0`) | `rustc --version` |
-| [x] | `P2-01` *placeholders* inertes retirés | Suppression des *placeholders* morts (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) et du prototype historique selon D-015 | `cargo metadata --no-deps` |
-| [x] | Référence D-015 & benchmarks empiriques | [DECISIONS.md](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) et [BENCHMARKS.md](BENCHMARKS.md) | Le workspace 4 crates compile et passe Rustdoc avec `-D warnings` |
+| [x] | `P0-01` porte de pureté | [`check_sy_core_purity.py`](../../seej/server/scripts/check_sy_core_purity.py) (18 auto-tests sur `sy_types`/`sy_api`/`sy_core` dont `f32`/`f64`, `std::thread`, littéraux `char`) + [`check_dag.py`](../../seej/server/scripts/check_dag.py) (normal + dev + build) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
+| [x] | `P1-01` CI du dépôt & check unifié | [`check.py`](../../seej/server/scripts/check.py) + [`check_docs.py`](../../seej/server/scripts/check_docs.py) + [`.github/workflows/rust.yml`](../../.github/workflows/rust.yml) (`--locked`, `deny` incl. `bans`, CI PR open-source) | `python3 -B seej/server/scripts/check.py` |
+| [x] | `P1-02` chaîne épinglée | [`rust-toolchain.toml`](../../rust-toolchain.toml) & [`seej/server/rust-toolchain.toml`](../../seej/server/rust-toolchain.toml) (`1.95.0`) + `rust-version = "1.95.0"` | `rustc --version` |
+| [x] | `P2-01` *placeholders* inertes retirés | Suppression des *placeholders* morts (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) et prototype archivé au tag `archive/prototype-v1-final` (`5841a00`) | `git show --stat archive/prototype-v1-final` |
+| [x] | Référence D-015 & benchmarks empiriques | [DECISIONS.md](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) & [BENCHMARKS.md](BENCHMARKS.md) ; harnais bruts épinglés à `archive/lab-campaign-1` (`1c98282`) & `archive/lab-campaign-2` (`5856396`) | `git show archive/lab-campaign-1:seej/server/lab/workloads/RESULTS.md` & `git show archive/lab-campaign-2:seej/server/lab/workloads/RESULTS-layout.md` |
 
 ---
 
@@ -137,10 +137,11 @@ stockage injectées.
 - [ ] **`StateStore` local partitionné :** benchmarker les moteurs candidats
   (`redb`, `Fjall` ou store paginé partitionné maison) sur des charges réelles
   et implémenter `apply(WriteSet)` atomique + `pin_cut`.
-- [ ] **P0-13 : Séparer reprise de queue tronquée et corruption.** WAL binaire
-  *fail-closed* avec modes explicites pour préfixe court sûr, refus,
-  quarantaine et réparation opérateur préservant les preuves forensiques, plus
-  de nouvelles cibles `cargo-fuzz` de décodage/aller-retour réintégrées en CI.
+- [ ] **P0-13 : Séparer la reprise de queue tronquée de la corruption.** WAL
+  binaire *fail-closed* avec modes explicites pour queue tronquée sûre
+  (préfixe d'en-tête court), refus, quarantaine et réparation opérateur
+  préservant les preuves forensiques, plus de nouvelles cibles `cargo-fuzz` de
+  décodage/aller-retour réintégrées en CI.
 - [ ] **P1-18 : Zéro réécriture automatique du WAL.** Ne jamais tronquer
   au-delà d'enregistrements valides ni réécrire silencieusement l'histoire
   confirmée.
@@ -285,7 +286,7 @@ bloque le gel v1, et tous sont additifs au-dessus du contrat plugin v1 gelé :
 
 ### Phase 4.1 — Passage à l'échelle en charge dense (ex. Charge B — $10^5$ écritures/tick)
 - [ ] **Checkpoints CoW asynchrones hors chemin critique** (éliminer le gel
-  synchrone de 240–435 ms mesuré pour 144 Mo dans [BENCHMARKS.md](BENCHMARKS.md)).
+  synchrone de 237–435 ms — pointe à 1 485 ms — mesuré pour 144 Mo dans [BENCHMARKS.md](BENCHMARKS.md)).
 - [ ] **Mode de preuve compact vérifié par tick (`root`)** dans les profils
   d'exécution une fois le déterminisme plugin garanti par isolation ou profils
   vérifiés.

@@ -5,22 +5,24 @@ contract_version: 0.3.0-draft
 status:           DRAFT — NOT FROZEN (gap K-01)
 ```
 
-This document defines the **single public boundary frozen in v1**: the contract
-between the Seej world kernel and application plugins. It must remain usable by
-third-party authors without reading `sy_core` or internal storage/consensus
-code.
+This document defines the **single public boundary targeted for freeze in v1**
+(currently `DRAFT — NOT FROZEN` until `K-01`): the contract between the Seej
+world kernel and application plugins. It must remain usable by third-party
+authors without reading `sy_core` or internal storage/consensus code.
 
 ---
 
-## 1. One Frozen Public Seam
+## 1. One Target Frozen Public Seam
 
 Following [D-015](../../doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam):
 
-- **Frozen in v1:** the **application plugin contract** defined here (together
-  with public command and observation schemas in [CONTRACT.md](CONTRACT.md)).
-- **Internal in v1 (not frozen publicly):** `StateStore`, `AuthorityLog`, and
-  `Executor`. These remain clean internal Rust traits tested with in-memory and
-  fault-injecting doubles (`K-05`), evolving freely without breaking plugins.
+- **Target frozen boundary in v1 (`K-01`):** the **application plugin
+  contract** defined here (together with public command and observation schemas
+  in [CONTRACT.md](CONTRACT.md)).
+- **Target internal seams in v1 (not frozen publicly):** `StateStore`,
+  `AuthorityLog`, and `Executor`. These are designed as internal Rust traits to
+  be verified with in-memory and fault-injecting doubles (`K-05`), evolving
+  freely without breaking plugins.
 - **Trust & loading model:** v1 loads only operator-approved trusted native
   plugins at process startup. Hot loading, hot replacement, and isolated
   execution (e.g. WASM with deterministic fuel metering and NaN

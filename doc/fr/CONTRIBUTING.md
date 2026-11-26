@@ -1,7 +1,7 @@
 # Guide de contribution
 
-> *Miroir français de [`CONTRIBUTING.md`](../../CONTRIBUTING.md). La version
-> anglaise fait foi en cas d'écart.*
+> **Traduction non normative** de [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+> La version anglaise fait foi en cas d'écart.
 
 Seej est une infrastructure open-source pour des mondes déterministes et
 persistants. Chaque contribution est évaluée au regard du journal des décisions,
@@ -56,19 +56,16 @@ Une contribution est incompatible si elle :
 
 ## Validation
 
-Exécuter depuis `seej/server/` avec la chaîne Rust épinglée :
+Exécuter le script unifié de validation depuis la racine du dépôt (épingle Rust
+`1.95.0` via `rust-toolchain.toml`) :
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-python3 scripts/check_sy_core_purity.py --self-test
-python3 scripts/check_sy_core_purity.py
+python3 -B seej/server/scripts/check.py
 ```
 
-Pour un changement purement documentaire, vérifier tous les liens locaux,
-ancres, commandes et libellés *implémenté* vs *cible*.
+Pour un changement purement documentaire,
+`python3 -B seej/server/scripts/check_docs.py` vérifie tous les liens locaux,
+ancres Unicode, l'unicité d'`AGENTS.md` racine et la parité des IDs EN/FR.
 
 ## Flux de travail et gouvernance
 
