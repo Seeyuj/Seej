@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Static purity gate for sy_core.
+"""Static purity gate for Seej's pure crates (sy_types, sy_api, sy_core).
 
-The check intentionally uses only the Python standard library so it can run
-from a clean checkout in CI. It scans Rust source after masking comments and
-string literals, which keeps documented examples of forbidden APIs from
-triggering the gate.
+Uses only the Python standard library so it runs from a clean checkout locally
+and in CI. Masks comments, string literals, raw strings, and Rust character
+literals before matching forbidden APIs so documentation examples do not trigger
+false positives.
 """
 
 from __future__ import annotations
@@ -21,7 +21,11 @@ from typing import Iterable
 
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CORE_SRC = SERVER_ROOT / "crates" / "sy_core" / "src"
+DEFAULT_PURE_ROOTS = (
+    SERVER_ROOT / "crates" / "sy_types" / "src",
+    SERVER_ROOT / "crates" / "sy_api" / "src",
+    SERVER_ROOT / "crates" / "sy_core" / "src",
+)
 
 
 @dataclass(frozen=True)
@@ -48,7 +52,7 @@ def rx(pattern: str) -> re.Pattern[str]:
 RULES = (
     Rule(
         "wall-clock-time",
-        "sy_core must use canonical Tick inputs instead of wall-clock APIs.",
+        "Pure crates must use canonical Tick inputs instead of wall-clock APIs.",
         (
             rx(r"\bstd\s*::\s*time\s*::\s*(?:SystemTime|Instant)\b"),
             rx(r"\buse\s+std\s*::\s*time\s*::[^;]*\b(?:SystemTime|Instant|\*)\b"),
@@ -58,7 +62,7 @@ RULES = (
     ),
     Rule(
         "environment-access",
-        "sy_core must not read process environment; inject configuration outside the core.",
+        "Pure crates must not read process environment; inject configuration outside the pure stack.",
         (
             rx(r"\bstd\s*::\s*env\b"),
             rx(r"\buse\s+std\s*::\s*env\b"),
@@ -68,7 +72,7 @@ RULES = (
     ),
     Rule(
         "filesystem-io",
-        "sy_core must not access filesystem, path, or generic I/O APIs.",
+        "Pure crates must not access filesystem, path, or generic I/O APIs.",
         (
             rx(r"\bstd\s*::\s*(?:fs|path|io)\b"),
             rx(r"\buse\s+std\s*::\s*(?:fs|path|io)\b"),
@@ -78,7 +82,7 @@ RULES = (
     ),
     Rule(
         "networking",
-        "sy_core must remain headless and must not use networking APIs.",
+        "Pure crates must remain headless and must not use networking APIs.",
         (
             rx(r"\bstd\s*::\s*net\b"),
             rx(r"\buse\s+std\s*::\s*net\b"),
@@ -88,7 +92,7 @@ RULES = (
     ),
     Rule(
         "os-randomness",
-        "sy_core must use derived EntropyScope instead of OS or process randomness.",
+        "Pure crates must use derived EntropyScope instead of OS or process randomness.",
         (
             rx(r"\brand\s*::\s*rngs\s*::\s*OsRng\b"),
             rx(r"\buse\s+rand\s*::\s*rngs\s*::[^;]*\bOsRng\b"),
@@ -99,7 +103,7 @@ RULES = (
     ),
     Rule(
         "os-threads",
-        "sy_core must remain deterministic and single-threaded; spawn threads only in sy_infra.",
+        "Pure crates must remain deterministic and single-threaded; spawn threads only in sy_infra.",
         (
             rx(r"\bstd\s*::\s*thread\b"),
             rx(r"\buse\s+std\s*::\s*thread\b"),
@@ -108,11 +112,19 @@ RULES = (
     ),
     Rule(
         "noncanonical-collections",
-        "sy_core canonical paths must not use randomized hash collections; use ordered structures.",
+        "Pure crates must not use randomized hash collections; use ordered structures.",
         (
             rx(r"\bstd\s*::\s*collections\s*::[^;]*\b(?:HashMap|HashSet|hash_map|hash_set)\b"),
             rx(r"\buse\s+std\s*::\s*collections\s*::[^;]*\b(?:HashMap|HashSet|hash_map|hash_set)\b"),
             rx(r"\b(?:HashMap|HashSet|RandomState|DefaultHasher)\b"),
+        ),
+    ),
+    Rule(
+        "floating-point",
+        "Pure crates must not use unconstrained f32/f64 types in canonical logic (P0-03).",
+        (
+            rx(r"\b(?:f32|f64)\b"),
+            rx(r"\d_(?:f32|f64)\b"),
         ),
     ),
 )
@@ -349,7 +361,7 @@ def display_path(path: Path) -> str:
 
 
 def print_findings(findings: list[Finding]) -> None:
-    print("sy_core purity gate failed:", file=sys.stderr)
+    print("pure-crate purity gate failed:", file=sys.stderr)
     for finding in findings:
         location = f"{display_path(finding.path)}:{finding.line}:{finding.column}"
         print(f"{location}: {finding.rule_id}: {finding.reason}", file=sys.stderr)
@@ -358,7 +370,7 @@ def print_findings(findings: list[Finding]) -> None:
 
 
 def assert_case(label: str, code: str, expected_rule: str | None) -> None:
-    with tempfile.TemporaryDirectory(prefix="sy-core-purity-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="seej-purity-") as temp_dir:
         root = Path(temp_dir) / "src"
         root.mkdir(parents=True)
         (root / "lib.rs").write_text(textwrap.dedent(code), encoding="utf-8")
@@ -380,8 +392,8 @@ def run_self_test() -> int:
         (
             "comments and strings are ignored",
             """
-            //! std::time::SystemTime, std::env::var, HashMap in docs.
-            pub const NOTE: &str = "std::fs::read_to_string and OsRng are not code";
+            //! std::time::SystemTime, std::env::var, HashMap, f64 in docs.
+            pub const NOTE: &str = "std::fs::read_to_string, OsRng, f32 are not code";
             use std::collections::BTreeMap;
             pub fn ordered() -> BTreeMap<u64, u64> { BTreeMap::new() }
             """,
@@ -469,7 +481,7 @@ def run_self_test() -> int:
         (
             "apostrophes in comments and strings stay masked",
             """
-            // don't use std::fs here
+            // don't use std::fs or f64 here
             pub const A: &str = "it's std::env::var and HashMap";
             pub fn f<'a>(x: &'a u8) -> char { 'x' }
             """,
@@ -480,26 +492,33 @@ def run_self_test() -> int:
             "pub fn f() { let _ = std::thread::spawn(|| {}); }",
             "os-threads",
         ),
+        (
+            "f64 type in canonical code is rejected",
+            "pub struct Bad(pub f64);",
+            "floating-point",
+        ),
     ]
 
     try:
         for label, code, expected_rule in cases:
             assert_case(label, code, expected_rule)
     except AssertionError as error:
-        print(f"sy_core purity gate self-test failed: {error}", file=sys.stderr)
+        print(f"pure-crate purity gate self-test failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"sy_core purity gate self-test passed ({len(cases)} cases).")
+    print(f"pure-crate purity gate self-test passed ({len(cases)} cases).")
     return 0
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Check sy_core deterministic purity rules.")
+    parser = argparse.ArgumentParser(
+        description="Check deterministic purity rules across Seej pure crates."
+    )
     parser.add_argument(
         "--root",
         type=Path,
-        default=DEFAULT_CORE_SRC,
-        help="Rust source root to scan. Defaults to crates/sy_core/src.",
+        action="append",
+        help="Rust source root to scan (repeatable). Defaults to sy_types, sy_api, and sy_core.",
     )
     parser.add_argument(
         "--self-test",
@@ -515,20 +534,25 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         return run_self_test()
 
-    root = args.root.resolve()
-    if not root.exists():
-        print(f"sy_core purity gate root does not exist: {root}", file=sys.stderr)
-        return 2
+    roots = tuple(args.root) if args.root else DEFAULT_PURE_ROOTS
+    all_findings: list[Finding] = []
+    total_files = 0
 
-    findings, scanned_files = scan_tree(root)
-    if findings:
-        print_findings(findings)
+    for raw_root in roots:
+        root = raw_root.resolve()
+        if not root.exists():
+            print(f"purity gate root does not exist: {root}", file=sys.stderr)
+            return 2
+        findings, scanned = scan_tree(root)
+        all_findings.extend(findings)
+        total_files += scanned
+
+    if all_findings:
+        print_findings(all_findings)
         return 1
 
-    print(
-        "sy_core purity gate passed: "
-        f"scanned {scanned_files} Rust files under {display_path(root)}."
-    )
+    labels = ", ".join(display_path(r) for r in roots)
+    print(f"pure-crate purity gate passed: scanned {total_files} Rust files under {labels}.")
     return 0
 
 

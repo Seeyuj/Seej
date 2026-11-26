@@ -22,6 +22,7 @@ unused-allowed-license = "allow"
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
+allow-wildcard-paths = true
 highlight = "all"
 
 [sources]

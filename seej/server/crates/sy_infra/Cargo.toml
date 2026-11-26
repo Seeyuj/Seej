@@ -2,9 +2,10 @@
 name = "sy_infra"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Infrastructure adapters for Seej: local StateStore, fail-closed AuthorityLog, batched Executor, DST, and observation."
+description = "Infrastructure adapters for Seej: durable storage, authority log, executor, DST, and observation."
 
 # External storage/network/logging crates are added only when their phase starts.
 [dependencies]

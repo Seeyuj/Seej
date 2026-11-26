@@ -1,12 +1,25 @@
 # Rust
 target/
 
-# Données de persistance
+# Persistence data
 data/
 *.db
 *.rocksdb
 
-# IDE
+# Secrets & local environment
+.env
+.env.*
+*.pem
+*.key
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local agent scratch/planning (never merged into main)
+/work/
+
+# IDE & agent caches
 .idea/
 .vscode/
 .vs/
