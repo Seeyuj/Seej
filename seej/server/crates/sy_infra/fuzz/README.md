@@ -23,5 +23,5 @@ cargo +nightly fuzz run wal_round_trip -- -runs=1000
   (AddressSanitizer is incompatible with musl; Windows MSVC can hit
   `STATUS_DLL_NOT_FOUND` if the libFuzzer runtime DLL is not on `PATH`).
 
-See [seej/docs/PROTOTYPE.md](../../../docs/PROTOTYPE.md) for the current WAL v1
+See [seej/docs/PROTOTYPE.md](../../../../docs/PROTOTYPE.md) for the current WAL v1
 format and [doc/ROADMAP.md](../../../../../doc/ROADMAP.md) for release gates.
