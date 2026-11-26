@@ -128,8 +128,8 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets
 
-  phase1-ignored:
-    name: Phase 1 ignored tests
+  ignored-tests:
+    name: Ignored long-running tests
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
@@ -150,10 +150,9 @@ jobs:
             ${{ runner.os }}-cargo-ignored-
             ${{ runner.os }}-cargo-
 
-      - name: Run ignored Phase 1 tests
+      - name: Run ignored tests
         run: cargo test --workspace --all-targets -- --ignored
 
-  # Build on multiple platforms
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -181,7 +180,6 @@ jobs:
       - name: Build release
         run: cargo build --workspace --release
 
-  # Documentation
   doc:
     name: Documentation
     runs-on: ubuntu-latest
@@ -267,18 +265,18 @@ jobs:
               }
 
           errors = []
+          if deps("sy_types") != set():
+              errors.append(f"sy_types must have zero dependencies; got {sorted(deps('sy_types'))}")
+          if deps("sy_api") != {"sy_types"}:
+              errors.append(f"sy_api deps must be strictly sy_types; got {sorted(deps('sy_api'))}")
           if deps("sy_core") != {"sy_types", "sy_api"}:
-              errors.append(f"sy_core deps must be exactly sy_types, sy_api; got {sorted(deps('sy_core'))}")
+              errors.append(f"sy_core deps must be strictly sy_types, sy_api; got {sorted(deps('sy_core'))}")
           for path in [
               "crates/sy_core/src/ports/event_log.rs",
               "crates/sy_core/src/ports/store.rs",
           ]:
               if pathlib.Path(path).exists():
                   errors.append(f"sy_core must not own persistence port file: {path}")
-          if "sy_protocol" in deps("sy_api"):
-              errors.append("sy_api must not depend on sy_protocol")
-          if "sy_protocol" in deps("sy_infra"):
-              errors.append("sy_infra must not depend on sy_protocol in Phase 1")
           for name in packages:
               if name.startswith("mod_") and "sy_core" in deps(name):
                   errors.append(f"{name} must not depend on sy_core")
@@ -287,52 +285,3 @@ jobs:
               print("\n".join(errors), file=sys.stderr)
               sys.exit(1)
           PY
-
-  wal-fuzz-build:
-    name: WAL fuzz build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-fuzz
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-fuzz
-
-      - name: Verify cargo-fuzz install
-        run: cargo-fuzz --version
-
-      - name: Build WAL fuzz targets
-        run: cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu
-        working-directory: seej/server/crates/sy_infra/fuzz
-
-  wal-fuzz:
-    name: WAL fuzz smoke
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-fuzz
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-fuzz
-
-      - name: Verify cargo-fuzz install
-        run: cargo-fuzz --version
-
-      - name: Fuzz WAL decoder
-        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu decode_record -- -max_total_time=180
-        working-directory: seej/server/crates/sy_infra/fuzz
-
-      - name: Fuzz WAL round-trip
-        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu wal_round_trip -- -max_total_time=180
-        working-directory: seej/server/crates/sy_infra/fuzz

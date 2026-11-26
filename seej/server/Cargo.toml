@@ -1,15 +1,14 @@
 [workspace]
 resolver = "2"
 
+# Clean-slate D-015 workspace skeleton.
+# Add binaries (`server_d`, `sy_cli`) and external dependencies only when their
+# implementing phase in `doc/ROADMAP.md` requires them.
 members = [
     "crates/sy_types",
-    "crates/sy_config",
     "crates/sy_api",
     "crates/sy_core",
     "crates/sy_infra",
-    "crates/sy_testkit",
-    "bin/server_d",
-    "bin/sy_cli",
 ]
 
 [workspace.package]
@@ -19,25 +18,7 @@ authors = ["Seej Team"]
 license = "MIT"
 
 [workspace.dependencies]
-# Internal crates
 sy_types = { path = "crates/sy_types" }
-sy_config = { path = "crates/sy_config" }
 sy_api = { path = "crates/sy_api" }
 sy_core = { path = "crates/sy_core" }
 sy_infra = { path = "crates/sy_infra" }
-sy_testkit = { path = "crates/sy_testkit" }
-
-# External dependencies (versions pinned)
-assert_cmd = "2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-clap = { version = "4.0", features = ["derive"] }
-predicates = "3.1"
-ctrlc = "3.4"
-crc32fast = "1.3"
-byteorder = "1.5"
-xxhash-rust = { version = "0.8", features = ["xxh64"] }
-proptest = "1.5"
-tempfile = "3.10"

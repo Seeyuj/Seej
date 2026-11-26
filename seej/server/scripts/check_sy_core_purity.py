@@ -48,7 +48,7 @@ def rx(pattern: str) -> re.Pattern[str]:
 RULES = (
     Rule(
         "wall-clock-time",
-        "sy_core must use injected ISimClock instead of wall-clock APIs.",
+        "sy_core must use canonical Tick inputs instead of wall-clock APIs.",
         (
             rx(r"\bstd\s*::\s*time\s*::\s*(?:SystemTime|Instant)\b"),
             rx(r"\buse\s+std\s*::\s*time\s*::[^;]*\b(?:SystemTime|Instant|\*)\b"),
@@ -88,13 +88,22 @@ RULES = (
     ),
     Rule(
         "os-randomness",
-        "sy_core must use injected IRng instead of OS or process randomness.",
+        "sy_core must use derived EntropyScope instead of OS or process randomness.",
         (
             rx(r"\brand\s*::\s*rngs\s*::\s*OsRng\b"),
             rx(r"\buse\s+rand\s*::\s*rngs\s*::[^;]*\bOsRng\b"),
             rx(r"\bOsRng\b"),
             rx(r"\brand\s*::\s*(?:random|thread_rng|rng)\b"),
             rx(r"\bgetrandom\b"),
+        ),
+    ),
+    Rule(
+        "os-threads",
+        "sy_core must remain deterministic and single-threaded; spawn threads only in sy_infra.",
+        (
+            rx(r"\bstd\s*::\s*thread\b"),
+            rx(r"\buse\s+std\s*::\s*thread\b"),
+            rx(r"\buse\s+std\s*::\s*\{[^;]*\bthread\b"),
         ),
     ),
     Rule(
@@ -465,6 +474,11 @@ def run_self_test() -> int:
             pub fn f<'a>(x: &'a u8) -> char { 'x' }
             """,
             None,
+        ),
+        (
+            "std::thread access is rejected",
+            "pub fn f() { let _ = std::thread::spawn(|| {}); }",
+            "os-threads",
         ),
     ]
 

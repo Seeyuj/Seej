@@ -2,7 +2,9 @@
 name = "sy_types"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
+description = "Stable value primitives, checked counters, and canonical identifiers for the Seej world kernel."
 
+# Strictly zero dependencies (enforced by CI).
 [dependencies]
-serde.workspace = true

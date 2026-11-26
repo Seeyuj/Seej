@@ -2,11 +2,10 @@
 name = "sy_api"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
+description = "Frozen v1 public plugin/command/observation contracts and internal infrastructure seams for Seej."
 
+# Depends strictly on `sy_types` (enforced by CI).
 [dependencies]
-sy_types.workspace = true
-serde.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
+sy_types = { workspace = true }
