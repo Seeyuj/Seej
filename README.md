@@ -11,6 +11,7 @@ as plugins and consumers.
 
 - Repository: [https://github.com/Seeyuj/Seej](https://github.com/Seeyuj/Seej)
 - Updates: [https://x.com/Seeyuj](https://x.com/Seeyuj)
+- French documentation mirror: [doc/fr/README.md](doc/fr/README.md)
 
 ## Design Philosophy
 
