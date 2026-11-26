@@ -4,7 +4,7 @@
 > anglaise fait foi en cas d'écart.*
 
 ```text
-statut : ARCHITECTURE CIBLE (D-015) — LE PROTOTYPE ACTUEL EST DÉCRIT DANS PROTOTYPE.md
+statut : ARCHITECTURE CIBLE (D-015) — LE WORKSPACE EST EN PHASE 0 VIERGE (PRÊT POUR LA PHASE 1.1)
 ```
 
 Ce document est le blueprint architectural unique de Seej. Il consolide les
@@ -13,7 +13,8 @@ séparation entre coutures internes et frontière publique gelée, les règles d
 dépendance et l'arborescence du dépôt. Les garanties normatives vivent dans
 [CONTRACT.md](CONTRACT.md) et [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md) ;
 l'historique et les mesures fondatrices vivent dans
-[DECISIONS.md](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée).
+[DECISIONS.md](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) et
+[BENCHMARKS.md](BENCHMARKS.md).
 
 ## Philosophie et frontières
 
@@ -26,8 +27,9 @@ modèles applicatifs** (dans les plugins et consommateurs) :
   d'obligations, la persistance et la réplication d'autorité d'un monde.
 - **Moteur de transition pur (`sy_core`) :** logique déterministe de transition
   et d'intégrité sans aucun I/O. Zéro dépendance externe.
-- **Runtime de nœud (`sy_infra`, `server_d`) :** assemble le moteur pur avec le
-  stockage interne, l'autorité/réplication, l'ordonnancement et l'observation.
+- **Runtime de nœud (`sy_infra`, futurs `server_d` / `sy_cli`) :** assemble le
+  moteur pur avec le stockage interne, l'autorité/réplication, l'ordonnancement
+  et l'observation.
 - **Plugins applicatifs :** possèdent les schémas de domaines, commandes,
   validateurs, migrations et politiques optionnelles (espace, économie, IA,
   multirésolution, netcode ingame).
@@ -89,17 +91,16 @@ StateView immuable (à base_cursor)
 
 - **Zéro `world.clone()` :** un échec, une base périmée ou un crash plugin ne
   rejette que le petit overlay / undo en $O(k)$.
-- **Zéro duplication de logique :** contrairement au prototype actuel (où
-  `sim.rs` et `replay.rs` réimplémentent séparément chaque mutation),
-  `apply(WriteSet)` est l'unique mutateur d'état.
+- **Zéro duplication de logique :** `apply(WriteSet)` est l'unique mutateur
+  canonique d'état pour l'exécution directe comme pour la reprise.
 
 ## Exécution, déterminisme et parallélisme
 
 ### Entropie dérivée (`EntropyScope`)
 
-Un RNG global mutable (`&mut IRng`) casse l'isolation entre plugins et bloque le
-parallélisme. Le cœur cible dérive l'entropie déterministe à partir de
-coordonnées canoniques :
+Un RNG global mutable casse l'isolation entre plugins et bloque le
+parallélisme. Le cœur dérive l'entropie déterministe à partir de coordonnées
+canoniques :
 
 ```text
 EntropyScope(world_seed, entropy_epoch, tick, admission_seq | phase, domain_id)
@@ -127,7 +128,7 @@ et les événements sont collectés localement puis numérotés dans l'ordre can
 La v1 livre un **exécuteur séquentiel batché** (1 group commit par tick) :
 
 1. Il encaisse déjà 10 000 commandes/s sur 1 million de clés en ~6–12 ms/tick
-   sur un seul cœur (voir [PROTOTYPE.md](PROTOTYPE.md#mesures-de-benchmarks-harnais-de-charges)).
+   sur un seul cœur (voir [BENCHMARKS.md](BENCHMARKS.md)).
 2. Il débloque le **Deterministic Simulation Testing (DST) mono-thread** —
    simuler un cluster complet de 3 nœuds, des partitions réseau, du
    réordonnancement de paquets et des pannes disque injectées de façon
@@ -135,7 +136,7 @@ La v1 livre un **exécuteur séquentiel batché** (1 group commit par tick) :
 
 Le parallélisme multi-cœur (`Block-STM` pour les transactions dynamiques, `BSP`
 parallèle par partition pour les ticks denses) se branche derrière la couture
-interne `Executor` en Gate 1-D avec un oracle absolu :
+interne `Executor` en Phase 4.1 (Gate 1-D) avec un oracle absolu :
 `root(1 cœur) == root(N cœurs)`.
 
 ## Persistance, durabilité et réplication
@@ -214,38 +215,38 @@ fournisseur et consommateur*) :
 ### Direction cible des dépendances
 
 ```text
-primitives stables (sy_types)
+primitives stables (sy_types — zéro dépendance)
         ^
-contrats publics & traits internes (sy_api)
+contrats publics & traits internes (sy_api — dépend uniquement de sy_types)
         ^
-moteur déterministe pur (sy_core — zéro crate externe)
+moteur déterministe pur (sy_core — dépend uniquement de sy_types, sy_api)
         ^
 adaptateurs d'infrastructure (sy_infra)
         ^
-binaires de nœud (server_d, sy_cli)
+futurs binaires de nœud (server_d, sy_cli — ajoutés en Phase 1.5)
 ```
 
 Les plugins applicatifs dépendent **uniquement** des contrats publics — jamais
 de `sy_core`, `sy_infra`, des internes d'un autre plugin ou du runtime.
 
-### Matrice workspace actuelle (`seej/server/`)
+### Matrice workspace contrôlée (`seej/server/`)
 
-| Crate | Dépendances workspace autorisées |
-| --- | --- |
-| `sy_types` | aucune |
-| `sy_config` | aucune |
-| `sy_api` | `sy_types` |
-| `sy_core` | `sy_types`, `sy_api` (contrôlé strictement en CI — zéro crate externe) |
-| `sy_infra` | `sy_types`, `sy_config`, `sy_api`, `sy_core` |
-| `sy_testkit` | `sy_types`, `sy_api`, `sy_core` |
-| `server_d`, `sy_cli` | composent les crates inférieurs |
+| Crate | Dépendances autorisées | Phase de codage d'entrée |
+| --- | --- | --- |
+| `sy_types` | aucune (contrôlé strictement en CI) | Phase 1.1 |
+| `sy_api` | `sy_types` (contrôlé strictement en CI) | Phase 1.2 |
+| `sy_core` | `sy_types`, `sy_api` (zéro crate externe, contrôlé strictement en CI) | Phase 1.3 |
+| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ crates externes ajoutés selon besoin) | Phase 1.4 |
 
 ### Pureté de `sy_core`
 
 `sy_core` ne doit jamais accéder au système de fichiers, au réseau, à l'horloge
-murale/processus, aux variables d'environnement, au hasard OS, aux threads/verrous
+murale/processus, aux variables d'environnement, au hasard OS, aux threads OS
 ou aux collections hachées aléatoires (`HashMap`/`HashSet`). Contrôlé par
-`seej/server/scripts/check_sy_core_purity.py` et `.github/workflows/rust.yml`.
+`seej/server/scripts/check_sy_core_purity.py` (17 auto-tests) et le contrôle de
+dépendances CI dans `.github/workflows/rust.yml`. Chaque crate impose
+`#![deny(missing_docs)]` ; les crates purs imposent en plus
+`#![forbid(unsafe_code)]`.
 
 ### Raccourcis interdits
 
@@ -262,11 +263,11 @@ ou aux collections hachées aléatoires (`HashMap`/`HashSet`). Contrôlé par
 ├── README.md                  # vue d'ensemble (EN)
 ├── AGENTS.md                  # invariants et vérifications (EN)
 ├── CONTRIBUTING.md            # contribution et gouvernance (EN)
-├── .github/workflows/rust.yml # gates CI (pureté, fmt, clippy, test, doc, audit, fuzz)
+├── .github/workflows/rust.yml # gates CI (pureté, fmt, clippy, test, doc, audit, deny, DAG)
 ├── doc/
 │   ├── ARCHITECTURE.md        # blueprint unique (EN)
 │   ├── DECISIONS.md           # journal des décisions D-001 à D-015 (EN)
-│   ├── ROADMAP.md             # jalons & checklist de sortie (EN)
+│   ├── ROADMAP.md             # plan de codage ordonné (Phase 0–4) & checklist (EN)
 │   ├── SECURITY.md            # politique de sécurité (EN)
 │   ├── CODE_OF_CONDUCT.md     # code de conduite
 │   └── fr/                    # miroir français de la documentation
@@ -274,12 +275,15 @@ ou aux collections hachées aléatoires (`HashMap`/`HashSet`). Contrôlé par
     ├── docs/
     │   ├── CONTRACT.md        # brouillon v1 contrat noyau & autorité (EN)
     │   ├── PLUGIN_CONTRACT.md # brouillon v1 frontière publique plugin (EN)
-    │   └── PROTOTYPE.md       # référence prototype local & benchmarks (EN)
-    └── server/                # workspace Rust actif (prototype local)
+    │   └── BENCHMARKS.md      # mesures empiriques fondant D-015 (EN)
+    └── server/                # workspace Rust vierge (squelette Phase 0)
         ├── Cargo.toml
         ├── deny.toml          # politique licences/advisories (MIT/Apache/BSD)
         ├── rust-toolchain.toml
         ├── scripts/check_sy_core_purity.py
-        ├── crates/{sy_types,sy_config,sy_api,sy_core,sy_infra,sy_testkit}
-        └── bin/{server_d,sy_cli}
+        └── crates/
+            ├── sy_types/      # Phase 1.1 primitives & compteurs vérifiés
+            ├── sy_api/        # Phase 1.2 couture publique gelée & traits internes
+            ├── sy_core/       # Phase 1.3 moteur de transition déterministe pur
+            └── sy_infra/      # Phase 1.4+ stockage, autorité, exécuteur & DST
 ```

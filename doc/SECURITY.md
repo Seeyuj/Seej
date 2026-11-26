@@ -16,15 +16,11 @@ operator host infrastructure.
 
 ## Current and Target Security Posture
 
-- **Implemented prototype (`seej/server/`):** local, single-process,
-  single-writer prototype. No distributed node authentication, consensus,
-  exclusive writer lock, or plugin isolation exists yet.
-  - Normal WAL open fails closed on corruption, unknown WAL versions, I/O
-    errors, and incomplete frames with a full 26-byte header, truncating only a
-    compatible 1–25-byte terminal header fragment.
-  - `sy_cli` opens the WAL read-only, but constructing `FilesystemStore` may
-    create `<data-dir>/worlds`, and `dump --output` does not reject paths
-    aliasing canonical storage (`P1-11` open).
+- **Current repository state (`seej/server/` — Phase 0 clean slate):**
+  4-crate Rust workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`)
+  with active build/purity/supply-chain guardrails (`check_sy_core_purity.py`,
+  `cargo-audit`, `cargo-deny`, dependency-DAG checks). No runtime daemon,
+  storage engine, consensus, authentication, or plugin isolation exists yet.
 - **Target v1 (Gate 1-K):** crash-fault-tolerant (CFT) authority groups of 1 or
   3 operator-authenticated nodes (quorum 2). Byzantine authorized nodes are
   outside the v1 fault model; unauthenticated admission, privilege bypass,
@@ -94,6 +90,7 @@ manually editing canonical store files.
 
 - [doc/DECISIONS.md](DECISIONS.md)
 - [doc/ARCHITECTURE.md](ARCHITECTURE.md)
+- [doc/ROADMAP.md](ROADMAP.md)
 - [seej/docs/CONTRACT.md](../seej/docs/CONTRACT.md)
 - [seej/docs/PLUGIN_CONTRACT.md](../seej/docs/PLUGIN_CONTRACT.md)
-- [seej/docs/PROTOTYPE.md](../seej/docs/PROTOTYPE.md)
+- [seej/docs/BENCHMARKS.md](../seej/docs/BENCHMARKS.md)

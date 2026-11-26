@@ -12,9 +12,9 @@ Ce document est l'unique brouillon normatif du contrat du noyau de monde Seej :
 identité, transitions déterministes, mutation d'état, commandes, racines de
 résolution, autorité mono-monde, reprise, migration, observation et fédération
 inter-mondes. Les contrats côté plugins vivent dans
-[PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md). Le comportement réel du prototype
-actuel vit dans [PROTOTYPE.md](PROTOTYPE.md) ; l'avancement d'implémentation
-vit dans [ROADMAP.md](ROADMAP.md).
+[PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md). Les mesures empiriques de laboratoire
+vivent dans [BENCHMARKS.md](BENCHMARKS.md) ; les phases de codage ordonnées et
+l'avancement d'implémentation vivent dans [ROADMAP.md](ROADMAP.md).
 
 Tout énoncé sans mention **Implémenté** décrit la cible v1. Après le gel v1
 (`K-01`), tout changement affectant le rejeu exige une incrémentation explicite

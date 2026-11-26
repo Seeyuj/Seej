@@ -10,8 +10,8 @@ a posé la direction de noyau distribué extensible,
 [D-014](DECISIONS.md#d-014--sémantique-des-frontières-de-la-première-version-stable)
 ont fixé la sémantique opérationnelle des pannes, et
 [D-015](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée) ancre le cœur
-minimal, l'unique couture plugin gelée et la feuille de route incrémentale sur
-des mesures réelles.
+minimal, l'unique couture plugin gelée et le plan d'exécution ordonné sur des
+mesures réelles.
 
 Arbitrer les compromis dans cet ordre : durabilité architecturale, exactitude,
 déterminisme, persistance et reprise, maintenabilité, testabilité,
@@ -57,22 +57,22 @@ observabilité, performance, puis vitesse d'implémentation.
   chemin de migration documenté ; les plugins possèdent leurs migrations.
   `MigrationActivate` commite un checkpoint frontière obligatoire afin qu'une
   reprise ordinaire ne traverse jamais deux profils d'exécution.
-- **Architecture :** `sy_core` dépend uniquement de `sy_types` et `sy_api` (zéro
-  crate externe) et doit passer la porte de pureté. L'I/O réel reste hors du
-  moteur pur.
+- **Architecture :** `sy_types` n'a aucune dépendance, `sy_api` dépend
+  strictement de `sy_types` et `sy_core` dépend strictement de `sy_types` et
+  `sy_api` (zéro crate externe) et doit passer la porte de pureté. L'I/O réel
+  reste hors du moteur pur. Chaque crate impose `#![deny(missing_docs)]`.
 
 ## Statut actuel
 
-`seej/server/` contient aujourd'hui un prototype local mono-processus
-(`server_d`, `sy_cli`) avec un WAL v1 *fail-closed*, des snapshots v3/v4 et des
-fixtures spatiales `Entity`/`Zone`. Le traiter comme une base jetable : pour
-construire le cœur générique D-015, repartir sur du code neuf et propre est
-explicitement préféré au maintien des types spatiaux ou des snapshots JSON du
-prototype.
+**Phase 0 terminée (socle vierge) :** le prototype spatial historique a été
+retiré selon D-015. `seej/server/` contient le squelette workspace propre en 4
+crates (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) avec sa Rustdoc interne,
+la porte de pureté `sy_core` et les garde-fous CI. Suivre strictement l'ordre
+de codage dans [ROADMAP.md](ROADMAP.md) à partir de la **Phase 1.1**.
 
-Ne jamais présenter les capacités cibles (domaines génériques, consensus,
-observation réseau, migrations, isolation WASM, chargement à chaud) comme
-implémentées.
+Ne jamais présenter les capacités cibles (exécution runtime, stockage,
+consensus, observation réseau, migrations, isolation WASM, chargement à chaud)
+comme implémentées.
 
 ## Contexte à la demande
 
@@ -82,8 +82,8 @@ implémentées.
 | Architecture, modèle d'état, coutures, pureté | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Contrat public noyau, autorité et commandes | [CONTRACT.md](CONTRACT.md) |
 | Frontière publique plugin gelée v1 | [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md) |
-| Jalons et checklist de sortie | [ROADMAP.md](ROADMAP.md) |
-| Prototype actuel et benchmarks | [PROTOTYPE.md](PROTOTYPE.md) |
+| Plan de codage ordonné et checklist de sortie | [ROADMAP.md](ROADMAP.md) |
+| Benchmarks empiriques fondant D-015 | [BENCHMARKS.md](BENCHMARKS.md) |
 | Modèle de menace et sécurité | [SECURITY.md](SECURITY.md) |
 
 ## Vérification

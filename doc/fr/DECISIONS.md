@@ -351,29 +351,29 @@ vérifiées par racine) ont établi cinq faits concrets :
      `Pending` ciblant `T` reste non résolue ; celle-ci atteint soit une
      résolution terminale normale, soit `Cancelled` via la voie de contrôle
      réservée.
-8. **Remplacement propre du cœur et jalons incrémentaux :**
-   le prototype spatial actuel dans `seej/server/` est conservé uniquement
-   comme base de travail fonctionnelle (avec son WAL v1 *fail-closed*, son
-   correctif RNG v3/v4, son correctif de rollback `TickN` et sa porte de
-   pureté). Construire proprement le nouveau noyau générique D-015 plutôt que
-   de faire muter incrémentalement les types `Entity`/`Zone`/JSON du prototype
-   est explicitement autorisé. Gate 1-K est structuré en trois jalons
-   exécutables dans [ROADMAP.md](ROADMAP.md) plutôt qu'en une unique checklist
-   indifférenciée, et les crates/répertoires *placeholders* morts sont
-   supprimés.
+8. **Remise à zéro propre du cœur et phases de codage ordonnées :**
+   le prototype spatial historique (`Entity`/`Zone`, snapshots JSON, double
+   chemin `sim.rs`/`replay.rs`, fixtures `server_d`/`sy_cli` et crates
+   *placeholders* inertes) est retiré plutôt que modifié incrémentalement. Le
+   workspace repart sur un squelette minimal en 4 crates (`sy_types`, `sy_api`,
+   `sy_core`, `sy_infra`) préservant la porte de pureté, Rust `1.95.0` épinglé,
+   les contrôles de licences/advisories et les règles CI de DAG de dépendances,
+   avec une Rustdoc interne alignée sur les phases de codage ordonnées
+   (`Phase 0` à `Phase 4`) dans [ROADMAP.md](ROADMAP.md).
 
 ### Conséquences
 
-- La documentation est consolidée en un jeu unique sans redondance (~10
-  documents cœur, une autorité par sujet) ; `CONTRACT.md` passe en
-  `0.4.0-draft` et `PLUGIN_CONTRACT.md` en `0.3.0-draft` (tous deux non gelés).
+- La documentation est consolidée en un jeu unique sans redondance (avec un
+  miroir français dans `doc/fr/` et les preuves empiriques conservées dans
+  [BENCHMARKS.md](BENCHMARKS.md)) ; `CONTRACT.md` passe en `0.4.0-draft` et
+  `PLUGIN_CONTRACT.md` en `0.3.0-draft` (tous deux non gelés).
 - `K-05` est recentré des neuf remplacements de fournisseurs publics vers la
   conformité des coutures internes et les doubles à injection de pannes
   (`StateStore`, `AuthorityLog`, `Executor`) ; `P2-01` est retiré avec la
   suppression du *placeholder* inerte `sy_loader`.
 - Le choix du moteur de stockage (`redb`, `Fjall` ou store paginé maison) et la
   construction de hash de production restent des choix internes de profil à
-  mesurer sur des charges de stockage réelles au démarrage du Jalon 1.
+  mesurer sur des charges de stockage réelles au démarrage de la **Phase 1.4**.
 - D-015 ne ferme aucun item d'implémentation de Gate 1-K à elle seule ; les
   preuves exécutables dans [ROADMAP.md](ROADMAP.md) restent obligatoires avant
   le gel v1.

@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-status: TARGET ARCHITECTURE (D-015) — CURRENT PROTOTYPE IS DESCRIBED IN seej/docs/PROTOTYPE.md
+status: TARGET ARCHITECTURE (D-015) — WORKSPACE IS AT CLEAN-SLATE PHASE 0 (READY FOR PHASE 1.1)
 ```
 
 This document is the single architectural blueprint for Seej. It consolidates
@@ -9,7 +9,9 @@ system boundaries, the logical state model, execution flow, internal vs. public
 seams, dependency rules, and repository layout. Normative guarantees live in
 [CONTRACT.md](../seej/docs/CONTRACT.md) and
 [PLUGIN_CONTRACT.md](../seej/docs/PLUGIN_CONTRACT.md); historical decisions
-and measurement rationale live in [DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam).
+and measurement rationale live in
+[DECISIONS.md](DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam)
+and [BENCHMARKS.md](../seej/docs/BENCHMARKS.md).
 
 ## Philosophy and Boundaries
 
@@ -22,8 +24,9 @@ application models** (in plugins and consumers):
   authority replication.
 - **Pure transition engine (`sy_core`):** deterministic, I/O-free state
   transition and integrity logic. Zero external crate dependencies.
-- **Node runtime (`sy_infra`, `server_d`):** wires the pure engine to internal
-  storage, authority/replication, scheduling, and observation surfaces.
+- **Node runtime (`sy_infra`, future `server_d` / `sy_cli`):** wires the pure
+  engine to internal storage, authority/replication, scheduling, and
+  observation surfaces.
 - **Application plugins:** own domain schemas, commands, validators,
   migrations, and optional policies (space, economy, AI, multiresolution,
   ingame netcode).
@@ -82,17 +85,15 @@ immutable StateView (at base_cursor)
 
 - **No `world.clone()`:** failed commands, stale base cursors, or plugin
   failures discard only the small candidate overlay / undo record in $O(k)$.
-- **No dual mutation code:** unlike the legacy prototype (where `sim.rs` and
-  `replay.rs` independently re-implemented every state change), `apply(WriteSet)`
-  is the sole state mutator.
+- **No dual mutation code:** `apply(WriteSet)` is the sole canonical state
+  mutator for both live execution and crash recovery.
 
 ## Execution, Determinism, and Parallelism
 
 ### Derived entropy (`EntropyScope`)
 
-Global mutable RNG state (`&mut IRng`) breaks plugin isolation and blocks
-parallelism. The target core derives deterministic entropy from canonical
-coordinates:
+Global mutable RNG state breaks plugin isolation and blocks parallelism. The
+core derives deterministic entropy from canonical coordinates:
 
 ```text
 EntropyScope(world_seed, entropy_epoch, tick, admission_seq | phase, domain_id)
@@ -120,27 +121,28 @@ delivers two major advantages proven in production engines (TigerBeetle,
 FoundationDB):
 
 1. It already handles 10k commands/sec on 1M keys in ~6–12 ms/tick on one core
-   (see [PROTOTYPE.md](../seej/docs/PROTOTYPE.md#benchmark-measurements-workloads-harness)).
+   (see [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)).
 2. It enables **single-threaded Deterministic Simulation Testing (DST)** —
    running a simulated 3-node cluster, network partitions, message reordering,
    and injected disk failures reproducibly from a single seed.
 
 Multi-core execution (`Block-STM` for dynamic transactions, parallel `BSP` over
 partitions for dense ticks) plugs behind the internal `Executor` seam in
-Gate 1-D with an absolute oracle: `root(1 core) == root(N cores)`.
+Phase 4.1 (Gate 1-D) with an absolute oracle: `root(1 core) == root(N cores)`.
 
 ## Persistence, Durability, and Replication
 
 ### Single-world CP authority and inter-world federation
 
-- **Inside one world:** one authorized node group (1 node local, or 3 shared-nothing
-  nodes with quorum 2 using a Raft-style consensus log) produces one confirmed
-  history. A local append is never distributed confirmation; loss of quorum
-  pauses writes while allowing explicitly stale read-only inspection.
+- **Inside one world:** one authorized node group (1 node local, or 3
+  shared-nothing nodes with quorum 2 using a Raft-style consensus log) produces
+  one confirmed history. A local append is never distributed confirmation; loss
+  of quorum pauses writes while allowing explicitly stale read-only inspection.
 - **Across worlds:** decentralization, local autonomy, and peer-to-peer
   cooperation happen **between independent worlds** through asynchronous
-  envelopes and durable obligations — never by lockstep-coupling $N$ independent
-  authority groups inside one tick (whose joint availability collapses as $p^N$).
+  envelopes and durable obligations — never by lockstep-coupling $N$
+  independent authority groups inside one tick (whose joint availability
+  collapses as $p^N$).
 - **Partitions inside one world** belong to the same authority group and tick
   clock; they exist for memory locality, cache efficiency, incremental
   checkpointing, and intra-node multi-core scaling.
@@ -204,39 +206,38 @@ consumer*):
 ### Target dependency direction
 
 ```text
-stable primitives (sy_types)
+stable primitives (sy_types — zero dependencies)
         ^
-public contracts & internal traits (sy_api)
+public contracts & internal traits (sy_api — depends only on sy_types)
         ^
-pure deterministic engine (sy_core — zero external crates)
+pure deterministic engine (sy_core — depends only on sy_types, sy_api)
         ^
 infrastructure adapters (sy_infra)
         ^
-node runtime binaries (server_d, sy_cli)
+future node binaries (server_d, sy_cli — added in Phase 1.5)
 ```
 
 Application plugins depend **only** on public contract packages — never on
 `sy_core`, `sy_infra`, another plugin's internals, or a node runtime.
 
-### Current enforced workspace matrix (`seej/server/`)
+### Enforced workspace matrix (`seej/server/`)
 
-| Crate | Allowed workspace dependencies |
-| --- | --- |
-| `sy_types` | none |
-| `sy_config` | none |
-| `sy_api` | `sy_types` |
-| `sy_core` | `sy_types`, `sy_api` (strictly enforced by CI — zero external deps) |
-| `sy_infra` | `sy_types`, `sy_config`, `sy_api`, `sy_core` |
-| `sy_testkit` | `sy_types`, `sy_api`, `sy_core` |
-| `server_d`, `sy_cli` | compose lower crates |
+| Crate | Allowed dependencies | Entry coding phase |
+| --- | --- | --- |
+| `sy_types` | none (strictly enforced by CI) | Phase 1.1 |
+| `sy_api` | `sy_types` (strictly enforced by CI) | Phase 1.2 |
+| `sy_core` | `sy_types`, `sy_api` (zero external deps, strictly enforced by CI) | Phase 1.3 |
+| `sy_infra` | `sy_types`, `sy_api`, `sy_core` (+ external crates added when needed) | Phase 1.4 |
 
 ### Pure-engine rules (`sy_core`)
 
 `sy_core` must never access filesystem, network, wall-clock/process time,
-environment variables, OS randomness, threads/locks, or randomized hash
+environment variables, OS randomness, OS threads, or randomized hash
 collections (`HashMap`/`HashSet`). Enforced by
-`seej/server/scripts/check_sy_core_purity.py` and the CI dependency check in
-`.github/workflows/rust.yml`.
+`seej/server/scripts/check_sy_core_purity.py` (17 self-test cases) and the CI
+dependency check in `.github/workflows/rust.yml`. Every crate enforces
+`#![deny(missing_docs)]`; pure crates additionally enforce
+`#![forbid(unsafe_code)]`.
 
 ### Forbidden shortcuts
 
@@ -253,31 +254,27 @@ collections (`HashMap`/`HashSet`). Enforced by
 ├── README.md                  # project overview & quick start
 ├── AGENTS.md                  # operating invariants & verification commands
 ├── CONTRIBUTING.md            # contribution discipline & governance
-├── .github/workflows/rust.yml # CI gates (purity, fmt, clippy, test, doc, audit, fuzz)
+├── .github/workflows/rust.yml # CI gates (purity, fmt, clippy, test, doc, audit, deny, DAG)
 ├── doc/
 │   ├── ARCHITECTURE.md        # this blueprint (single architecture reference)
 │   ├── DECISIONS.md           # architectural decision log (D-001 through D-015)
-│   ├── ROADMAP.md             # incremental milestones & authoritative exit checklist
+│   ├── ROADMAP.md             # ordered coding plan (Phase 0–4) & exit checklist
 │   ├── SECURITY.md            # threat model & vulnerability reporting
-│   └── CODE_OF_CONDUCT.md     # community standards
+│   ├── CODE_OF_CONDUCT.md     # community standards
+│   └── fr/                    # French mirror of core documentation
 └── seej/
     ├── docs/
     │   ├── CONTRACT.md        # draft v1 kernel, authority, command & observation contract
     │   ├── PLUGIN_CONTRACT.md # draft v1 frozen public plugin boundary
-    │   └── PROTOTYPE.md       # current local prototype reference & lab benchmarks
-    └── server/                # active Rust workspace (current local prototype)
+    │   └── BENCHMARKS.md      # empirical lab measurements grounding D-015
+    └── server/                # clean-slate Rust workspace (Phase 0 skeleton)
         ├── Cargo.toml
-        ├── deny.toml          # license & advisory policy (MIT/Apache/BSD; no copyleft/MPL)
+        ├── deny.toml          # license & advisory policy (MIT/Apache/BSD)
         ├── rust-toolchain.toml
         ├── scripts/check_sy_core_purity.py
-        ├── crates/
-        │   ├── sy_types/
-        │   ├── sy_config/
-        │   ├── sy_api/
-        │   ├── sy_core/
-        │   ├── sy_infra/      # includes isolated WAL fuzz harness in fuzz/
-        │   └── sy_testkit/
-        └── bin/
-            ├── server_d/
-            └── sy_cli/
+        └── crates/
+            ├── sy_types/      # Phase 1.1 primitives & checked counters
+            ├── sy_api/        # Phase 1.2 frozen public seam & internal traits
+            ├── sy_core/       # Phase 1.3 pure deterministic transition engine
+            └── sy_infra/      # Phase 1.4+ storage, authority, executor & DST
 ```

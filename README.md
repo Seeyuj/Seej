@@ -40,33 +40,30 @@ Documentation uses three labels:
   [doc/ROADMAP.md](doc/ROADMAP.md)).
 - **Later:** usage-pulled hardening or optional ecosystem work.
 
-**Today:** the repository holds a **local, single-process prototype**
-(`server_d` and `sy_cli`) that demonstrates deterministic ticks, format v3/v4
-snapshots, a fail-closed v1 WAL, recovery parity, and a `sy_core` purity gate.
-Its built-in `Entity`/`Zone` structures and degradation rules are prototype
-fixtures scheduled for replacement by the generic core defined in
-[D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam).
-It does **not** yet implement generic plugin domains, distributed consensus,
-network observation, or migrations.
+**Today (Phase 0 complete — clean-slate foundation):** per
+[D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam),
+the legacy spatial prototype (`Entity`/`Zone`, JSON snapshots, dual
+`sim.rs`/`replay.rs`) has been retired. `seej/server/` holds a clean, minimal
+4-crate Rust workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`)
+with `#![deny(missing_docs)]`, in-code phase documentation, the `sy_core`
+purity gate, pinned Rust `1.95.0`, and full CI guardrails — ready to begin
+**Phase 1.1** in [doc/ROADMAP.md](doc/ROADMAP.md). No runtime daemon, storage
+backend, consensus engine, or plugin host is implemented yet.
 
-## Quick Start (Current Local Prototype)
+## Quick Start (Verify Workspace & Build In-Code Docs)
 
 Requires the pinned Rust toolchain in `seej/server/rust-toolchain.toml`:
 
 ```bash
 cd seej/server
 
-cargo test --workspace --all-targets
 python3 scripts/check_sy_core_purity.py --self-test
 python3 scripts/check_sy_core_purity.py
-
-cargo run --bin server_d -- create --name "MyWorld" --seed 42
-cargo run --bin server_d -- run --world world_42 --ticks 1000 --save-interval 100
-cargo run --bin sy_cli -- status world_42
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 ```
-
-For full CLI flags, storage format details, and known prototype limits (such as
-`P1-11` on `sy_cli`), see [seej/docs/PROTOTYPE.md](seej/docs/PROTOTYPE.md).
 
 ## Documentation Map
 
@@ -76,10 +73,10 @@ Every document has one authoritative role — no duplicated specifications:
 | --- | --- |
 | [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | System model, state narrow waist, seams, dependency rules, and repo layout |
 | [doc/DECISIONS.md](doc/DECISIONS.md) | Architectural decision log (`D-001` through `D-015`) and supersession trail |
-| [doc/ROADMAP.md](doc/ROADMAP.md) | Incremental milestones, implemented evidence, and authoritative release checklist |
+| [doc/ROADMAP.md](doc/ROADMAP.md) | Ordered coding plan (`Phase 0`–`Phase 4`) and authoritative release checklist |
 | [seej/docs/CONTRACT.md](seej/docs/CONTRACT.md) | Draft kernel, command, authority, recovery, migration, and observation contract |
 | [seej/docs/PLUGIN_CONTRACT.md](seej/docs/PLUGIN_CONTRACT.md) | Draft v1 public plugin boundary, domain ownership, transactions, and extensions |
-| [seej/docs/PROTOTYPE.md](seej/docs/PROTOTYPE.md) | Current local prototype commands, WAL/snapshot formats, limits, and lab benchmarks |
+| [seej/docs/BENCHMARKS.md](seej/docs/BENCHMARKS.md) | Empirical lab measurements grounding D-015 storage, hashing, and proof-mode choices |
 | [doc/SECURITY.md](doc/SECURITY.md) | Threat model, trust boundaries, operational posture, and vulnerability reporting |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution rules, validation checks, and governance |
 | [doc/CODE_OF_CONDUCT.md](doc/CODE_OF_CONDUCT.md) | Community standards |

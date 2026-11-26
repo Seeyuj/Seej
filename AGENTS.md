@@ -7,8 +7,8 @@ established the distributed extensible kernel direction,
 [D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics) fixed its
 operational failure semantics, and
 [D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam)
-anchors the minimal core, single frozen plugin seam, and incremental execution
-path on real workload measurements.
+anchors the minimal core, single frozen plugin seam, and ordered execution
+plan on real workload measurements.
 
 Resolve tradeoffs in this order: architectural durability, correctness,
 determinism, persistence and recovery, maintainability, testability,
@@ -49,20 +49,21 @@ observability, performance, then implementation speed.
   profile versions. Stable kernel data maintains documented migration paths;
   plugins own their migrations. `MigrationActivate` commits a mandatory
   boundary checkpoint so ordinary recovery never spans two execution profiles.
-- **Architecture:** `sy_core` depends only on `sy_types` and `sy_api` (zero
-  external crates) and must pass the purity gate. Real I/O stays outside the
-  pure engine.
+- **Architecture:** `sy_types` has zero dependencies, `sy_api` depends strictly
+  on `sy_types`, and `sy_core` depends strictly on `sy_types` and `sy_api`
+  (zero external crates) and must pass the purity gate. Real I/O stays outside
+  the pure engine. Every crate enforces `#![deny(missing_docs)]`.
 
 ## Current status
 
-`seej/server/` currently holds a local, single-process prototype (`server_d`,
-`sy_cli`) with a fail-closed v1 WAL, format v3/v4 snapshots, and prototype
-spatial `Entity`/`Zone` fixtures. Treat it as a replaceable baseline: when
-building the generic D-015 core, starting clean is explicitly preferred over
-carrying legacy spatial types or JSON snapshots forward.
+**Phase 0 complete (clean-slate workspace):** the legacy spatial prototype has
+been removed per D-015. `seej/server/` currently contains the clean 4-crate
+workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) with in-code
+Rustdoc, the `sy_core` purity gate, and CI guardrails. Follow the strict coding
+order in [doc/ROADMAP.md](doc/ROADMAP.md) starting at **Phase 1.1**.
 
-Never present target features (generic domains, consensus, network observation,
-migrations, WASM isolation, hot loading) as implemented.
+Never present target features (runtime execution, storage, consensus, network
+observation, migrations, WASM isolation, hot loading) as implemented.
 
 ## Context on demand
 
@@ -72,15 +73,15 @@ migrations, WASM isolation, hot loading) as implemented.
 | Architecture, data model, seams, purity | [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) |
 | Public kernel, authority, and command contract | [seej/docs/CONTRACT.md](seej/docs/CONTRACT.md) |
 | Frozen v1 public plugin boundary | [seej/docs/PLUGIN_CONTRACT.md](seej/docs/PLUGIN_CONTRACT.md) |
-| Milestones and release checklist | [doc/ROADMAP.md](doc/ROADMAP.md) |
-| Current prototype behavior and benchmarks | [seej/docs/PROTOTYPE.md](seej/docs/PROTOTYPE.md) |
+| Ordered coding plan and release checklist | [doc/ROADMAP.md](doc/ROADMAP.md) |
+| Empirical lab benchmarks grounding D-015 | [seej/docs/BENCHMARKS.md](seej/docs/BENCHMARKS.md) |
 | Threat model and security posture | [doc/SECURITY.md](doc/SECURITY.md) |
 
 ## Verification
 
 Carry implementation changes through affected checks before handing back. For
 documentation changes, verify links, anchors, commands, terminology, and the
-distinction between implemented prototype behavior and targets.
+distinction between implemented code and targets.
 
 Run Rust commands from `seej/server/` with the pinned toolchain
 (`rust-toolchain.toml`). Select checks from `.github/workflows/rust.yml`:

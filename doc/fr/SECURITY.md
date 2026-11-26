@@ -20,15 +20,12 @@ netcode ingame et infrastructure hôte des opérateurs.
 
 ## Posture de sécurité actuelle et cible
 
-- **Prototype implémenté (`seej/server/`) :** prototype local mono-processus,
-  mono-écrivain. Aucune authentification réseau, consensus, verrou exclusif ou
+- **État actuel du dépôt (`seej/server/` — Phase 0 socle vierge) :** squelette
+  workspace Rust en 4 crates (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) avec
+  garde-fous actifs de compilation, pureté et chaîne d'approvisionnement
+  (`check_sy_core_purity.py`, `cargo-audit`, `cargo-deny`, contrôle du DAG de
+  dépendances). Aucun démon, moteur de stockage, consensus, authentification ou
   isolation de plugin n'existe encore.
-  - L'ouverture normale du WAL échoue fermé sur corruption, version WAL inconnue,
-    erreur I/O et trame incomplète à en-tête complet (26 octets), et ne tronque
-    qu'un fragment terminal compatible d'en-tête v1 de 1 à 25 octets.
-  - `sy_cli` ouvre le WAL en lecture seule, mais `FilesystemStore::new` peut
-    créer `<data-dir>/worlds` et `dump --output` ne rejette pas un chemin qui
-    aliase le stockage canonique (`P1-11` ouvert).
 - **Cible v1 (Gate 1-K) :** groupes d'autorité tolérants aux pannes franches
   (CFT) de 1 ou 3 nœuds authentifiés par les opérateurs (quorum 2). Les nœuds
   autorisés byzantins sont hors modèle de panne v1 ; l'admission non
@@ -103,6 +100,7 @@ documentées sans modifier manuellement les fichiers du store canonique.
 
 - [DECISIONS.md](DECISIONS.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [ROADMAP.md](ROADMAP.md)
 - [CONTRACT.md](CONTRACT.md)
 - [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md)
-- [PROTOTYPE.md](PROTOTYPE.md)
+- [BENCHMARKS.md](BENCHMARKS.md)

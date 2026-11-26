@@ -9,9 +9,9 @@ This is the single normative draft contract for the Seej world kernel: identity,
 deterministic transitions, state mutation, commands, resolution roots,
 single-world authority, recovery, migration, observation, and inter-world
 federation. Plugin-facing contracts live in
-[PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md). Current prototype behavior lives in
-[PROTOTYPE.md](PROTOTYPE.md); implementation status lives in
-[doc/ROADMAP.md](../../doc/ROADMAP.md).
+[PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md). Empirical lab measurements live in
+[BENCHMARKS.md](BENCHMARKS.md); ordered coding phases and implementation status
+live in [doc/ROADMAP.md](../../doc/ROADMAP.md).
 
 Statements without an **Implemented** note describe the v1 target. After v1
 freeze (`K-01`), any replay-affecting change requires an explicit contract or

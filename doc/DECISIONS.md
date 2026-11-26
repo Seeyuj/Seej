@@ -319,19 +319,20 @@ root-verified recoveries) established five concrete facts:
    - `CloseTick(T)` cannot close tick `T` while an admitted `Pending` command
      targeting `T` remains unresolved; it either resolves normally or is
      resolved as `Cancelled` via the reserved control path.
-8. **Clean core replacement and incremental milestones:**
-   The current spatial prototype in `seej/server/` is retained only as a
-   working baseline (including its fail-closed v1 WAL, v3/v4 RNG fix, `TickN`
-   rollback fix, and purity gate). Building the new generic D-015 kernel cleanly
-   rather than incrementally mutating the prototype's `Entity`/`Zone`/JSON
-   types is explicitly authorized. Gate 1-K is structured into three executable
-   milestones in [ROADMAP.md](ROADMAP.md) rather than one undifferentiated
-   checklist, and dead placeholder crates/directories are removed.
+8. **Clean-slate core reset and ordered coding phases:**
+   The legacy spatial prototype (`Entity`/`Zone`, JSON snapshots, dual
+   `sim.rs`/`replay.rs`, `server_d`/`sy_cli` fixtures, and inert placeholder
+   crates) is removed rather than incrementally mutated. The workspace resets
+   to a minimal 4-crate skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`)
+   preserving the purity gate, pinned Rust `1.95.0`, license/advisory checks,
+   and CI dependency-DAG rules, with in-code Rustdoc aligned to the ordered
+   coding phases (`Phase 0` through `Phase 4`) in [ROADMAP.md](ROADMAP.md).
 
 ### Consequences
 
-- Documentation is consolidated into a single non-redundant set (~10 core
-  documents, one authority per subject); `CONTRACT.md` advances to
+- Documentation is consolidated into a single non-redundant set (with a French
+  mirror in `doc/fr/` and empirical lab evidence preserved in
+  [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)); `CONTRACT.md` advances to
   `0.4.0-draft` and `PLUGIN_CONTRACT.md` to `0.3.0-draft` (both unfrozen).
 - `K-05` is refocused from nine public provider replacements to internal-seam
   conformance and fault-injection doubles (`StateStore`, `AuthorityLog`,
@@ -339,7 +340,7 @@ root-verified recoveries) established five concrete facts:
   placeholder.
 - Storage engine choice (`redb`, `Fjall`, or custom paged store) and production
   hash construction remain internal profile choices to be benchmarked against
-  real storage workloads when Milestone 1 begins.
+  real storage workloads when **Phase 1.4** begins.
 - D-015 closes no Gate 1-K implementation item by itself; executable evidence
   in [ROADMAP.md](ROADMAP.md) remains mandatory before v1 freeze.
 
