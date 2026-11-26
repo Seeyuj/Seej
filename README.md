@@ -43,7 +43,7 @@ Documentation uses three labels:
 
 **Today (Phase 0 complete — clean-slate foundation):** per
 [D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam),
-the legacy spatial prototype has been retired (preserved at immutable tag
+the legacy spatial prototype has been retired (preserved at archive tag
 `archive/prototype-v1-final`). `seej/server/` holds an empty 4-crate Rust
 workspace skeleton (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) with strict
 lints, pure-crate purity checks, full dependency-DAG checks, pinned Rust
@@ -59,7 +59,7 @@ Requires Rust `1.95.0` (pinned in `rust-toolchain.toml`) and Python 3:
 python3 -B seej/server/scripts/check.py
 ```
 
-This single command runs the purity gate (18 self-tests + pure-crate scan),
+This single command runs the purity gate (self-test suite + pure-crate scan),
 dependency-DAG check (normal + dev + build), Markdown link/parity checks,
 `cargo fmt`, `cargo clippy`, `cargo test`, strict Rustdoc (`-D warnings`), and
 `cargo deny` (when installed).

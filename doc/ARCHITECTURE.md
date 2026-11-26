@@ -236,12 +236,13 @@ Application plugins depend **only** on public contract packages — never on
 ### Pure-stack rules (`sy_types`, `sy_api`, `sy_core`)
 
 The three pure crates must never access filesystem, network, wall-clock/process
-time, environment variables, OS randomness, OS threads, randomized hash
-collections (`HashMap`/`HashSet`), or unconstrained floating-point types
-(`f32`/`f64`). Enforced by `seej/server/scripts/check_sy_core_purity.py`
-(18 self-test cases), `#![deny(clippy::float_arithmetic)]`,
-`#![forbid(unsafe_code)]`, and `seej/server/scripts/check_dag.py`. Every crate
-enforces `#![deny(missing_docs)]`.
+time, environment variables, OS randomness, OS threads, subprocesses,
+randomized hash collections (`HashMap`/`HashSet`), or unconstrained
+floating-point types/literals (`f32`/`f64`). Enforced across all `.rs` files in
+those crates by `seej/server/scripts/check_sy_core_purity.py`,
+`#![deny(clippy::float_arithmetic)]`, `#![forbid(unsafe_code)]`, and
+`seej/server/scripts/check_dag.py`. Every crate enforces
+`#![deny(missing_docs)]`.
 
 ### Forbidden shortcuts
 

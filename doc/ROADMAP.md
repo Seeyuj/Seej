@@ -29,7 +29,7 @@ The repository now starts from a minimal 4-crate workspace skeleton
 
 | Done | Criterion | Evidence | Reproduce from repository root |
 | --- | --- | --- | --- |
-| [x] | `P0-01` pure-stack gate | [`check_sy_core_purity.py`](../seej/server/scripts/check_sy_core_purity.py) (18 self-tests across `sy_types`/`sy_api`/`sy_core` incl. `f32`/`f64`, `std::thread`, char literals) + [`check_dag.py`](../seej/server/scripts/check_dag.py) (normal + dev + build deps) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
+| [x] | `P0-01` pure-stack gate | [`check_sy_core_purity.py`](../seej/server/scripts/check_sy_core_purity.py) (built-in self-test suite across all `.rs` files in `sy_types`/`sy_api`/`sy_core` incl. `f32`/`f64`, float literals, `std::thread`, `std::process`, char literals) + [`check_dag.py`](../seej/server/scripts/check_dag.py) (normal + dev + build deps) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
 | [x] | `P1-01` repository CI & unified check | [`check.py`](../seej/server/scripts/check.py) + [`check_docs.py`](../seej/server/scripts/check_docs.py) + [`.github/workflows/rust.yml`](../.github/workflows/rust.yml) (`--locked`, `deny` incl. `bans`, open-source PR workflow) | `python3 -B seej/server/scripts/check.py` |
 | [x] | `P1-02` pinned toolchain | [`rust-toolchain.toml`](../rust-toolchain.toml) & [`seej/server/rust-toolchain.toml`](../seej/server/rust-toolchain.toml) (`1.95.0`) + `rust-version = "1.95.0"` | `rustc --version` |
 | [x] | `P2-01` inert placeholders retired | Removed dead placeholders (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) and retired prototype archived at tag `archive/prototype-v1-final` (`5841a00`) | `git show --stat archive/prototype-v1-final` |
@@ -39,9 +39,26 @@ The repository now starts from a minimal 4-crate workspace skeleton
 
 ## Gate 1-K — First Stable Kernel & Plugin Contract (Phases 1–3)
 
-Every unchecked item below blocks freezing the v1 contract (`K-01`).
+Every unchecked item below blocks freezing the v1 contract (`K-01`). Detailed
+pre-D-015 acceptance criteria for these IDs (including `K-08` crash boundaries,
+finite generation-seal thresholds, per-stable-version migration paths, and
+bounded authenticated inter-node messages) are preserved at archive tag
+`archive/pre-d015-docs` (`9662a60`, `seej/docs/phase1/EXIT_CHECKLIST.md`) as
+reference until each phase re-specifies and closes them with executable tests.
 
 ### Phase 1 — Minimal Generic Core & Crash-Safe Local Store
+
+> **Open design decisions to settle before Phase 1.2 (do not implement traits
+> before resolving):**
+> 1. **Ownership of the single `apply(WriteSet)` and in-memory layout:** decide
+>    whether `sy_core` owns the sole in-memory mutation path while `StateStore`
+>    handles durability only, avoiding multiple diverging `apply` implementations.
+> 2. **Public vs. internal crate boundary:** decide where internal seams
+>    (`StateStore`, `AuthorityLog`, `Executor`) live so third-party plugins
+>    importing `sy_api` cannot import internal traits.
+> 3. **On-demand trait introduction (Cordis rule):** start with a minimal
+>    vertical slice and introduce each internal trait only in the phase where
+>    its first real provider and consumer exist.
 
 Outcome: an empty or non-spatial world runs locally on the generic narrow waist
 (`OrderedTable` + `ObligationRegistry` + single `apply(WriteSet)` +
@@ -70,7 +87,7 @@ Outcome: an empty or non-spatial world runs locally on the generic narrow waist
   unknown mandatory variants.
 - [ ] **P1-07: Separate persisted DTOs from internal Rust types.**
 
-#### Phase 1.2 — Frozen Public Plugin Seam & Internal Traits (`sy_api`)
+#### Phase 1.2 — Target v1 Public Plugin Seam (Draft) (`sy_api`)
 
 - [ ] **Public logical state & flat-batch plugin contract (`K-06` foundation):**
   partitioned `OrderedTable` `(DomainId, TableId, PartitionKey, RecordKey) ->

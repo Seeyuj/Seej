@@ -137,7 +137,15 @@ def main() -> int:
                             f"in {target.relative_to(REPO_ROOT).as_posix()}"
                         )
 
-    # 3. EN / FR ID and draft-version parity.
+    # 3. Duplicate decision headings (D-NNN) in EN/FR DECISIONS.md.
+    heading_dec_re = re.compile(r"^##\s+(D-\d{3})\b", re.MULTILINE)
+    for rel_dec in ("doc/DECISIONS.md", "doc/fr/DECISIONS.md"):
+        ids = heading_dec_re.findall((REPO_ROOT / rel_dec).read_text(encoding="utf-8"))
+        dupes = sorted(k for k, v in Counter(ids).items() if v > 1)
+        if dupes:
+            errors.append(f"duplicate decision headings in {rel_dec}: {dupes}")
+
+    # 4. EN / FR ID parity and dynamic contract_version parity.
     en_rm = set(GAP_ID_RE.findall((REPO_ROOT / "doc/ROADMAP.md").read_text(encoding="utf-8")))
     fr_rm = set(GAP_ID_RE.findall((REPO_ROOT / "doc/fr/ROADMAP.md").read_text(encoding="utf-8")))
     if en_rm != fr_rm:
@@ -152,14 +160,24 @@ def main() -> int:
             f"DECISIONS ID mismatch: EN-FR={sorted(en_dec - fr_dec)}, FR-EN={sorted(fr_dec - en_dec)}"
         )
 
-    for rel_en, rel_fr, ver in (
-        ("seej/docs/CONTRACT.md", "doc/fr/CONTRACT.md", "0.4.0-draft"),
-        ("seej/docs/PLUGIN_CONTRACT.md", "doc/fr/PLUGIN_CONTRACT.md", "0.3.0-draft"),
+    ver_re = re.compile(r"^contract_version:\s*(\S+)\s*$", re.MULTILINE)
+    for rel_en, rel_fr in (
+        ("seej/docs/CONTRACT.md", "doc/fr/CONTRACT.md"),
+        ("seej/docs/PLUGIN_CONTRACT.md", "doc/fr/PLUGIN_CONTRACT.md"),
     ):
-        if ver not in (REPO_ROOT / rel_en).read_text(encoding="utf-8") or ver not in (
-            REPO_ROOT / rel_fr
-        ).read_text(encoding="utf-8"):
-            errors.append(f"draft version '{ver}' mismatch between {rel_en} and {rel_fr}")
+        en_m = ver_re.search((REPO_ROOT / rel_en).read_text(encoding="utf-8"))
+        fr_m = ver_re.search((REPO_ROOT / rel_fr).read_text(encoding="utf-8"))
+        if not en_m or not fr_m or en_m.group(1) != fr_m.group(1):
+            errors.append(
+                f"contract_version mismatch between {rel_en} ({en_m.group(1) if en_m else 'missing'}) "
+                f"and {rel_fr} ({fr_m.group(1) if fr_m else 'missing'})"
+            )
+
+    # 5. Root and workspace rust-toolchain.toml must stay identical.
+    root_tc = (REPO_ROOT / "rust-toolchain.toml").read_text(encoding="utf-8").strip()
+    srv_tc = (REPO_ROOT / "seej/server/rust-toolchain.toml").read_text(encoding="utf-8").strip()
+    if root_tc != srv_tc:
+        errors.append("rust-toolchain.toml at repo root differs from seej/server/rust-toolchain.toml")
 
     if errors:
         print("documentation check failed:", file=sys.stderr)

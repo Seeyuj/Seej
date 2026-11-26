@@ -8,7 +8,7 @@ To ground [D-015](../../doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-
 in measurements before writing the clean-slate v1 kernel, two standalone
 throwaway single-threaded benchmark campaigns (`seej_lab_workloads`, outside
 workspace/CI) evaluated three synthetic workloads. Both raw harnesses, reports,
-and JSON summaries are preserved permanently at immutable Git tags:
+and JSON summaries are preserved permanently at Git archive tags:
 
 - **Campaign 1:** tag `archive/lab-campaign-1` (`1c98282`, `seej/server/lab/workloads/RESULTS.md`) — 6 runs (`BTreeMap` baseline × `delta`/`root`), **6/6 clean recoveries**.
 - **Campaign 2:** tag `archive/lab-campaign-2` (`5856396`, `seej/server/lab/workloads/RESULTS-layout.md`) — 24 runs (4 state/hash variants, plus reverse-order B/`delta` rerun), **24/24 clean recoveries**.
@@ -24,8 +24,9 @@ and JSON summaries are preserved permanently at immutable Git tags:
 - **Target cadence:** **10 Hz / 100 ms tick budget** (300 ticks, 10 warm-up,
   290 measured ticks, full checkpoint at tick 100).
 - **Recovery check:** every run's clean recovery (tick-100 checkpoint + 200
-  replayed ticks, warm OS page cache, **no fault injection**) reproduced the
-  exact live semantic state root (`6/6` in Campaign 1; `24/24` in Campaign 2).
+  replayed ticks, OS page cache not purged — effective cache temperature
+  unknown — and **no fault injection**) reproduced the exact live semantic state
+  root (`6/6` in Campaign 1; `24/24` in Campaign 2).
 
 Workloads tested:
 
@@ -54,9 +55,9 @@ Storage & hashing variants tested:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | **A** — `btree/acc` | 10.01–10.83 | 8.82–9.20 | 417 KB (4.17 MB/s) | 129 KB (1.29 MB/s) | 2.78 (`delta`, 0.028) |
 | **A** — `partitioned/acc-cached` | **8.62** | **7.55** | 417 KB | 129 KB | **2.06** (`delta`, 0.021) |
-| **A** — `partitioned/rehash` | 162.58 | 166.81 | 417 KB | 129 KB | — (broken by per-cmd rehash) |
+| **A** — `partitioned/rehash` | 162.58 | 166.81 | 417 KB | 129 KB | 106.30 `delta` (1.06) / 109.19 `root` (1.09) |
 | **C** — `btree/acc` | 11.77–12.36 | 10.72–11.69 | 561 KB (5.61 MB/s) | 129 KB | 3.35 (`delta`, 0.034) |
-| **C** — `partitioned/acc-cached` | 21.74* (p50 **8.38**) | 29.42* (p50 **7.59**) | 561 KB | 129 KB | **~2.5–3.7** (0.025–0.037) |
+| **C** — `partitioned/acc-cached` | 21.74* (p50 **8.38**) | 29.42* (p50 **7.59**) | 561 KB | 129 KB | **2.75** `delta` (0.028) / **3.74** `root` (0.037) |
 | **B** — `btree/acc` | 161.13–444.59 | 139.69–147.07 | **14.4 MB (144 MB/s)** | **89 B** | 113.12–129.44 (ratio **1.13–1.29**) |
 | **B** — `partitioned/acc` | 129.64–348.07 | **95.13** | 14.4 MB | 89 B | 69.85–82.34 (ratio **0.70–0.82**) |
 | **B** — `partitioned/acc-cached` | 279.18–383.31 | **78.95** (p50 **66.13**) | 14.4 MB | 89 B | **54.62** `delta` (**0.55**) / **61.79** `root` (**0.62**) |
@@ -92,7 +93,8 @@ Storage & hashing variants tested:
    large-state production scale (Phase 4.1 / Gate 1-D).
 5. **Limits of these measurements:** single thread, in-RAM state store,
    experimental additive BLAKE3 accumulator (not a production cryptographic
-   scheme), clean replay with warm OS page cache and no fault injection, no
-   network/quorum overhead, and no embedded storage engine (`redb`/`Fjall`)
-   benchmarked yet — real storage engine benchmarks belong at the start of
-   **Phase 1.4** ([doc/ROADMAP.md](../../doc/ROADMAP.md)).
+   scheme), clean replay with OS page cache not purged (effective cache
+   temperature unknown) and no fault injection, no network/quorum overhead, and
+   no embedded storage engine (`redb`/`Fjall`) benchmarked yet — real storage
+   engine benchmarks belong at the start of **Phase 1.4**
+   ([doc/ROADMAP.md](../../doc/ROADMAP.md)).

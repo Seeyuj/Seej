@@ -248,9 +248,10 @@ de `sy_core`, `sy_infra`, des internes d'un autre plugin ou du runtime.
 
 Les trois crates purs ne doivent jamais accéder au système de fichiers, au
 réseau, à l'horloge murale/processus, aux variables d'environnement, au hasard
-OS, aux threads OS, aux collections hachées aléatoires (`HashMap`/`HashSet`) ni
-aux types flottants non contraints (`f32`/`f64`). Contrôlé par
-`seej/server/scripts/check_sy_core_purity.py` (18 auto-tests),
+OS, aux threads OS, aux sous-processus, aux collections hachées aléatoires
+(`HashMap`/`HashSet`) ni aux types/littéraux flottants non contraints
+(`f32`/`f64`). Contrôlé sur tous les fichiers `.rs` de ces crates par
+`seej/server/scripts/check_sy_core_purity.py`,
 `#![deny(clippy::float_arithmetic)]`, `#![forbid(unsafe_code)]` et
 `seej/server/scripts/check_dag.py`. Chaque crate impose `#![deny(missing_docs)]`.
 

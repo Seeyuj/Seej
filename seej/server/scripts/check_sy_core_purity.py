@@ -22,9 +22,9 @@ from typing import Iterable
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PURE_ROOTS = (
-    SERVER_ROOT / "crates" / "sy_types" / "src",
-    SERVER_ROOT / "crates" / "sy_api" / "src",
-    SERVER_ROOT / "crates" / "sy_core" / "src",
+    SERVER_ROOT / "crates" / "sy_types",
+    SERVER_ROOT / "crates" / "sy_api",
+    SERVER_ROOT / "crates" / "sy_core",
 )
 
 
@@ -120,11 +120,22 @@ RULES = (
         ),
     ),
     Rule(
+        "process-control",
+        "Pure crates must not spawn subprocesses or terminate the host process.",
+        (
+            rx(r"\bstd\s*::\s*process\b"),
+            rx(r"\buse\s+std\s*::\s*process\b"),
+            rx(r"\buse\s+std\s*::\s*\{[^;]*\bprocess\b"),
+            rx(r"\bCommand\s*::\s*new\b"),
+        ),
+    ),
+    Rule(
         "floating-point",
-        "Pure crates must not use unconstrained f32/f64 types in canonical logic (P0-03).",
+        "Pure crates must not use unconstrained f32/f64 types or float literals in canonical logic (P0-03).",
         (
             rx(r"\b(?:f32|f64)\b"),
             rx(r"\d_(?:f32|f64)\b"),
+            rx(r"(?<!\.)\b\d+\.\d+(?:[eE][+-]?\d+)?\b"),
         ),
     ),
 )
@@ -339,6 +350,8 @@ def rust_files(root: Path) -> Iterable[Path]:
         return
 
     for path in sorted(root.rglob("*.rs"), key=lambda item: item.as_posix()):
+        if "target" in path.relative_to(root).parts:
+            continue
         if path.is_file():
             yield path
 
@@ -496,6 +509,21 @@ def run_self_test() -> int:
             "f64 type in canonical code is rejected",
             "pub struct Bad(pub f64);",
             "floating-point",
+        ),
+        (
+            "float literal in canonical code is rejected",
+            "pub fn f() { let _x = 0.5; }",
+            "floating-point",
+        ),
+        (
+            "std::process access is rejected",
+            "pub fn f() { let _ = std::process::Command::new(\"sh\"); }",
+            "process-control",
+        ),
+        (
+            "tuple indexing and ranges are not float literals",
+            "pub fn f(t: ((u8, u8), u8)) -> u8 { for _ in 0..10 {} t.0.1 }",
+            None,
         ),
     ]
 

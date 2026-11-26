@@ -47,7 +47,7 @@ La documentation utilise trois libellés :
 
 **Aujourd'hui (Phase 0 terminée — socle vierge) :** selon
 [D-015](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée), le
-prototype spatial historique a été retiré (archivé au tag immuable
+prototype spatial historique a été retiré (archivé au tag d'archive
 `archive/prototype-v1-final`). `seej/server/` contient un squelette workspace
 Rust vide en 4 crates (`sy_types`, `sy_api`, `sy_core`, `sy_infra`) avec lints
 stricts, contrôle de pureté sur les 3 crates purs, contrôle complet du DAG de
@@ -63,7 +63,7 @@ Nécessite Rust `1.95.0` (épinglé dans `rust-toolchain.toml`) et Python 3 :
 python3 -B seej/server/scripts/check.py
 ```
 
-Cette commande unique exécute la porte de pureté (18 auto-tests + scan des
+Cette commande unique exécute la porte de pureté (suite d'auto-tests + scan des
 crates purs), le contrôle du DAG (normal + dev + build), la vérification des
 liens/parité Markdown, `cargo fmt`, `cargo clippy`, `cargo test`, Rustdoc
 strict (`-D warnings`) et `cargo deny` (si installé).

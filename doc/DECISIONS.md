@@ -10,7 +10,7 @@ roadmap (see [ROADMAP.md](ROADMAP.md)) or a contract (see
 
 > **Traceability note:** Entries `D-001` through `D-014` below were condensed
 > into concise summaries by `D-015` without changing their accepted intent.
-> Their full verbatim pre-D-015 text is preserved permanently at immutable tag
+> Their full verbatim pre-D-015 text is preserved at archive tag
 > `archive/pre-d015-docs` (`9662a60`).
 
 | ID | Decision | Status |
@@ -237,12 +237,13 @@ structural problems:
    with full quotas could reject `CancelCommand` with `LimitExceeded` while
    ticks could no longer advance to expire old records.
 
-Two throwaway single-threaded benchmark campaigns preserved at immutable tags
+Two throwaway single-threaded benchmark campaigns preserved at archive tags
 `archive/lab-campaign-1` (`1c98282`, 6/6 clean recoveries) and
-`archive/lab-campaign-2` (`5856396`, 24/24 clean recoveries — warm OS cache, no
-fault injection), on Ryzen 9 5900X + Crucial P2 NVMe + Rust 1.95.0, 1,000,000
-keys × 128 B, 10 Hz / 100 ms tick budget, established five concrete facts (full
-tables in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)):
+`archive/lab-campaign-2` (`5856396`, 24/24 clean recoveries — OS page cache not
+purged, effective cache temperature unknown, no fault injection), on Ryzen 9
+5900X + Crucial P2 NVMe + Rust 1.95.0, 1,000,000 keys × 128 B, 10 Hz / 100 ms
+tick budget, established five concrete facts (full tables in
+[BENCHMARKS.md](../seej/docs/BENCHMARKS.md)):
 
 - **Command/mixed loads (A: 1,000 cmds/tick; C: 1,000 cmds + 1,000 autonomous
   writes + 80% hot keys)** meet the 100 ms budget on one thread in `delta` mode
@@ -352,7 +353,7 @@ tables in [BENCHMARKS.md](../seej/docs/BENCHMARKS.md)):
   acceptance criteria (`seej/docs/phase1/EXIT_CHECKLIST.md` — including `K-08`
   crash boundaries, finite generation-seal thresholds, per-stable-version
   migration paths, and bounded authenticated replay-protected inter-node
-  messages) remain archived at immutable tag `archive/pre-d015-docs` (`9662a60`)
+  messages) remain archived at archive tag `archive/pre-d015-docs` (`9662a60`)
   and serve as reference acceptance criteria until each phase re-specifies and
   closes them with executable tests. The last runnable local prototype (with
   its fail-closed WAL, RNG v4, and `TickN` rollback fixes) is archived at

@@ -2,8 +2,6 @@ name: Rust CI
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
   push:
     branches: [main]
   pull_request:
@@ -135,10 +133,10 @@ jobs:
       - name: Build release
         run: cargo build --locked --workspace --release
 
-  scheduled-deep:
-    name: Scheduled Deep Checks
+  manual-deep:
+    name: Manual Deep Checks
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -153,6 +151,7 @@ jobs:
       - name: Run ignored tests
         run: cargo test --locked --workspace --all-targets -- --ignored
 
-      # Restore --fail-under-lines 70 once Phase 1.1 adds executable code.
+      # Coverage threshold (--fail-under-lines 70) is deferred while Phase 0 crates have 0 executable lines;
+      # restore --fail-under-lines 70 in Phase 1.1 once executable code lands.
       - name: Run coverage report
         run: cargo llvm-cov --locked -p sy_core -p sy_infra --all-targets

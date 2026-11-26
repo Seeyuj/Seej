@@ -16,6 +16,15 @@ et les commits sont en **anglais** (miroir français non normatif dans
 - Points d'entrée : `seej/server/Cargo.toml` (workspace), [ROADMAP.md](ROADMAP.md) / [`doc/ROADMAP.md`](../ROADMAP.md) (plan de codage ordonné faisant foi). Aucun binaire produit n'existe encore.
 - Le code, la configuration et les schémas exécutables font foi : signaler tout écart avec la documentation au lieu de le reproduire.
 
+## Ordre d'arbitrage & invariants fondamentaux
+
+Arbitrer les compromis strictement dans cet ordre : **durabilité architecturale > exactitude > déterminisme > persistance et reprise > maintenabilité > testabilité > observabilité > performance > vitesse d'implémentation**.
+
+- **Autorité CP par monde :** un groupe autorisé détient l'unique histoire confirmée d'un monde (1 nœud ou 3 nœuds *shared-nothing*, quorum 2). La découverte n'accorde jamais l'autorité ; une partition minoritaire ne peut pas écrire. Des `authority_term` durables clôturent les coordinateurs ; des `config_version` confirmées gouvernent le membership.
+- **Fonctionnement headless :** les mondes évoluent sans UI, rendu, client, agent ni netcode ingame ; les déploiements 1 nœud et 3 nœuds obéissent au même contrat public.
+- **Déterminisme :** mêmes genèse/checkpoint, entrées admises ordonnées, calendrier de ticks et profil d'exécution produisent des transitions identiques. Les crates purs utilisent un `EntropyScope` entier dérivé de coordonnées et ne dépendent jamais de l'horloge murale, du timing réseau, de l'ordre FS, des threads OS, du hasard ambiant ni de décisions flottantes.
+- **Compatibilité :** tout changement affectant le rejeu exige une version explicite de contrat ou de profil ; les plugins possèdent leurs migrations ; les plugins incompatibles bloquent l'activation ; `MigrationActivate` commite un checkpoint frontière obligatoire.
+
 ## Carte
 
 | Chemin | Rôle | API publique | Dépendances autorisées (tous types) | Tests |
@@ -24,14 +33,14 @@ et les commits sont en **anglais** (miroir français non normatif dans
 | `seej/server/crates/sy_api/` | Brouillon de frontière publique v1 plugin/commandes/observation | aucune (squelette Phase 0) | `sy_types` | aucun |
 | `seej/server/crates/sy_core/` | Moteur de transition déterministe pur | aucune (squelette Phase 0) | `sy_types`, `sy_api` | aucun |
 | `seej/server/crates/sy_infra/` | Adaptateurs persistance, autorité, exécution, DST, observation | aucune (squelette Phase 0) | `sy_types`, `sy_api`, `sy_core` | aucun |
-| `seej/server/scripts/` | Validation unifiée (`check.py`), pureté, DAG, liens/parité doc | `check.py`, `check_sy_core_purity.py`, `check_dag.py`, `check_docs.py` | stdlib Python uniquement | `--self-test` intégré (18 cas) |
+| `seej/server/scripts/` | Validation unifiée (`check.py`), pureté, DAG, liens/parité doc | `check.py`, `check_sy_core_purity.py`, `check_dag.py`, `check_docs.py` | stdlib Python uniquement | Suite `--self-test` intégrée |
 
 Hors source, ne pas explorer : `seej/server/target/`, `graft/`, `assets/`.
 
 ## Lecture progressive
 
-1. [`AGENTS.md`](../../AGENTS.md) à la racine.
-2. [ROADMAP.md](ROADMAP.md) (ou [`doc/ROADMAP.md`](../ROADMAP.md)) pour l'ordre unique des phases et les écarts ouverts.
+1. [`AGENTS.md`](../../AGENTS.md) à la racine et [CONTRIBUTING.md](CONTRIBUTING.md) (discipline de contribution et critères de refus).
+2. [ROADMAP.md](ROADMAP.md) (ou [`doc/ROADMAP.md`](../ROADMAP.md)) pour l'ordre unique des phases, les questions ouvertes pré-Phase 1.2 et les écarts ouverts.
 3. [CONTRACT.md](CONTRACT.md) et [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md) dès qu'une frontière publique change ; [ARCHITECTURE.md](ARCHITECTURE.md), [DECISIONS.md](DECISIONS.md) et [BENCHMARKS.md](BENCHMARKS.md) pour les justifications.
 4. Le crate propriétaire dans la carte (`src/lib.rs` et symboles ciblés), puis ses tests.
 
@@ -50,16 +59,15 @@ Les commandes s'exécutent à l'identique depuis la racine sous PowerShell et so
 | Règle | Mécanisme | Niveau |
 | --- | --- | --- |
 | `sy_types` = ∅, `sy_api` = `{sy_types}`, `sy_core` = `{sy_types, sy_api}` (normal, dev, build) | `seej/server/scripts/check_dag.py` (`check.py` + CI) | lint |
-| Crates purs (`sy_types`, `sy_api`, `sy_core`) sans horloge murale, env, fs/io, réseau, hasard OS, threads, `HashMap`/`HashSet` ni `f32`/`f64` | `seej/server/scripts/check_sy_core_purity.py` (18 auto-tests) + `#![deny(clippy::float_arithmetic)]` | lint |
+| Crates purs (`sy_types`, `sy_api`, `sy_core`, tous `.rs` dont `build.rs`/`tests/`) sans horloge murale, env, fs/io, réseau, hasard OS, threads, processus, `HashMap`/`HashSet` ni `f32`/`f64` | `seej/server/scripts/check_sy_core_purity.py` + `#![deny(clippy::float_arithmetic)]` | lint |
 | Zéro code `unsafe` dans les crates purs | `#![forbid(unsafe_code)]` dans chaque crate pur | lint |
 | Tout item public documenté avec zéro warning Rustdoc | `#![deny(missing_docs)]` + `cargo doc` (`RUSTDOCFLAGS=-D warnings`) | lint |
 | Politique dépendances (licences MIT/Apache/BSD, advisories, bans, sources) | `seej/server/deny.toml` (`cargo deny check advisories licenses bans sources`) | lint |
-| Liens Markdown valides, ancres Unicode, unique `AGENTS.md` racine, parité EN/FR | `seej/server/scripts/check_docs.py` (`check.py` + CI) | test |
-| Compteurs canoniques vérifiés *fail-closed* (`P0-04`) | aucun | prose |
-| Zéro ontologie applicative dans `sy_core` | aucun | prose |
-| Chemin de mutation unique `apply(WriteSet)` ; aucun succès avant confirmation durable | aucun | prose |
-| Ne geler en v1 que le contrat public ; garder les coutures internes internes | aucun | prose |
-| Budget de contrôle réservé pour `CancelCommand` ; checkpoint frontière sur `MigrationActivate` | aucun | prose |
-| Ne jamais présenter une cible comme implémentée | aucun | prose |
+| Liens Markdown valides, ancres Unicode, unique `AGENTS.md` racine, IDs de décisions uniques, synchro toolchain, parité EN/FR | `seej/server/scripts/check_docs.py` (`check.py` + CI) | test |
+| Compteurs canoniques vérifiés *fail-closed* (`P0-04`), jamais de wrap ni de saturation | aucun | prose |
+| Zéro ontologie applicative dans `sy_core` ; les plugins ne dépendent jamais de `sy_core` (`P2-06`) | aucun | prose |
+| Chemin de mutation unique `apply(WriteSet)` ; aucun succès avant confirmation durable par quorum | aucun | prose |
+| Ne geler en v1 que le contrat public plugin/commandes/observation ; garder les coutures internes internes jusqu'à un second fournisseur et consommateur réels | aucun | prose |
+| Budget de contrôle réservé pour `CancelCommand` et contrôle de migration ; ne jamais présenter une cible comme implémentée | aucun | prose |
 
 Pour la méthode de travail complète et le format de compte rendu, consulter la référence faisant foi [`AGENTS.md`](../../AGENTS.md).

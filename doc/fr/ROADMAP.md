@@ -36,7 +36,7 @@ Le dépôt repart désormais d'un squelette workspace minimal en 4 crates
 
 | Fait | Critère | Preuve | Reproduire depuis la racine du dépôt |
 | --- | --- | --- | --- |
-| [x] | `P0-01` porte de pureté | [`check_sy_core_purity.py`](../../seej/server/scripts/check_sy_core_purity.py) (18 auto-tests sur `sy_types`/`sy_api`/`sy_core` dont `f32`/`f64`, `std::thread`, littéraux `char`) + [`check_dag.py`](../../seej/server/scripts/check_dag.py) (normal + dev + build) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
+| [x] | `P0-01` porte de pureté | [`check_sy_core_purity.py`](../../seej/server/scripts/check_sy_core_purity.py) (suite d'auto-tests sur tous les `.rs` de `sy_types`/`sy_api`/`sy_core` dont `f32`/`f64`, littéraux flottants, `std::thread`, `std::process`, littéraux `char`) + [`check_dag.py`](../../seej/server/scripts/check_dag.py) (normal + dev + build) | `python3 -B seej/server/scripts/check_sy_core_purity.py --self-test` && `python3 -B seej/server/scripts/check_sy_core_purity.py` && `python3 -B seej/server/scripts/check_dag.py` |
 | [x] | `P1-01` CI du dépôt & check unifié | [`check.py`](../../seej/server/scripts/check.py) + [`check_docs.py`](../../seej/server/scripts/check_docs.py) + [`.github/workflows/rust.yml`](../../.github/workflows/rust.yml) (`--locked`, `deny` incl. `bans`, CI PR open-source) | `python3 -B seej/server/scripts/check.py` |
 | [x] | `P1-02` chaîne épinglée | [`rust-toolchain.toml`](../../rust-toolchain.toml) & [`seej/server/rust-toolchain.toml`](../../seej/server/rust-toolchain.toml) (`1.95.0`) + `rust-version = "1.95.0"` | `rustc --version` |
 | [x] | `P2-01` *placeholders* inertes retirés | Suppression des *placeholders* morts (`sy_loader`, `sy_tools`, `sy_protocol`, `mods/`, `examples/`) et prototype archivé au tag `archive/prototype-v1-final` (`5841a00`) | `git show --stat archive/prototype-v1-final` |
@@ -46,9 +46,29 @@ Le dépôt repart désormais d'un squelette workspace minimal en 4 crates
 
 ## Gate 1-K — Premier contrat stable noyau & plugin (Phases 1–3)
 
-Chaque item non coché ci-dessous bloque le gel du contrat v1 (`K-01`).
+Chaque item non coché ci-dessous bloque le gel du contrat v1 (`K-01`). Les
+critères d'acceptation détaillés pré-D-015 pour ces IDs (dont les frontières de
+crash `K-08`, les seuils finis de scellement de génération, les chemins de
+migration par version stable et les messages inter-nœuds bornés et
+authentifiés) sont archivés au tag `archive/pre-d015-docs` (`9662a60`,
+`seej/docs/phase1/EXIT_CHECKLIST.md`) comme référence jusqu'à leur
+re-spécification et fermeture par tests phase par phase.
 
 ### Phase 1 — Cœur générique minimal & stockage local sûr face aux crashs
+
+> **Questions de conception ouvertes à trancher avant la Phase 1.2 (ne pas
+> coder les traits avant arbitrage) :**
+> 1. **Propriété de l'unique `apply(WriteSet)` et du layout mémoire :**
+>    décider si `sy_core` possède l'unique chemin de mutation en mémoire tandis
+>    que `StateStore` ne gère que la durabilité, afin d'éviter plusieurs
+>    implémentations divergentes d'`apply`.
+> 2. **Frontière crate publique vs coutures internes :** décider où vivent les
+>    coutures internes (`StateStore`, `AuthorityLog`, `Executor`) afin qu'un
+>    plugin tiers important `sy_api` ne puisse pas importer des traits internes.
+> 3. **Introduction des traits à la demande (règle Cordis) :** démarrer par une
+>    tranche verticale minimale et n'introduire chaque trait interne que dans
+>    la phase où son premier fournisseur et son premier consommateur réels
+>    existent.
 
 Résultat : un monde vide ou non spatial tourne localement sur le *narrow waist*
 générique (`OrderedTable` + `ObligationRegistry` + unique `apply(WriteSet)` +
@@ -80,7 +100,7 @@ stockage injectées.
   typé pour les variantes obligatoires inconnues.
 - [ ] **P1-07 : Séparer les DTO persistés des types Rust internes.**
 
-#### Phase 1.2 — Couture publique plugin gelée & traits internes (`sy_api`)
+#### Phase 1.2 — Couture publique plugin visée v1 (brouillon) (`sy_api`)
 
 - [ ] **État logique public & contrat plugin en batch plat (socle `K-06`) :**
   `OrderedTable` partitionné `(DomainId, TableId, PartitionKey, RecordKey) ->

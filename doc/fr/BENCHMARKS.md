@@ -11,7 +11,7 @@ Pour ancrer [D-015](DECISIONS.md#d-015--noyau-mesuré-et-couture-plugin-gelée)
 dans des mesures réelles avant d'écrire le noyau v1 sur base vierge, deux
 campagnes autonomes mono-thread (`seej_lab_workloads`, hors workspace/CI) ont
 évalué trois charges synthétiques. Les deux harnais bruts, rapports et résumés
-JSON sont conservés de façon permanente à des tags Git immuables :
+JSON sont conservés de façon permanente aux tags d'archive Git :
 
 - **Campagne 1 :** tag `archive/lab-campaign-1` (`1c98282`, `seej/server/lab/workloads/RESULTS.md`) — 6 séries (témoin `BTreeMap` × `delta`/`root`), **6/6 reprises propres**.
 - **Campagne 2 :** tag `archive/lab-campaign-2` (`5856396`, `seej/server/lab/workloads/RESULTS-layout.md`) — 24 séries (4 variantes stockage/hash + resérie B/`delta` en ordre inverse), **24/24 reprises propres**.
@@ -27,9 +27,10 @@ JSON sont conservés de façon permanente à des tags Git immuables :
 - **Cadence cible :** **budget de tick 10 Hz / 100 ms** (300 ticks, 10
   d'échauffement, 290 mesurés, checkpoint complet au tick 100).
 - **Vérification de reprise :** chaque reprise propre (checkpoint au tick 100 +
-  200 ticks rejoués, cache OS chaud, **sans injection de pannes**) a reproduit
-  exactement la racine d'état sémantique de son exécution directe (`6/6` en
-  Campagne 1 ; `24/24` en Campagne 2).
+  200 ticks rejoués, cache OS non purgé — température effective du cache
+  inconnue — et **sans injection de pannes**) a reproduit exactement la racine
+  d'état sémantique de son exécution directe (`6/6` en Campagne 1 ; `24/24` en
+  Campagne 2).
 
 Charges testées :
 
@@ -58,9 +59,9 @@ Variantes stockage & hachage testées :
 | --- | ---: | ---: | ---: | ---: | ---: |
 | **A** — `btree/acc` | 10,01–10,83 | 8,82–9,20 | 417 Ko (4,17 Mo/s) | 129 Ko (1,29 Mo/s) | 2,78 (`delta`, 0,028) |
 | **A** — `partitioned/acc-cached` | **8,62** | **7,55** | 417 Ko | 129 Ko | **2,06** (`delta`, 0,021) |
-| **A** — `partitioned/rehash` | 162,58 | 166,81 | 417 Ko | 129 Ko | — (cassé par le rehash par cmd) |
+| **A** — `partitioned/rehash` | 162,58 | 166,81 | 417 Ko | 129 Ko | 106,30 `delta` (1,06) / 109,19 `root` (1,09) |
 | **C** — `btree/acc` | 11,77–12,36 | 10,72–11,69 | 561 Ko (5,61 Mo/s) | 129 Ko | 3,35 (`delta`, 0,034) |
-| **C** — `partitioned/acc-cached` | 21,74* (p50 **8,38**) | 29,42* (p50 **7,59**) | 561 Ko | 129 Ko | **~2,5–3,7** (0,025–0,037) |
+| **C** — `partitioned/acc-cached` | 21,74* (p50 **8,38**) | 29,42* (p50 **7,59**) | 561 Ko | 129 Ko | **2,75** `delta` (0,028) / **3,74** `root` (0,037) |
 | **B** — `btree/acc` | 161,13–444,59 | 139,69–147,07 | **14,4 Mo (144 Mo/s)** | **89 o** | 113,12–129,44 (ratio **1,13–1,29**) |
 | **B** — `partitioned/acc` | 129,64–348,07 | **95,13** | 14,4 Mo | 89 o | 69,85–82,34 (ratio **0,70–0,82**) |
 | **B** — `partitioned/acc-cached` | 279,18–383,31 | **78,95** (p50 **66,13**) | 14,4 Mo | 89 o | **54,62** `delta` (**0,55**) / **61,79** `root` (**0,62**) |
@@ -96,7 +97,7 @@ Variantes stockage & hachage testées :
    critique sont nécessaires à grande échelle (Phase 4.1 / Gate 1-D).
 5. **Limites de ces mesures :** mono-thread, état en RAM, accumulateur BLAKE3
    additif expérimental (pas un schéma cryptographique de production), rejeu
-   propre avec cache OS chaud sans injection de pannes, pas de surcoût
-   réseau/quorum et aucun moteur embarqué (`redb`/`Fjall`) encore mesuré — les
-   vrais benchmarks de moteur de stockage auront lieu au démarrage de la
-   **Phase 1.4** ([ROADMAP.md](ROADMAP.md)).
+   propre avec cache OS non purgé (température effective du cache inconnue) sans
+   injection de pannes, pas de surcoût réseau/quorum et aucun moteur embarqué
+   (`redb`/`Fjall`) encore mesuré — les vrais benchmarks de moteur de stockage
+   auront lieu au démarrage de la **Phase 1.4** ([ROADMAP.md](ROADMAP.md)).

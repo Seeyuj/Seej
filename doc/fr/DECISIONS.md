@@ -13,8 +13,8 @@ ultérieures ont remplacé. Ce n'est ni une feuille de route (voir
 
 > **Note de traçabilité :** les entrées `D-001` à `D-014` ci-dessous ont été
 > condensées en résumés concis par `D-015` sans modifier leur intention
-> acceptée. Leur texte intégral pré-D-015 est archivé de façon permanente au
-> tag immuable `archive/pre-d015-docs` (`9662a60`).
+> acceptée. Leur texte intégral pré-D-015 est archivé au tag d'archive
+> `archive/pre-d015-docs` (`9662a60`).
 
 | ID | Décision | Statut |
 | --- | --- | --- |
@@ -258,12 +258,13 @@ problèmes structurels :
    `CancelCommand` avec `LimitExceeded` alors que les ticks ne pouvaient plus
    avancer pour faire expirer les anciens enregistrements.
 
-Deux campagnes de benchmarks jetables mono-thread conservées aux tags immuables
+Deux campagnes de benchmarks jetables mono-thread conservées aux tags d'archive
 `archive/lab-campaign-1` (`1c98282`, 6/6 reprises propres) et
-`archive/lab-campaign-2` (`5856396`, 24/24 reprises propres — cache OS chaud,
-sans injection de pannes), sur Ryzen 9 5900X + NVMe Crucial P2 + Rust 1.95.0,
-1 000 000 clés × 128 o, budget tick 10 Hz / 100 ms, ont établi cinq faits
-concrets (tableaux complets dans [BENCHMARKS.md](BENCHMARKS.md)) :
+`archive/lab-campaign-2` (`5856396`, 24/24 reprises propres — cache OS non
+purgé, température effective du cache inconnue, sans injection de pannes), sur
+Ryzen 9 5900X + NVMe Crucial P2 + Rust 1.95.0, 1 000 000 clés × 128 o, budget
+tick 10 Hz / 100 ms, ont établi cinq faits concrets (tableaux complets dans
+[BENCHMARKS.md](BENCHMARKS.md)) :
 
 - **Les charges de commandes et mixtes (A : 1 000 cmd/tick ; C : 1 000 cmd +
   1 000 écritures autonomes + 80 % de clés chaudes)** tiennent le budget de
@@ -388,7 +389,7 @@ concrets (tableaux complets dans [BENCHMARKS.md](BENCHMARKS.md)) :
   — y compris les frontières de crash `K-08`, les seuils finis de scellement de
   génération, les chemins de migration depuis chaque version stable et les
   messages inter-nœuds bornés, authentifiés et protégés contre le rejeu)
-  restent archivés au tag immuable `archive/pre-d015-docs` (`9662a60`) comme
+  restent archivés au tag d'archive `archive/pre-d015-docs` (`9662a60`) comme
   référence d'acceptation jusqu'à leur re-spécification et fermeture par tests
   phase par phase. Le dernier prototype local exécutable (avec ses correctifs
   WAL *fail-closed*, RNG v4 et rollback `TickN`) est archivé au tag
