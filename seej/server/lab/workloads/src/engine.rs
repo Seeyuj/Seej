@@ -7,12 +7,75 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::checkpoint;
+use crate::checkpoint::{self, Snapshot};
 use crate::journal::{self, Action, Decoded, JournalReader, Resolution};
-use crate::rules::{self, Command, Rules, View, Write};
+use crate::partitioned::{PartitionWork, Partitioned};
+use crate::rules::{self, Command, ReadView, Rules, View, Write};
 use crate::state::{key_at, root_hex, root_of, AccDelta, Key, Root, State, Value, ENTRY_BYTES};
 use crate::summary::{ms, phase_stats, Sample, TickTimes, BUDGET_MS};
-use crate::{Config, JournalMode, Layout, RecoverSummary, RunSummary, INVALID_CONFIG};
+use crate::{Config, JournalMode, Layout, RecoverSummary, RunSummary, StateLayout, INVALID_CONFIG};
+
+pub(crate) trait Work {
+    type State: Snapshot;
+    type Prior;
+
+    fn genesis(cfg: &Config, layout: &Layout, seed_key: &[u8; 32]) -> Self::State;
+    fn start(cfg: &Config, layout: &Layout, live: bool) -> Self;
+    fn resolve(
+        &mut self,
+        state: &Self::State,
+        rules: &Rules<'_>,
+        action: Action,
+        tick: u64,
+    ) -> Result<(), String>;
+    fn writes(&self) -> &[Write<Self::Prior>];
+    fn stage_root(&mut self, state: &mut Self::State, times: &mut TickTimes) -> Root;
+    fn finish_resolution(&mut self, _times: &mut TickTimes) {}
+    fn replay_resolution(
+        &mut self,
+        state: &mut Self::State,
+        rules: &Rules<'_>,
+        mode: JournalMode,
+        pre_root: &Root,
+        decoded: &Decoded<'_>,
+    ) -> Result<Root, String>;
+    fn coalesced_before_publish(&self) -> usize {
+        0
+    }
+    fn coalesced_after_publish(&mut self) -> usize {
+        0
+    }
+    fn apply(&mut self, state: &mut Self::State);
+    fn rollback(&mut self, _state: &mut Self::State) {}
+}
+
+impl Snapshot for State {
+    fn root(&self) -> Root {
+        self.root()
+    }
+
+    fn count(&self) -> u64 {
+        self.count()
+    }
+
+    fn entries(&self) -> impl Iterator<Item = (&Key, &Value)> {
+        self.entries()
+    }
+
+    fn full_scan(&self) -> u128 {
+        self.full_scan()
+    }
+
+    fn checked_acc_root(&self, expected_sum: u64) -> Result<Root, String> {
+        let (world, parts, count, sum) = self.full_recompute();
+        let root = root_of(&world, count);
+        require_root(&root, &self.root(), "full-state recompute")?;
+        if !self.matches_recomputed(&world, &parts, count) || sum != expected_sum {
+            return Err("recomputed state accumulators or counter sum mismatch".into());
+        }
+        Ok(root)
+    }
+}
 
 struct TickWork {
     overlay: BTreeMap<Key, Value>,
@@ -27,6 +90,37 @@ impl TickWork {
             delta: AccDelta::new(partitions),
             writes: Vec::with_capacity(resolved_capacity),
         }
+    }
+
+    fn hash_resolved(&mut self, state: &State) -> Root {
+        for write in &self.writes {
+            self.delta.record(&write.key, Some(&write.old), &write.new);
+        }
+        state.root_after(&self.delta)
+    }
+
+    fn merge_resolved(&mut self) {
+        for write in &self.writes {
+            self.overlay.insert(write.key, write.new);
+        }
+    }
+}
+
+impl Work for TickWork {
+    type State = State;
+    type Prior = Value;
+
+    fn genesis(cfg: &Config, layout: &Layout, seed_key: &[u8; 32]) -> State {
+        State::genesis(cfg.keys, layout.partitions, seed_key)
+    }
+
+    fn start(cfg: &Config, layout: &Layout, live: bool) -> Self {
+        let capacity = if live || cfg.journal == JournalMode::Root {
+            layout.resolved_capacity
+        } else {
+            0
+        };
+        Self::new(layout.partitions, capacity)
     }
 
     fn resolve(
@@ -46,22 +140,26 @@ impl TickWork {
         }
     }
 
-    fn hash_resolved(&mut self, state: &State) -> Root {
-        for write in &self.writes {
-            self.delta.record(&write.key, Some(&write.old), &write.new);
-        }
-        state.root_after(&self.delta)
+    fn writes(&self) -> &[Write] {
+        &self.writes
     }
 
-    fn merge_resolved(&mut self) {
-        for write in &self.writes {
-            self.overlay.insert(write.key, write.new);
-        }
+    fn stage_root(&mut self, state: &mut State, times: &mut TickTimes) -> Root {
+        let start = Instant::now();
+        let root = self.hash_resolved(state);
+        times.hash += start.elapsed();
+        root
+    }
+
+    fn finish_resolution(&mut self, times: &mut TickTimes) {
+        let start = Instant::now();
+        self.merge_resolved();
+        times.merge += start.elapsed();
     }
 
     fn replay_resolution(
         &mut self,
-        state: &State,
+        state: &mut State,
         rules: &Rules<'_>,
         mode: JournalMode,
         pre_root: &Root,
@@ -75,16 +173,7 @@ impl TickWork {
         )?;
         let post_root = match mode {
             JournalMode::Delta => {
-                if let Action::Command(command) = frame.action {
-                    let [source, target, ..] = command.keys;
-                    let expected = [key_at(source.min(target)), key_at(source.max(target))];
-                    if !decoded.entries().map(|(key, _)| key).eq(&expected) {
-                        return Err(format!(
-                            "journal writes do not match command keys at tick {}, seq {}",
-                            frame.tick, command.seq
-                        ));
-                    }
-                }
+                validate_command_writes(decoded)?;
                 let view = View {
                     state,
                     overlay: &self.overlay,
@@ -124,34 +213,43 @@ impl TickWork {
         Ok(post_root)
     }
 
+    fn coalesced_before_publish(&self) -> usize {
+        self.overlay.len()
+    }
+
     fn apply(&mut self, state: &mut State) {
         state.apply(std::mem::take(&mut self.overlay).into_iter(), &self.delta);
         self.delta.reset();
     }
 }
 
-struct LiveTick<'a> {
+struct LiveTick<'a, W> {
     layout: &'a Layout,
     mode: JournalMode,
     rules: Rules<'a>,
-    work: TickWork,
+    work: W,
     commands: Vec<Command>,
     bytes: Vec<u8>,
 }
 
-impl<'a> LiveTick<'a> {
-    fn new(cfg: &'a Config, layout: &'a Layout, rules: Rules<'a>) -> Self {
+impl<'a, W: Work> LiveTick<'a, W> {
+    fn new(cfg: &'a Config, layout: &'a Layout, rules: Rules<'a>, work: W) -> Self {
         Self {
             layout,
             mode: cfg.journal,
             rules,
-            work: TickWork::new(layout.partitions, layout.resolved_capacity),
+            work,
             commands: Vec::with_capacity(layout.command_count as usize),
             bytes: Vec::with_capacity(layout.tick_bytes as usize),
         }
     }
 
-    fn stage(&mut self, state: &State, tick: u64, times: &mut TickTimes) -> Result<(), String> {
+    fn stage(
+        &mut self,
+        state: &mut W::State,
+        tick: u64,
+        times: &mut TickTimes,
+    ) -> Result<(), String> {
         let start = Instant::now();
         self.commands.clear();
         self.bytes.clear();
@@ -185,7 +283,7 @@ impl<'a> LiveTick<'a> {
 
     fn stage_resolution(
         &mut self,
-        state: &State,
+        state: &mut W::State,
         tick: u64,
         action: Action,
         pre_root: Root,
@@ -194,9 +292,7 @@ impl<'a> LiveTick<'a> {
         let start = Instant::now();
         self.work.resolve(state, &self.rules, action, tick)?;
         times.compute += start.elapsed();
-        let start = Instant::now();
-        let post_root = self.work.hash_resolved(state);
-        times.hash += start.elapsed();
+        let post_root = self.work.stage_root(state, times);
         let start = Instant::now();
         let frame = Resolution {
             action,
@@ -213,17 +309,42 @@ impl<'a> LiveTick<'a> {
             &frame,
             layout,
             self.mode,
-            &self.work.writes,
+            self.work.writes(),
         );
         times.encode += start.elapsed();
-        let start = Instant::now();
-        self.work.merge_resolved();
-        times.merge += start.elapsed();
+        self.work.finish_resolution(times);
         Ok(post_root)
+    }
+
+    fn commit(
+        &mut self,
+        state: &mut W::State,
+        tick: u64,
+        times: &mut TickTimes,
+        durable_append: impl FnOnce(&[u8]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if let Err(err) = self.stage(state, tick, times) {
+            self.work.rollback(state);
+            return Err(err);
+        }
+        let start = Instant::now();
+        if let Err(err) = durable_append(&self.bytes) {
+            self.work.rollback(state);
+            return Err(err);
+        }
+        times.commit = start.elapsed();
+        Ok(())
     }
 }
 
 pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
+    match cfg.layout {
+        StateLayout::Btree => run_work::<TickWork>(cfg, dir),
+        StateLayout::Partitioned => run_work::<PartitionWork>(cfg, dir),
+    }
+}
+
+fn run_work<W: Work>(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
     let layout = config_layout(cfg)?;
     prepare_run_dir(dir)?;
     write_json(&dir.join("config.json"), cfg)?;
@@ -231,9 +352,10 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
     let mut file = File::create_new(&path).map_err(|e| file_error(&path, e))?;
     let start = Instant::now();
     let rules = Rules::new(cfg);
-    let mut state = State::genesis(cfg.keys, layout.partitions, &rules.seed_key);
+    let mut state = W::genesis(cfg, &layout, &rules.seed_key);
     let genesis_ms = ms(start.elapsed());
-    let mut live = LiveTick::new(cfg, &layout, rules);
+    let work = W::start(cfg, &layout, true);
+    let mut live = LiveTick::new(cfg, &layout, rules, work);
     let mut samples = Vec::with_capacity(layout.measured_ticks);
     let mut offset = 0;
     let mut checkpoint_write_ms = 0.0;
@@ -242,14 +364,13 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
     for tick in 1..=cfg.ticks {
         let tick_start = Instant::now();
         let mut times = TickTimes::default();
-        live.stage(&state, tick, &mut times)?;
+        live.commit(&mut state, tick, &mut times, |bytes| {
+            file.write_all(bytes)
+                .and_then(|()| file.sync_data())
+                .map_err(|e| file_error(&path, e))
+        })?;
         let bytes = live.bytes.len() as u64;
-        let coalesced_bytes = live.work.overlay.len() as u64 * ENTRY_BYTES as u64;
-        let start = Instant::now();
-        file.write_all(&live.bytes)
-            .and_then(|()| file.sync_data())
-            .map_err(|e| file_error(&path, e))?;
-        times.commit = start.elapsed();
+        let staged_count = live.work.coalesced_before_publish();
         offset += bytes;
         let start = Instant::now();
         live.work.apply(&mut state);
@@ -267,10 +388,11 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
             checkpoint_tick_total_ms = ms(times.total);
         }
         if tick > cfg.warmup_ticks {
+            let coalesced_count = staged_count + live.work.coalesced_after_publish();
             samples.push(Sample {
                 times,
                 journal_bytes: bytes,
-                coalesced_bytes,
+                coalesced_bytes: coalesced_count as u64 * ENTRY_BYTES as u64,
             });
         }
     }
@@ -278,7 +400,7 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
     if journal_bytes_total != offset || journal_bytes_total != layout.journal_bytes {
         return Err("journal size does not match committed ticks".into());
     }
-    let (full_scan_ms, full_recompute_ms) = verify_state(&state, &layout)?;
+    let (full_scan_ms, full_recompute_ms, acc_root) = verify_state(&state, &layout)?;
     let mut scratch = Vec::with_capacity(samples.len());
     let total = phase_stats(&samples, |t| t.total, &mut scratch);
     let budget_met = total.p99_ms <= BUDGET_MS as f64;
@@ -286,6 +408,8 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
     let summary = RunSummary {
         load: cfg.load,
         journal: cfg.journal,
+        layout: cfg.layout,
+        hash_mode: cfg.hash,
         seed: cfg.seed,
         keys: cfg.keys,
         ticks: cfg.ticks,
@@ -293,6 +417,7 @@ pub fn run(cfg: &Config, dir: &Path) -> Result<RunSummary, String> {
         auto_writes: cfg.auto_writes,
         commands: cfg.commands,
         final_root: root_hex(&state.root()),
+        acc_root: root_hex(&acc_root),
         genesis_ms,
         gen: phase_stats(&samples, |t| t.gen, &mut scratch),
         compute: phase_stats(&samples, |t| t.compute, &mut scratch),
@@ -334,24 +459,57 @@ pub fn recover(dir: &Path) -> Result<RecoverSummary, String> {
     let checkpoint = checkpoint::read(dir, &cfg, &layout)?;
     let checkpoint_load_ms = ms(start.elapsed());
     let start = Instant::now();
-    let mut state = State::from_checkpoint(checkpoint.entries, layout.partitions);
-    require_root(&state.root(), &checkpoint.root, "checkpoint")?;
-    let checkpoint_verify_ms = ms(start.elapsed());
+    let recover_base = RecoverBase {
+        checkpoint_root: checkpoint.root,
+        journal_offset: checkpoint.journal_offset,
+        checkpoint_load_ms,
+        verify_start: start,
+    };
+    match checkpoint.entries {
+        checkpoint::Entries::Btree(entries) => recover_work::<TickWork>(
+            dir,
+            &cfg,
+            &layout,
+            State::from_checkpoint(entries, layout.partitions),
+            recover_base,
+        ),
+        checkpoint::Entries::Partitioned(entries) => recover_work::<PartitionWork>(
+            dir,
+            &cfg,
+            &layout,
+            Partitioned::new(entries, cfg.hash),
+            recover_base,
+        ),
+    }
+}
+
+struct RecoverBase {
+    checkpoint_root: Root,
+    journal_offset: u64,
+    checkpoint_load_ms: f64,
+    verify_start: Instant,
+}
+
+fn recover_work<W: Work>(
+    dir: &Path,
+    cfg: &Config,
+    layout: &Layout,
+    mut state: W::State,
+    base: RecoverBase,
+) -> Result<RecoverSummary, String> {
+    require_root(&state.root(), &base.checkpoint_root, "checkpoint")?;
+    let checkpoint_verify_ms = ms(base.verify_start.elapsed());
     let path = dir.join("journal.bin");
     let source = File::open(&path).map_err(|e| file_error(&path, e))?;
     let mut reader =
-        JournalReader::new(source, checkpoint.journal_offset).map_err(|e| file_error(&path, e))?;
-    let rules = Rules::new(&cfg);
-    let capacity = match cfg.journal {
-        JournalMode::Delta => 0,
-        JournalMode::Root => layout.resolved_capacity,
-    };
-    let mut work = TickWork::new(layout.partitions, capacity);
+        JournalReader::new(source, base.journal_offset).map_err(|e| file_error(&path, e))?;
+    let rules = Rules::new(cfg);
+    let mut work = W::start(cfg, layout, false);
     let start = Instant::now();
     for tick in (cfg.checkpoint_at + 1)..=cfg.ticks {
         replay_tick(
-            &cfg,
-            &layout,
+            cfg,
+            layout,
             &rules,
             &mut work,
             &mut state,
@@ -361,51 +519,76 @@ pub fn recover(dir: &Path) -> Result<RecoverSummary, String> {
     }
     let journal_end = reader.finish()?;
     let replay_ms = ms(start.elapsed());
-    verify_state(&state, &layout)?;
+    let (_, _, acc_root) = verify_state(&state, layout)?;
     let replayed_ticks = cfg.ticks - cfg.checkpoint_at;
     let replay_ms_per_tick = replay_ms / replayed_ticks as f64;
     let final_root = root_hex(&state.root());
     let root_matches_run = compare_witness(dir, &final_root)?;
     let summary = RecoverSummary {
-        checkpoint_load_ms,
+        checkpoint_load_ms: base.checkpoint_load_ms,
         checkpoint_verify_ms,
         replay_ms,
         replayed_ticks,
         replayed_resolutions: replayed_ticks * (cfg.commands + 1),
         replay_ms_per_tick,
         replay_ratio_to_budget: replay_ms_per_tick / BUDGET_MS as f64,
-        journal_bytes_read: journal_end - checkpoint.journal_offset,
+        journal_bytes_read: journal_end - base.journal_offset,
         final_root,
+        acc_root: root_hex(&acc_root),
         root_matches_run,
     };
     write_json(&dir.join("recover_summary.json"), &summary)?;
     Ok(summary)
 }
 
-fn replay_tick(
+fn replay_tick<W: Work>(
     cfg: &Config,
     layout: &Layout,
     rules: &Rules<'_>,
-    work: &mut TickWork,
-    state: &mut State,
+    work: &mut W,
+    state: &mut W::State,
     reader: &mut JournalReader,
     tick: u64,
 ) -> Result<(), String> {
-    let mut pre = state.root();
-    for seq in 0..=layout.command_count {
-        let frame_layout = if seq < layout.command_count {
-            layout.command
-        } else {
-            layout.closure
-        };
-        let decoded = reader.next(cfg.keys, frame_layout, tick, seq)?;
-        pre = work.replay_resolution(state, rules, cfg.journal, &pre, &decoded)?;
+    let replay = (|| {
+        let mut pre = state.root();
+        for seq in 0..=layout.command_count {
+            let frame_layout = if seq < layout.command_count {
+                layout.command
+            } else {
+                layout.closure
+            };
+            let decoded = reader.next(cfg.keys, frame_layout, tick, seq)?;
+            pre = work.replay_resolution(state, rules, cfg.journal, &pre, &decoded)?;
+        }
+        Ok(())
+    })();
+    match replay {
+        Ok(()) => work.apply(state),
+        Err(_) => work.rollback(state),
     }
-    work.apply(state);
+    replay
+}
+
+pub(crate) fn validate_command_writes(decoded: &Decoded<'_>) -> Result<(), String> {
+    if let Action::Command(command) = decoded.frame.action {
+        let [source, target, ..] = command.keys;
+        let expected = [key_at(source.min(target)), key_at(source.max(target))];
+        if !decoded.entries().map(|(key, _)| key).eq(&expected) {
+            return Err(format!(
+                "journal writes do not match command keys at tick {}, seq {}",
+                decoded.frame.tick, command.seq
+            ));
+        }
+    }
     Ok(())
 }
 
-fn require_root(expected: &Root, actual: &Root, location: impl Display) -> Result<(), String> {
+pub(crate) fn require_root(
+    expected: &Root,
+    actual: &Root,
+    location: impl Display,
+) -> Result<(), String> {
     if actual == expected {
         Ok(())
     } else {
@@ -417,7 +600,7 @@ fn require_root(expected: &Root, actual: &Root, location: impl Display) -> Resul
     }
 }
 
-fn verify_state(state: &State, layout: &Layout) -> Result<(f64, f64), String> {
+fn verify_state(state: &impl Snapshot, layout: &Layout) -> Result<(f64, f64, Root), String> {
     let start = Instant::now();
     let sum = state.full_scan();
     let full_scan_ms = ms(start.elapsed());
@@ -428,17 +611,8 @@ fn verify_state(state: &State, layout: &Layout) -> Result<(f64, f64), String> {
         ));
     }
     let start = Instant::now();
-    let (world, parts, count, sum) = state.full_recompute();
-    let full_recompute_ms = ms(start.elapsed());
-    require_root(
-        &root_of(&world, count),
-        &state.root(),
-        "full-state recompute",
-    )?;
-    if !state.matches_recomputed(&world, &parts, count) || sum != layout.expected_sum {
-        return Err("recomputed state accumulators or counter sum mismatch".into());
-    }
-    Ok((full_scan_ms, full_recompute_ms))
+    let acc_root = state.checked_acc_root(layout.expected_sum)?;
+    Ok((full_scan_ms, ms(start.elapsed()), acc_root))
 }
 
 fn config_layout(cfg: &Config) -> Result<Layout, String> {
@@ -557,11 +731,11 @@ mod tests {
         };
         let mut times = TickTimes::default();
         let first = live
-            .stage_resolution(&direct, 1, actions[0], initial_root, &mut times)
+            .stage_resolution(&mut direct, 1, actions[0], initial_root, &mut times)
             .unwrap();
         assert_eq!(first, witness.root());
         let second = live
-            .stage_resolution(&direct, 1, actions[1], first, &mut times)
+            .stage_resolution(&mut direct, 1, actions[1], first, &mut times)
             .unwrap();
         let delta_bytes = std::mem::take(&mut live.bytes);
         live.work.apply(&mut direct);
@@ -581,7 +755,7 @@ mod tests {
                 pre_root,
                 post_root,
             };
-            journal::encode(&mut root_bytes, &frame, root_layout, JournalMode::Root, &[]);
+            journal::encode::<Value>(&mut root_bytes, &frame, root_layout, JournalMode::Root, &[]);
         }
         for (mode, bytes, frame_layout) in [
             (JournalMode::Delta, delta_bytes, layout.command),
@@ -594,13 +768,13 @@ mod tests {
             let mut work = TickWork::new(1, 2);
             let frame = reader.next(8, frame_layout, 1, 0).unwrap();
             let pre = work
-                .replay_resolution(&replayed, &rules, mode, &initial_root, &frame)
+                .replay_resolution(&mut replayed, &rules, mode, &initial_root, &frame)
                 .unwrap();
             assert_eq!(pre, first);
             let frame = reader.next(8, frame_layout, 1, 1).unwrap();
             assert_eq!(frame.frame.pre_root, first);
             let post = work
-                .replay_resolution(&replayed, &rules, mode, &pre, &frame)
+                .replay_resolution(&mut replayed, &rules, mode, &pre, &frame)
                 .unwrap();
             assert_eq!(post, second);
             reader.finish().unwrap();
@@ -621,8 +795,14 @@ mod tests {
             let rules = Rules::new(&cfg);
             let mut state = State::genesis(cfg.keys, layout.partitions, &rules.seed_key);
             let initial_root = state.root();
-            let mut live = LiveTick::new(&cfg, &layout, Rules::new(&cfg));
-            live.stage(&state, 1, &mut TickTimes::default()).unwrap();
+            let mut live = LiveTick::new(
+                &cfg,
+                &layout,
+                Rules::new(&cfg),
+                TickWork::new(layout.partitions, layout.resolved_capacity),
+            );
+            live.stage(&mut state, 1, &mut TickTimes::default())
+                .unwrap();
             let mut source = tempfile::tempfile().unwrap();
             source
                 .write_all(&live.bytes[..layout.command.bytes() as usize])
@@ -634,6 +814,61 @@ mod tests {
             assert!(err.contains("missing closure"), "{err}");
             assert_eq!(state.root(), initial_root);
             assert!(!work.overlay.is_empty());
+        }
+    }
+
+    #[test]
+    fn partitioned_tick_rolls_back_failed_commit_and_recovery() {
+        use crate::HashMode;
+
+        for mode in [JournalMode::Delta, JournalMode::Root] {
+            for hash in [HashMode::Acc, HashMode::AccCached, HashMode::Rehash] {
+                let mut cfg = Config::preset(Load::C, mode);
+                cfg.layout = StateLayout::Partitioned;
+                cfg.hash = hash;
+                cfg.keys = 2000;
+                cfg.commands = 20;
+                cfg.auto_writes = 200;
+                let layout = cfg.layout().unwrap();
+                let rules = Rules::new(&cfg);
+                let fixture = || Partitioned::genesis(&cfg, &layout, &rules.seed_key);
+                let mut state = fixture();
+                let mut witness = fixture();
+                let work = PartitionWork::start(&cfg, &layout, true);
+                let mut live = LiveTick::new(&cfg, &layout, Rules::new(&cfg), work);
+                let work = PartitionWork::start(&cfg, &layout, true);
+                let mut direct = LiveTick::new(&cfg, &layout, Rules::new(&cfg), work);
+                let mut times = TickTimes::default();
+                for (live, state) in [(&mut live, &mut state), (&mut direct, &mut witness)] {
+                    live.commit(state, 1, &mut times, |_| Ok(())).unwrap();
+                    live.work.apply(state);
+                }
+                let err = live
+                    .commit(&mut state, 2, &mut times, |bytes| {
+                        assert_eq!(bytes.len() as u64, layout.tick_bytes);
+                        Err("injected durable append failure".into())
+                    })
+                    .unwrap_err();
+                assert_eq!(err, "injected durable append failure");
+                PartitionWork::assert_same_state(&state, &witness);
+
+                let mut source = tempfile::tempfile().unwrap();
+                let truncated = live.bytes.len() - layout.closure.bytes() as usize;
+                source.write_all(&live.bytes[..truncated]).unwrap();
+                let mut reader = JournalReader::new(source, 0).unwrap();
+                let mut work = PartitionWork::start(&cfg, &layout, false);
+                let err = replay_tick(&cfg, &layout, &rules, &mut work, &mut state, &mut reader, 2)
+                    .unwrap_err();
+                assert!(err.contains("missing closure"), "{err}");
+                PartitionWork::assert_same_state(&state, &witness);
+
+                for (live, state) in [(&mut live, &mut state), (&mut direct, &mut witness)] {
+                    live.commit(state, 2, &mut times, |_| Ok(())).unwrap();
+                    live.work.apply(state);
+                }
+                assert_eq!(live.bytes, direct.bytes);
+                PartitionWork::assert_same_state(&state, &witness);
+            }
         }
     }
 }

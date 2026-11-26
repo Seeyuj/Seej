@@ -3,6 +3,7 @@
 mod checkpoint;
 mod engine;
 mod journal;
+mod partitioned;
 mod rules;
 mod state;
 mod summary;
@@ -37,6 +38,23 @@ pub enum JournalMode {
     Root,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum StateLayout {
+    #[default]
+    Btree,
+    Partitioned,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum HashMode {
+    #[default]
+    Acc,
+    AccCached,
+    Rehash,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub load: Load,
@@ -50,12 +68,17 @@ pub struct Config {
     pub hot_keys: u64,
     pub hot_percent: u64,
     pub journal: JournalMode,
+    #[serde(default)]
+    pub layout: StateLayout,
+    #[serde(default)]
+    pub hash: HashMode,
 }
 
 pub(crate) struct Layout {
     partitions: usize,
     measured_ticks: usize,
     resolved_capacity: usize,
+    undo_capacity: usize,
     command_count: u32,
     command: FrameLayout,
     closure: FrameLayout,
@@ -84,6 +107,8 @@ impl Config {
             hot_keys,
             hot_percent,
             journal,
+            layout: StateLayout::Btree,
+            hash: HashMode::Acc,
         }
     }
 
@@ -92,6 +117,9 @@ impl Config {
     }
 
     fn layout(&self) -> Result<Layout, String> {
+        if self.layout == StateLayout::Btree && self.hash != HashMode::Acc {
+            return Err("btree layout requires --hash acc".into());
+        }
         if self.keys < PARTITION_SIZE || !self.keys.is_multiple_of(PARTITION_SIZE) {
             return Err("keys must be a positive multiple of 1000".into());
         }
@@ -153,6 +181,11 @@ impl Config {
             .ok_or("checkpoint size exceeds u64")?;
         allocation_count::<Command>(self.commands, "command buffer")?;
         allocation_count::<u8>(tick_bytes, "journal tick buffer")?;
+        let undo_capacity = if self.layout == StateLayout::Partitioned {
+            partitioned::validate_capacity(self, partitions)?
+        } else {
+            0
+        };
         Ok(Layout {
             partitions: allocation_count::<Acc>(partitions, "partition accumulators")?,
             measured_ticks: allocation_count::<Sample>(
@@ -163,6 +196,7 @@ impl Config {
                 self.auto_writes.max(if self.commands > 0 { 2 } else { 0 }),
                 "resolution buffer",
             )?,
+            undo_capacity,
             command_count,
             command,
             closure,

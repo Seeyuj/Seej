@@ -12,10 +12,17 @@ pub(crate) struct Command {
     pub(crate) amount: u64,
 }
 
-pub(crate) struct Write {
+pub(crate) struct Write<P = Value> {
     pub(crate) key: Key,
-    pub(crate) old: Value,
+    pub(crate) old: P,
     pub(crate) new: Value,
+}
+
+pub(crate) trait ReadView {
+    type Prior;
+
+    fn get(&self, key: &Key) -> Result<&Value, String>;
+    fn for_write(&self, key: &Key) -> Result<(&Value, Self::Prior), String>;
 }
 
 pub(crate) struct View<'a> {
@@ -23,12 +30,19 @@ pub(crate) struct View<'a> {
     pub(crate) overlay: &'a BTreeMap<Key, Value>,
 }
 
-impl View<'_> {
-    pub(crate) fn get(&self, key: &Key) -> Result<&Value, String> {
+impl ReadView for View<'_> {
+    type Prior = Value;
+
+    fn get(&self, key: &Key) -> Result<&Value, String> {
         self.overlay
             .get(key)
             .or_else(|| self.state.get(key))
             .ok_or_else(|| format!("unknown key {key:?}"))
+    }
+
+    fn for_write(&self, key: &Key) -> Result<(&Value, Value), String> {
+        let value = self.get(key)?;
+        Ok((value, *value))
     }
 }
 
@@ -72,11 +86,11 @@ impl<'a> Rules<'a> {
         Command { seq, keys, amount }
     }
 
-    pub(crate) fn autonomous(
+    pub(crate) fn autonomous<P>(
         &self,
         tick: u64,
-        view: &View<'_>,
-        writes: &mut Vec<Write>,
+        view: &impl ReadView<Prior = P>,
+        writes: &mut Vec<Write<P>>,
     ) -> Result<(), String> {
         writes.clear();
         if self.cfg.auto_writes == 0 {
@@ -91,11 +105,11 @@ impl<'a> Rules<'a> {
             for i in 0..count {
                 let index = part * PARTITION_SIZE + phase + i * stride;
                 let key = key_at(index);
-                let old = *view.get(&key)?;
-                let mut new = old;
+                let (value, old) = view.for_write(&key)?;
+                let mut new = *value;
                 set_counter(
                     &mut new,
-                    counter(&old).checked_add(1).ok_or("counter overflow")?,
+                    counter(value).checked_add(1).ok_or("counter overflow")?,
                 );
                 set_buffer(&mut new, tick);
                 new[16..48].copy_from_slice(&self.entropy(1, tick, index));
@@ -106,27 +120,25 @@ impl<'a> Rules<'a> {
     }
 }
 
-pub(crate) fn resolve_command(
+pub(crate) fn resolve_command<P>(
     command: &Command,
-    view: &View<'_>,
-    writes: &mut Vec<Write>,
+    view: &impl ReadView<Prior = P>,
+    writes: &mut Vec<Write<P>>,
 ) -> Result<(), String> {
     writes.clear();
     let keys = command.keys.map(key_at);
-    let old0 = *view.get(&keys[0])?;
-    let old1 = *view.get(&keys[1])?;
+    let (v0, old0) = view.for_write(&keys[0])?;
+    let (v1, old1) = view.for_write(&keys[1])?;
     let old2 = view.get(&keys[2])?;
     let old3 = view.get(&keys[3])?;
-    let moved = command.amount.min(counter(&old0));
+    let moved = command.amount.min(counter(v0));
     let buffer = counter(old2) ^ counter(old3) ^ u64::from(command.seq);
-    let mut new0 = old0;
-    let mut new1 = old1;
-    set_counter(&mut new0, counter(&old0) - moved);
+    let mut new0 = *v0;
+    let mut new1 = *v1;
+    set_counter(&mut new0, counter(v0) - moved);
     set_counter(
         &mut new1,
-        counter(&old1)
-            .checked_add(moved)
-            .ok_or("counter overflow")?,
+        counter(v1).checked_add(moved).ok_or("counter overflow")?,
     );
     set_buffer(&mut new0, buffer);
     set_buffer(&mut new1, buffer);

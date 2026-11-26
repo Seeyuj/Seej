@@ -1,0 +1,75 @@
+{
+  "load": "c",
+  "journal": "delta",
+  "layout": "btree",
+  "hash_mode": "acc",
+  "seed": 42,
+  "keys": 1000000,
+  "ticks": 300,
+  "measured_ticks": 290,
+  "auto_writes": 1000,
+  "commands": 1000,
+  "final_root": "b1a728c2fa5b5c0a0ae7a8402d270fdcc18793ffd49dca2fbe5b1db151f74c1a",
+  "acc_root": "b1a728c2fa5b5c0a0ae7a8402d270fdcc18793ffd49dca2fbe5b1db151f74c1a",
+  "genesis_ms": 515.2995999999999,
+  "gen": {
+    "mean_ms": 0.09229931034482759,
+    "p50_ms": 0.088,
+    "p99_ms": 0.1549,
+    "max_ms": 0.1799
+  },
+  "compute": {
+    "mean_ms": 2.977777931034484,
+    "p50_ms": 2.9418,
+    "p99_ms": 3.8185,
+    "max_ms": 3.9705
+  },
+  "hash": {
+    "mean_ms": 1.1982444827586212,
+    "p50_ms": 1.1877,
+    "p99_ms": 1.38,
+    "max_ms": 1.3996
+  },
+  "encode": {
+    "mean_ms": 0.18407896551724132,
+    "p50_ms": 0.1691,
+    "p99_ms": 0.307,
+    "max_ms": 0.44670000000000004
+  },
+  "merge": {
+    "mean_ms": 0.39636310344827597,
+    "p50_ms": 0.38039999999999996,
+    "p99_ms": 0.6118,
+    "max_ms": 0.6946
+  },
+  "commit": {
+    "mean_ms": 3.8402217241379324,
+    "p50_ms": 3.7988000000000004,
+    "p99_ms": 5.668,
+    "max_ms": 5.9942
+  },
+  "apply": {
+    "mean_ms": 1.2377134482758625,
+    "p50_ms": 1.2256,
+    "p99_ms": 1.7810000000000001,
+    "max_ms": 2.0805
+  },
+  "total": {
+    "mean_ms": 11.076588275862068,
+    "p50_ms": 9.950099999999999,
+    "p99_ms": 12.356300000000001,
+    "max_ms": 294.43649999999997
+  },
+  "budget_ms": 100,
+  "budget_met": true,
+  "journal_bytes_total": 168326700,
+  "journal_bytes_per_tick_mean": 561089.0,
+  "journal_mb_per_s_at_10hz": 5.61089,
+  "coalesced_bytes_per_tick_mean": 321019.69655172416,
+  "resolutions_per_tick": 1001,
+  "checkpoint_write_ms": 285.3627,
+  "checkpoint_tick_total_ms": 294.43649999999997,
+  "checkpoint_bytes": 144000068,
+  "full_scan_ms": 21.2554,
+  "full_recompute_ms": 225.5364
+}

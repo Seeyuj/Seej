@@ -68,12 +68,12 @@ pub(crate) struct Resolution {
     pub(crate) post_root: Root,
 }
 
-pub(crate) fn encode(
+pub(crate) fn encode<P>(
     target: &mut Vec<u8>,
     frame: &Resolution,
     layout: FrameLayout,
     mode: JournalMode,
-    writes: &[Write],
+    writes: &[Write<P>],
 ) {
     let writes = match mode {
         JournalMode::Delta => writes,

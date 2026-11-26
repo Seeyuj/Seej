@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{JournalMode, Load};
+use crate::{HashMode, JournalMode, Load, StateLayout};
 
 pub(crate) const BUDGET_MS: u64 = 100;
 
@@ -18,6 +18,8 @@ pub struct PhaseStats {
 pub struct RunSummary {
     pub load: Load,
     pub journal: JournalMode,
+    pub layout: StateLayout,
+    pub hash_mode: HashMode,
     pub seed: u64,
     pub keys: u64,
     pub ticks: u64,
@@ -25,6 +27,7 @@ pub struct RunSummary {
     pub auto_writes: u64,
     pub commands: u64,
     pub final_root: String,
+    pub acc_root: String,
     pub genesis_ms: f64,
     pub gen: PhaseStats,
     pub compute: PhaseStats,
@@ -59,6 +62,7 @@ pub struct RecoverSummary {
     pub replay_ratio_to_budget: f64,
     pub journal_bytes_read: u64,
     pub final_root: String,
+    pub acc_root: String,
     pub root_matches_run: Option<bool>,
 }
 

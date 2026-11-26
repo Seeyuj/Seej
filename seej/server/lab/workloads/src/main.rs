@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use seej_lab_workloads::{recover, run, Config, JournalMode, Load, INVALID_CONFIG};
+use seej_lab_workloads::{
+    recover, run, Config, HashMode, JournalMode, Load, StateLayout, INVALID_CONFIG,
+};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -30,6 +32,10 @@ struct RunArgs {
     load: Load,
     #[arg(long, value_enum)]
     journal: JournalMode,
+    #[arg(long, value_enum, default_value = "btree")]
+    layout: StateLayout,
+    #[arg(long, value_enum, default_value = "acc")]
+    hash: HashMode,
     #[arg(long)]
     seed: Option<u64>,
     #[arg(long)]
@@ -63,6 +69,8 @@ impl RunArgs {
             commands: self.commands.unwrap_or(cfg.commands),
             hot_keys: self.hot_keys.unwrap_or(cfg.hot_keys),
             hot_percent: self.hot_percent.unwrap_or(cfg.hot_percent),
+            layout: self.layout,
+            hash: self.hash,
             ..cfg
         }
     }

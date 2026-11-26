@@ -1,0 +1,15 @@
+{
+  "load": "a",
+  "seed": 42,
+  "keys": 1000000,
+  "ticks": 300,
+  "warmup_ticks": 10,
+  "checkpoint_at": 100,
+  "auto_writes": 0,
+  "commands": 1000,
+  "hot_keys": 0,
+  "hot_percent": 0,
+  "journal": "root",
+  "layout": "partitioned",
+  "hash": "rehash"
+}

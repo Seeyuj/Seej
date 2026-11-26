@@ -1,0 +1,13 @@
+{
+  "checkpoint_load_ms": 137.23479999999998,
+  "checkpoint_verify_ms": 37.4151,
+  "replay_ms": 21838.085499999997,
+  "replayed_ticks": 200,
+  "replayed_resolutions": 200200,
+  "replay_ms_per_tick": 109.19042749999998,
+  "replay_ratio_to_budget": 1.0919042749999999,
+  "journal_bytes_read": 25817800,
+  "final_root": "b0d7020511d43b8554d750ba6fbdaff064123a3ba34b80b26e4011cb37bb4b88",
+  "acc_root": "7ff722d296e57470b612e40f7e8ac907d4e7cc28a0330fcbcda124b9a08e41cd",
+  "root_matches_run": true
+}

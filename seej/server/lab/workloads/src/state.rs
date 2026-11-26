@@ -65,13 +65,17 @@ fn digest(key: &Key, value: &Value) -> Acc {
     let mut entry = [0; ENTRY_BYTES];
     entry[..16].copy_from_slice(key);
     entry[16..].copy_from_slice(value);
-    let hash = blake3::hash(&entry);
+    record_digest(&entry)
+}
+
+pub(crate) fn record_digest(entry: &[u8; ENTRY_BYTES]) -> Acc {
+    let hash = blake3::hash(entry);
     std::array::from_fn(|i| {
         u64::from_le_bytes(hash.as_bytes()[8 * i..8 * (i + 1)].try_into().unwrap())
     })
 }
 
-fn add(lhs: &mut Acc, rhs: &Acc) {
+pub(crate) fn add(lhs: &mut Acc, rhs: &Acc) {
     let mut carry = false;
     for (l, &r) in lhs.iter_mut().zip(rhs) {
         let (sum, overflow) = l.overflowing_add(r);
@@ -81,7 +85,7 @@ fn add(lhs: &mut Acc, rhs: &Acc) {
     }
 }
 
-fn subtract(lhs: &mut Acc, rhs: &Acc) {
+pub(crate) fn subtract(lhs: &mut Acc, rhs: &Acc) {
     let mut borrow = false;
     for (l, &r) in lhs.iter_mut().zip(rhs) {
         let (diff, underflow) = l.overflowing_sub(r);

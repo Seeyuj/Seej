@@ -1,0 +1,15 @@
+{
+  "load": "c",
+  "seed": 42,
+  "keys": 1000000,
+  "ticks": 300,
+  "warmup_ticks": 10,
+  "checkpoint_at": 100,
+  "auto_writes": 1000,
+  "commands": 1000,
+  "hot_keys": 32,
+  "hot_percent": 80,
+  "journal": "root",
+  "layout": "btree",
+  "hash": "acc"
+}

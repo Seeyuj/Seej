@@ -1,12 +1,19 @@
 use std::fs;
 use std::ops::Range;
 use std::path::Path;
+use std::process::Command;
 
-use seej_lab_workloads::{recover, run, Config, JournalMode, Load};
+use seej_lab_workloads::{recover, run, Config, HashMode, JournalMode, Load, StateLayout};
 use tempfile::tempdir;
 
 const LOADS: [Load; 3] = [Load::A, Load::B, Load::C];
 const MODES: [JournalMode; 2] = [JournalMode::Delta, JournalMode::Root];
+const COMBOS: [(StateLayout, HashMode); 4] = [
+    (StateLayout::Btree, HashMode::Acc),
+    (StateLayout::Partitioned, HashMode::Acc),
+    (StateLayout::Partitioned, HashMode::AccCached),
+    (StateLayout::Partitioned, HashMode::Rehash),
+];
 const ENTRY_BYTES: usize = 144;
 const EMPTY_CLOSURE_BYTES: usize = 81 + 8;
 
@@ -71,24 +78,134 @@ fn delta_and_root_journals_reach_the_same_root() {
     }
 }
 
+fn campaign_one_journal_digest(load: Load, mode: JournalMode) -> &'static str {
+    // Produced by the released workload executable at commit 1c98282 using scaled().
+    match (load, mode) {
+        (Load::A, JournalMode::Delta) => {
+            "715ba6184877afe24a75f9bd9dac1eaefad20521af6bed5498a25ed705000137"
+        }
+        (Load::A, JournalMode::Root) => {
+            "5771336af098276c670d3b188d65a017b64dc0009e64e5d33846447925fefa54"
+        }
+        (Load::B, JournalMode::Delta) => {
+            "a89dd91c869caeab6313d9bc796a8aabb2739695b495781b43d0cf2312694150"
+        }
+        (Load::B, JournalMode::Root) => {
+            "4010ccb9dda0abb00d72151a8e7e369bb63fd30e16ff9c78a8e41b7b1b5ae648"
+        }
+        (Load::C, JournalMode::Delta) => {
+            "4ddd60c9f7c6f61a2758a6ff9b9aa658e94fc6304b56d073c17a6a5b434caa59"
+        }
+        (Load::C, JournalMode::Root) => {
+            "f5a7a91309074fad026c64d797d2939b93d19dec28f560bcdee73994b6bbc631"
+        }
+    }
+}
+
 #[test]
 fn recovery_from_checkpoint_matches_live_root() {
     for load in LOADS {
+        let mut additive = None;
+        let mut rehash_root = None;
         for mode in MODES {
-            let dir = tempdir().unwrap();
-            let cfg = scaled(load, mode);
-            let live = run(&cfg, dir.path()).unwrap();
-            let recovered = recover(dir.path()).unwrap();
-            assert_eq!(recovered.root_matches_run, Some(true), "{load:?}/{mode:?}");
-            assert_eq!(recovered.final_root, live.final_root);
-            assert_eq!(recovered.replayed_ticks, 7);
-            assert_eq!(recovered.replayed_resolutions, 7 * (cfg.commands + 1));
-            assert_eq!(
-                recovered.journal_bytes_read,
-                live.journal_bytes_total - read_offset(dir.path()) as u64
-            );
-            assert_eq!(live.measured_ticks, cfg.ticks);
+            let mut baseline_bytes = None;
+            let mut baseline_coalesced = None;
+            for (layout, hash) in COMBOS {
+                let dir = tempdir().unwrap();
+                let mut cfg = scaled(load, mode);
+                cfg.layout = layout;
+                cfg.hash = hash;
+                let live = run(&cfg, dir.path()).unwrap();
+                let recovered = recover(dir.path()).unwrap();
+                assert_eq!(live.layout, layout);
+                assert_eq!(live.hash_mode, hash);
+                assert_eq!(recovered.root_matches_run, Some(true));
+                assert_eq!(recovered.final_root, live.final_root);
+                assert_eq!(recovered.acc_root, live.acc_root);
+                assert_eq!(recovered.replayed_ticks, 7);
+                assert_eq!(recovered.replayed_resolutions, 7 * (cfg.commands + 1));
+                assert_eq!(
+                    recovered.journal_bytes_read,
+                    live.journal_bytes_total - read_offset(dir.path()) as u64
+                );
+                assert_eq!(live.measured_ticks, cfg.ticks);
+                assert_eq!(
+                    *baseline_coalesced.get_or_insert(live.coalesced_bytes_per_tick_mean),
+                    live.coalesced_bytes_per_tick_mean,
+                    "{load:?}/{mode:?}/{hash:?}"
+                );
+                assert_eq!(
+                    additive.get_or_insert_with(|| live.acc_root.clone()),
+                    &live.acc_root
+                );
+                if hash == HashMode::Rehash {
+                    assert_ne!(live.final_root, live.acc_root);
+                    assert_eq!(
+                        rehash_root.get_or_insert_with(|| live.final_root.clone()),
+                        &live.final_root
+                    );
+                } else {
+                    assert_eq!(live.final_root, live.acc_root);
+                    let bytes = fs::read(dir.path().join("journal.bin")).unwrap();
+                    if let Some(baseline) = &baseline_bytes {
+                        assert!(baseline == &bytes, "{load:?}/{mode:?}/{hash:?}");
+                    } else {
+                        assert_eq!(
+                            blake3::hash(&bytes).to_hex().as_str(),
+                            campaign_one_journal_digest(load, mode),
+                            "{load:?}/{mode:?}"
+                        );
+                        baseline_bytes = Some(bytes);
+                    }
+                }
+            }
         }
+    }
+}
+
+#[test]
+fn configuration_without_layout_and_hash_recovers_as_btree_acc() {
+    let dir = tempdir().unwrap();
+    let live = run(&scaled(Load::B, JournalMode::Delta), dir.path()).unwrap();
+    assert_eq!(
+        live.final_root,
+        "88a5bc758c83db5fcc966767b4db5ebc88ffc373891c0d36352a1051efff5b90"
+    );
+    let path = dir.path().join("config.json");
+    let mut old: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    old.as_object_mut().unwrap().remove("layout").unwrap();
+    old.as_object_mut().unwrap().remove("hash").unwrap();
+    fs::write(path, serde_json::to_vec(&old).unwrap()).unwrap();
+    let recovered = recover(dir.path()).unwrap();
+    assert_eq!(recovered.root_matches_run, Some(true));
+    assert_eq!(recovered.acc_root, live.final_root);
+}
+
+#[test]
+fn unsupported_layout_hash_pairs_exit_with_invalid_configuration() {
+    let dir = tempdir().unwrap();
+    for hash in ["acc-cached", "rehash"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_workloads"))
+            .args([
+                "run",
+                "--load",
+                "b",
+                "--journal",
+                "delta",
+                "--layout",
+                "btree",
+                "--hash",
+                hash,
+                "--dir",
+            ])
+            .arg(dir.path())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("btree layout requires --hash acc")
+        );
+        assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
     }
 }
 
