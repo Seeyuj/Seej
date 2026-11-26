@@ -59,6 +59,10 @@ reference until each phase re-specifies and closes them with executable tests.
 > 3. **On-demand trait introduction (Cordis rule):** start with a minimal
 >    vertical slice and introduce each internal trait only in the phase where
 >    its first real provider and consumer exist.
+> 4. **Pure-crate testing & fixtures (`P0-01` / `K-03`, before Phase 1.3):**
+>    with zero dev-dependencies and `include_bytes!` banned across pure crates,
+>    decide whether `K-03` fixtures live as inline Rust constants in `sy_core`
+>    or in a separate conformance test crate (e.g. `sy_infra` / `sy_testkit`).
 
 Outcome: an empty or non-spatial world runs locally on the generic narrow waist
 (`OrderedTable` + `ObligationRegistry` + single `apply(WriteSet)` +

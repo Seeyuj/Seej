@@ -69,6 +69,11 @@ re-spécification et fermeture par tests phase par phase.
 >    tranche verticale minimale et n'introduire chaque trait interne que dans
 >    la phase où son premier fournisseur et son premier consommateur réels
 >    existent.
+> 4. **Tests et fixtures des crates purs (`P0-01` / `K-03`, avant Phase 1.3) :**
+>    avec zéro dépendance `dev` et `include_bytes!` interdit dans les crates
+>    purs, décider si les fixtures `K-03` vivent comme constantes Rust en ligne
+>    dans `sy_core` ou dans un crate de tests de conformité séparé (ex.
+>    `sy_infra` / `sy_testkit`).
 
 Résultat : un monde vide ou non spatial tourne localement sur le *narrow waist*
 générique (`OrderedTable` + `ObligationRegistry` + unique `apply(WriteSet)` +

@@ -12,6 +12,7 @@ Resolve tradeoffs strictly in this order: **architectural durability > correctne
 - **Single-world CP authority:** one authorized group owns a world's single confirmed history (1 node or 3 shared-nothing nodes, quorum 2). Discovery never grants authority; a minority partition cannot write. Durable `authority_term` fences coordinators; confirmed `config_version` governs membership.
 - **Headless operation:** worlds evolve without UI, rendering, clients, agents, or ingame netcode; 1-node and 3-node deployments obey the same public contract.
 - **Determinism:** equal genesis/checkpoint, ordered admitted inputs, tick schedule, and execution profile produce identical transitions. Pure crates use coordinate-derived integer `EntropyScope` and never depend on wall-clock time, network timing, filesystem order, OS threads, ambient randomness, or float decisions.
+- **Durability and fail-closed persistence:** never report canonical success or publish effects before required durable confirmation (a local WAL append is not distributed commit). Fail closed on critical persistence errors; pause mutations on quorum loss while permitting explicitly stale read-only inspection.
 - **Compatibility:** replay-affecting changes require explicit contract or profile versions; plugins own their migrations; incompatible plugins block activation; `MigrationActivate` commits a mandatory boundary checkpoint.
 
 ## Map

@@ -126,7 +126,6 @@ RULES = (
             rx(r"\bstd\s*::\s*process\b"),
             rx(r"\buse\s+std\s*::\s*process\b"),
             rx(r"\buse\s+std\s*::\s*\{[^;]*\bprocess\b"),
-            rx(r"\bCommand\s*::\s*new\b"),
         ),
     ),
     Rule(
@@ -134,8 +133,10 @@ RULES = (
         "Pure crates must not use unconstrained f32/f64 types or float literals in canonical logic (P0-03).",
         (
             rx(r"\b(?:f32|f64)\b"),
-            rx(r"\d_(?:f32|f64)\b"),
-            rx(r"(?<!\.)\b\d+\.\d+(?:[eE][+-]?\d+)?\b"),
+            rx(r"\b\d[\d_]*_?(?:f32|f64)\b"),
+            rx(r"(?<!\.)\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d[\d_]*)?\b"),
+            rx(r"(?<![0-9a-fA-FxX._])\b\d[\d_]*[eE][+-]?\d[\d_]*\b"),
+            rx(r"(?<!\.)\b\d[\d_]*\.(?![.\w])"),
         ),
     ),
 )
@@ -516,13 +517,37 @@ def run_self_test() -> int:
             "floating-point",
         ),
         (
+            "scientific float literal 1e3 is rejected",
+            "pub fn f() { let _x = 1e3; }",
+            "floating-point",
+        ),
+        (
+            "suffixed float literal 2f32 is rejected",
+            "pub fn f() { let _x = 2f32; }",
+            "floating-point",
+        ),
+        (
+            "trailing-dot float literal 1. is rejected",
+            "pub fn f() { let _x = 1.; }",
+            "floating-point",
+        ),
+        (
             "std::process access is rejected",
             "pub fn f() { let _ = std::process::Command::new(\"sh\"); }",
             "process-control",
         ),
         (
-            "tuple indexing and ranges are not float literals",
-            "pub fn f(t: ((u8, u8), u8)) -> u8 { for _ in 0..10 {} t.0.1 }",
+            "domain Command::new is allowed",
+            """
+            pub struct Command;
+            impl Command { pub fn new() -> Self { Self } }
+            pub fn f() -> Command { Command::new() }
+            """,
+            None,
+        ),
+        (
+            "tuple indexing, ranges, hex literals, and int methods are allowed",
+            "pub fn f(t: ((u8, u8), u8)) -> u64 { for _ in 0..=10 {} let _ = 0x1e3_u64; let _ = 1_u64.saturating_add(1); u64::from(t.0.1) }",
             None,
         ),
     ]
