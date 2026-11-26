@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 sy_types.workspace = true
 sy_config.workspace = true
-# sy_protocol.workspace = true  # Phase 2
 sy_api.workspace = true
 sy_core.workspace = true
 serde.workspace = true

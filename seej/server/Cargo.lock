@@ -734,33 +734,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "sy_loader"
-version = "0.1.0"
-dependencies = [
- "sy_api",
- "sy_config",
- "sy_core",
- "sy_infra",
- "sy_types",
-]
-
-[[package]]
 name = "sy_testkit"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "sy_api",
- "sy_core",
- "sy_types",
-]
-
-[[package]]
-name = "sy_tools"
-version = "0.1.0"
-dependencies = [
- "sy_api",
- "sy_config",
  "sy_core",
  "sy_types",
 ]
