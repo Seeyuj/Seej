@@ -1,12 +1,14 @@
 # AGENTS.md — Seej
 
 Seej is open-source infrastructure for deterministic, persistent sandbox
-worlds. Decision D-012 defines it as a distributed, extensible world kernel;
-D-013 fixes its operational failure semantics, and D-014 closes the remaining
-first-stable command, migration, recovery, and provider-proof ambiguities. The
-kernel runs on one or more authorized nodes and coordinates replaceable
-providers for its fundamental capabilities. Ingame netcode, agents, rendering,
-economies, spatial models, and multiresolution engines remain userland.
+worlds. [D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel)
+established the distributed extensible kernel direction,
+[D-013](doc/DECISIONS.md#d-013--operational-failure-semantics) and
+[D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics) fixed its
+operational failure semantics, and
+[D-015](doc/DECISIONS.md#d-015--measured-kernel-core-and-frozen-plugin-seam)
+anchors the minimal core, single frozen plugin seam, and incremental execution
+path on real workload measurements.
 
 Resolve tradeoffs in this order: architectural durability, correctness,
 determinism, persistence and recovery, maintainability, testability,
@@ -14,79 +16,80 @@ observability, performance, then implementation speed.
 
 ## Non-negotiable invariants
 
-- **Distributed authority:** authority belongs to the authorized group for a
-  world. A confirmed history is the source of truth. Node discovery does not
-  grant authority, and a minority partition cannot create another canonical
-  history. Durable authority terms fence coordinators; separate confirmed
-  configuration versions govern membership changes.
-- **Headless operation:** a world evolves without UI, rendering, assets,
-  connected clients, agents, or ingame netcode. A one-node deployment uses the
-  same kernel contracts as a multi-node deployment.
-- **Determinism:** the same genesis or retained checkpoint, ordered admitted
-  inputs, tick schedule, and active contracts produce the same transitions.
-  `sy_core` cannot depend on wall-clock time, network timing, filesystem
-  ordering, thread scheduling, ambient randomness, or nondeterministic
-  iteration.
-- **Durability:** never report success or publish canonical effects before the
-  required durable confirmation. A local WAL append is not a distributed
-  commit. On critical persistence failure, fail closed; on loss of quorum,
-  pause mutations while permitting explicitly stale, read-only inspection.
-  Pending commands remain durable until normal resolution or an authorized
-  confirmed cancellation; bounded producer incarnations and expiry never
-  permit identifier reuse.
-- **Extensibility:** world data has declared owners and is changed through
-  public commands. Cross-owner changes inside one world are atomic. The kernel
-  enforces declared validators without imposing application laws, spatial
-  types, creature/resource categories, or human privileges.
-- **Compatibility:** replay-affecting changes require explicit contract
-  versions. Stable kernel-owned data always has a documented migration path.
-  Plugins own their data migrations and incompatible components block
-  activation rather than being silently skipped. Migration drains all old
-  profile application commands, freezes world mutation at a confirmed barrier,
-  and never changes membership implicitly.
-- **Architecture:** preserve the documented dependency direction. `sy_core`
-  depends only on `sy_types` and `sy_api` and must pass the purity gate. Real
-  I/O belongs outside the pure transition engine.
+- **Single-world CP authority:** one world has one confirmed history owned by
+  its authorized node group (1 node or 3 nodes, quorum 2; shared-nothing nodes).
+  Node discovery never grants authority, and a minority partition cannot write.
+  Durable authority terms fence coordinators; confirmed configuration versions
+  govern membership. Peer-to-peer decentralization operates between autonomous
+  worlds, not via lockstep multi-group world sharding.
+- **Headless operation:** a world evolves without UI, rendering, clients,
+  agents, or ingame netcode. One-node and three-node deployments obey the same
+  public contract.
+- **Determinism:** equal genesis or checkpoint, ordered admitted inputs, tick
+  schedule, and execution profile produce identical transitions. `sy_core`
+  cannot depend on wall-clock time, network timing, filesystem order, thread
+  scheduling, ambient randomness, or nondeterministic iteration. Entropy is
+  derived from canonical coordinates (`EntropyScope`), never a global mutable
+  RNG or floating-point decisions.
+- **Single mutation path and durability:** all canonical state mutations — live
+  and during recovery — pass through one deterministic `apply(write_set)` path
+  over partitioned ordered tables. Never report canonical success or publish
+  effects before required durable confirmation. Fail closed on persistence
+  errors; pause mutations on quorum loss while allowing explicitly stale
+  read-only inspection. `CancelCommand` has a reserved control budget so full
+  application quotas can never deadlock recovery from a `Pending` command.
+- **One frozen public seam, no over-engineering:** v1 freezes only the public
+  plugin/command/observation contract (`CONTRACT.md` + `PLUGIN_CONTRACT.md`).
+  Internal infrastructure seams (`StateStore`, `AuthorityLog`, `Executor`)
+  remain internal, testable traits — never freeze an internal seam without a
+  real second provider and consumer, and never add complex optimizations
+  (`Block-STM`, `ColumnarTable`, custom crypto hashes, WASM) ahead of measured
+  need.
+- **Compatibility:** replay-affecting changes require explicit contract or
+  profile versions. Stable kernel data maintains documented migration paths;
+  plugins own their migrations. `MigrationActivate` commits a mandatory
+  boundary checkpoint so ordinary recovery never spans two execution profiles.
+- **Architecture:** `sy_core` depends only on `sy_types` and `sy_api` (zero
+  external crates) and must pass the purity gate. Real I/O stays outside the
+  pure engine.
 
 ## Current status
 
-The repository currently implements a local, single-writer Phase 1 prototype.
-Do not describe target networking, generic extension data, hot loading, or
-isolation as implemented. The current zone/entity model and degradation rules
-are prototype fixtures that must move behind extension boundaries before the
-first stable contract.
+`seej/server/` currently holds a local, single-process prototype (`server_d`,
+`sy_cli`) with a fail-closed v1 WAL, format v3/v4 snapshots, and prototype
+spatial `Entity`/`Zone` fixtures. Treat it as a replaceable baseline: when
+building the generic D-015 core, starting clean is explicitly preferred over
+carrying legacy spatial types or JSON snapshots forward.
 
-Gate 1-K in `seej/docs/phase1/EXIT_CHECKLIST.md` is the mandatory bar for the
-first stable contract. It includes the distributed proof, fail-closed common
-storage faults, a real external data-owning extension, and contract migration
-evidence. Gate 1-D contains later hardening whose triggers are genuinely tied
-to scale or operational use.
-
-Hot loading and isolated execution are later capabilities. The first stable
-contract may load only operator-approved trusted providers at startup.
+Never present target features (generic domains, consensus, network observation,
+migrations, WASM isolation, hot loading) as implemented.
 
 ## Context on demand
 
-Read the documents relevant to the affected boundary:
-
 | Subject | Authority |
 | --- | --- |
-| Direction and supersession | [D-012](doc/DECISIONS.md#d-012--distributed-extensible-world-kernel), [D-013](doc/DECISIONS.md#d-013--operational-failure-semantics), and [D-014](doc/DECISIONS.md#d-014--first-stable-boundary-semantics) |
-| Public guarantees and statuses | [Kernel contract](seej/docs/CONTRACT.md) |
-| Inter-node authority | [Node-network contract](seej/docs/NODE_NETWORK.md) |
-| Providers and world extensions | [Plugin contract](seej/docs/PLUGIN_CONTRACT.md) |
-| Crate and purity boundaries | [Dependency rules](seej/docs/DEPENDENCY_RULES.md) |
-| Stable-release evidence | [Exit checklist](seej/docs/phase1/EXIT_CHECKLIST.md) |
+| Architectural decisions (`D-001`–`D-015`) | [doc/DECISIONS.md](doc/DECISIONS.md) |
+| Architecture, data model, seams, purity | [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) |
+| Public kernel, authority, and command contract | [seej/docs/CONTRACT.md](seej/docs/CONTRACT.md) |
+| Frozen v1 public plugin boundary | [seej/docs/PLUGIN_CONTRACT.md](seej/docs/PLUGIN_CONTRACT.md) |
+| Milestones and release checklist | [doc/ROADMAP.md](doc/ROADMAP.md) |
+| Current prototype behavior and benchmarks | [seej/docs/PROTOTYPE.md](seej/docs/PROTOTYPE.md) |
+| Threat model and security posture | [doc/SECURITY.md](doc/SECURITY.md) |
 
-## Completion and verification
+## Verification
 
-Carry implementation requests through affected checks and fix regressions
-before handing back. Preserve user changes and keep commits scoped. For
-documentation, verify links, anchors, terminology, status labels, commands,
-and the distinction between implemented behavior and targets.
+Carry implementation changes through affected checks before handing back. For
+documentation changes, verify links, anchors, commands, terminology, and the
+distinction between implemented prototype behavior and targets.
 
-Run Rust commands from `seej/server` with its pinned toolchain. Select affected
-checks from `.github/workflows/rust.yml`; start with targeted crate tests and
-broaden only when boundaries are crossed. For `sy_core` changes, run
-`python3 scripts/check_sy_core_purity.py`; add `--self-test` when changing the
-gate itself.
+Run Rust commands from `seej/server/` with the pinned toolchain
+(`rust-toolchain.toml`). Select checks from `.github/workflows/rust.yml`:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+python3 scripts/check_sy_core_purity.py --self-test
+python3 scripts/check_sy_core_purity.py
+```

@@ -1,46 +1,27 @@
-# sy_infra WAL fuzzing
+# `sy_infra` WAL Fuzzing
 
-This harness validates the current local FileEventLog provider. It does not
-exercise the target command journal, distributed consensus, authenticated node
-messages, provider replacement, or retention-aware compaction. Those require
-separate fuzz and fault-injection targets when their implementations exist.
+This isolated harness fuzzes the current local prototype's `FileEventLog`
+decoder and round-trip persistence. It does **not** exercise the target D-015
+command journal, distributed consensus, or retention-aware compaction.
 
-This directory is intentionally isolated from the main workspace because
-`cargo-fuzz` requires nightly and `libfuzzer`.
+It is intentionally excluded from `seej/server/Cargo.toml` because `cargo-fuzz`
+requires nightly Rust and `libFuzzer`.
 
-Run short local smoke tests from this directory:
+## Running Locally
 
-```text
+From `seej/server/crates/sy_infra/fuzz/`:
+
+```bash
 cargo +nightly fuzz run decode_record -- -runs=1000
 cargo +nightly fuzz run wal_round_trip -- -runs=1000
 ```
 
-The scheduled CI job uses time-bounded sessions:
+## CI Behavior
 
-```text
-cargo +nightly fuzz run --target x86_64-unknown-linux-gnu decode_record -- -max_total_time=180
-cargo +nightly fuzz run --target x86_64-unknown-linux-gnu wal_round_trip -- -max_total_time=180
-```
+- Pull requests build both targets (`cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu`).
+- Scheduled runs execute 180-second smoke sessions per target on Ubuntu glibc
+  (AddressSanitizer is incompatible with musl; Windows MSVC can hit
+  `STATUS_DLL_NOT_FOUND` if the libFuzzer runtime DLL is not on `PATH`).
 
-Pull requests only build the targets:
-
-```text
-cargo +nightly fuzz build --dev --target x86_64-unknown-linux-gnu
-```
-
-CI pins the Ubuntu fuzz jobs to the glibc Linux target because AddressSanitizer
-is incompatible with statically linked musl libc.
-
-On Windows MSVC, a fuzz target can compile but fail to start with
-`STATUS_DLL_NOT_FOUND` if the LLVM/libFuzzer runtime DLL is not on `PATH`.
-The scheduled CI smoke job runs these targets on Ubuntu.
-
-The `decode_record` target writes arbitrary bytes to a WAL file and exercises
-the same recovery/read path used by `FileEventLog`.
-
-The `wal_round_trip` target generates structured batches, persists them through
-`append_batch`, reopens the WAL, and checks that persisted ordering and event
-IDs survive decode.
-
-Passing these targets is evidence for the current WAL decoder only; it does not
-close K-07, K-08, K-09, or K-10.
+See [seej/docs/PROTOTYPE.md](../../../docs/PROTOTYPE.md) for the current WAL v1
+format and [doc/ROADMAP.md](../../../../../doc/ROADMAP.md) for release gates.

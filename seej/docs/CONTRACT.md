@@ -1,480 +1,366 @@
-# Seej Kernel Contract
+# Seej Kernel & Authority Contract
 
 ```text
-contract_version: 0.3.0-draft
-status:           DRAFT — NOT FROZEN
+contract_version: 0.4.0-draft
+status:           DRAFT — NOT FROZEN (gap K-01)
 ```
 
-## Status and interpretation
+This is the single normative draft contract for the Seej world kernel: identity,
+deterministic transitions, state mutation, commands, resolution roots,
+single-world authority, recovery, migration, observation, and inter-world
+federation. Plugin-facing contracts live in
+[PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md). Current prototype behavior lives in
+[PROTOTYPE.md](PROTOTYPE.md); implementation status lives in
+[doc/ROADMAP.md](../../doc/ROADMAP.md).
 
-This is the root public contract between the Seej world kernel and providers,
-plugins, producers, observers, and operators. A third party must eventually be
-able to use it without reading internal Rust code.
+Statements without an **Implemented** note describe the v1 target. After v1
+freeze (`K-01`), any replay-affecting change requires an explicit contract or
+execution-profile version bump.
 
-Statements use these labels:
+---
 
-- **Implemented:** behavior in the current repository with evidence named in
-  the Phase 1 checklist.
-- **Target (gap ID):** mandatory before the first stable contract.
-- **Later:** intentionally outside that contract.
+## 1. Kernel Boundary and Identity
 
-A section without an Implemented label describes the target. Freezing this
-contract is gap `K-01`. Editing this draft does not freeze it.
+Seej is a logical world kernel owning:
 
-After the first stable version, a change that alters admitted command meaning,
-state transition, confirmed-history interpretation, stable identifiers, or
-migration results requires an explicit contract version. Silent replay changes
-are forbidden.
+- stable world identity and versioned genesis;
+- canonical simulated time (`Tick`);
+- command admission, durable identity, bounded status retention, and reserved
+  control-plane cancellation;
+- orchestration of plugin domains, atomic cross-owner transactions, and active
+  obligations;
+- single-path write-set materialization, semantic state roots, persistence,
+  recovery, and coordinated migration;
+- single-world authority confirmation, membership transitions, and confirmed
+  observation.
 
-Specialized normative documents:
+Application ontologies (space, entities, zones, economies, agents, renderers,
+ingame netcode) remain outside the kernel.
 
-- [NODE_NETWORK.md](NODE_NETWORK.md) for inter-node authority;
-- [PLUGIN_CONTRACT.md](PLUGIN_CONTRACT.md) for providers and plugins;
-- [simulation/WORLD_SPEC.md](simulation/WORLD_SPEC.md) for world semantics.
+### Identity & Genesis (`P0-06`, `P0-07`)
 
-## 1. Kernel boundary
+- `world_id` is a stable identity independent of seed, `genesis_hash`, node
+  identity, filesystem path, and authority membership.
+- A versioned, hashable `GenesisSpec` records randomness policy, initial domain
+  data, execution profile, limits profile, and initial authority configuration.
+- `genesis_hash` proves genesis contents but is not the world identity.
+- A replica preserves `world_id`; an independent clone allocates a new one.
+- Loading refuses any world, genesis, profile, or authority metadata mismatch.
 
-Seej is a logical distributed kernel for persistent worlds. It owns:
+---
 
-- stable world identity and declared genesis;
-- canonical simulated time;
-- command admission, durable identity, status, and per-world ordering;
-- orchestration of declared validators and atomic in-world transitions;
-- confirmed history, persistence, recovery, and retention;
-- node authority, compatibility, and coordinated migration;
-- versioned public provider, plugin, and observation contracts.
+## 2. Deterministic Transition and Entropy
 
-Seej supplies minimal providers that allow an empty world to run. Application
-laws and models remain extensions. There is no mandatory space, entity
-category, agent, economy, renderer, or ingame netcode.
-
-## 2. Identity and genesis
-
-**Implemented:** the prototype requires a `u64` seed, derives
-`world_<seed>`, and creates an origin zone. These are current local-format
-facts, not the target identity contract.
-
-**Target (P0-06, P0-07, K-06):**
-
-- `world_id` is a stable identity independent of seed, node, path, and
-  authority membership;
-- a versioned, hashable `GenesisSpec` records seed or randomness policy,
-  initial extension data, schema/contracts, and initial authority profile;
-- `genesis_hash` proves genesis contents but is not the world identity;
-- a replica retains `world_id`; an independent clone obtains a new one;
-- loading refuses world, genesis, contract, or authority metadata mismatch.
-
-## 3. Deterministic transition
-
-The canonical transition is derived from:
+Canonical transitions are pure functions of:
 
 ```text
-confirmed state + ordered admitted command + tick + active contracts
+confirmed state + ordered admitted inputs + tick + active execution profile
 ```
 
-The pure engine does not read wall clock, network timing, filesystem ordering,
-thread scheduling, ambient randomness, clients, or observers. Randomness is
-explicitly seeded and its state or results are persisted as required by the
-active contract. External nondeterminism enters as a validated persisted input.
-
-Canonical counters fail closed on overflow. Canonical numeric rules avoid
-unconstrained floating-point decisions. Supported execution profiles state the
-platform and numeric guarantees they have actually proved; Seej does not claim
-universal bit identity on untested platforms.
-
-**Implemented:** the local transition engine has deterministic scheduling,
-seeded RNG state, canonical entity ordering, recovery-parity tests, and a
-purity gate. Current float-based degradation is a known defect.
-
-**Target (P0-03, P0-04, P0-05, P0-15):** explicit simulation contract, safe
-counters, deterministic numeric policy, and command-to-state replay oracle.
-
-## 4. World data and ownership
-
-World state is a collection of versioned domains. A domain declares:
-
-- stable owner capability;
-- format and schema or opaque payload version;
-- commands and queries;
-- validators and limits;
-- dependencies and active obligations;
-- migration steps.
-
-Opaque data is allowed. The kernel preserves its envelope and bytes but may
-require the owner plugin or a tool to interpret them.
-
-Only the owner commands mutate a domain. A transaction can invoke several
-owners inside the same world. It binds to one confirmed base cursor and orders
-its owner sub-commands canonically. Starting from the immutable base state, the
-kernel builds a private candidate state: each owner validates and proposes only
-its own domain changes while observing the candidate produced by earlier
-sub-commands. After all parts succeed, cross-domain validators inspect the
-complete candidate state.
-
-The resulting decision, events, and complete candidate transition are
-confirmed atomically or no owner effects are applied. If the confirmed head no
-longer matches the base cursor before confirmation, the proposal is discarded
-and the entire transaction is recomputed from its actual canonical predecessor.
-It is never partially rebased. Plugin timeout, crash, or unavailable compatible
-code leaves the command pending or the authority unavailable; it is not
-fabricated as a deterministic `Refused` decision.
-
-The kernel does not define universal conservation. A world declares its laws,
-including any creation, destruction, privilege, mortality, spatial, or
-economic rules, and the kernel enforces the active validators.
-
-**Implemented:** the prototype exposes fixed zone/entity structures and direct
-commands. This is demonstration behavior scheduled for extraction.
-
-**Target (K-05, K-06):** generic domains, ownership, trusted startup providers,
-and atomic cross-owner transactions.
-
-## 5. Time and commands
-
-`Tick` is the only canonical simulation clock for a world. There is no global
-network tick across worlds. A replica never independently advances canonical
-time.
-
-A target `CommandEnvelope` contains at least:
-
-- a stable command identity composed of `world_id`, a kernel-issued
-  `producer_id`, an `admission_generation`, and a producer-local sequence;
-- target tick;
-- a positive finite `status_window_ticks` fixed at admission;
-- payload plus an immutable `intention_fingerprint` over the complete
-  intention: world, target tick, status window, owner contract and version,
-  canonical payload, and any authorization context that changes validation;
-- owning command contract and version;
-- canonical admission sequence once accepted;
-- authorized source and correlation metadata when present.
-
-Correlation and transport metadata that do not change the intention are not
-part of the fingerprint. A `producer_id` is the active incarnation of one
-kernel-issued world-local producer slot; it contains the bounded slot identity
-and that slot's monotonic incarnation. It is separate from the authenticated
-external principal. Every producer, including an internal scheduler, then uses
-a kernel-issued generation. A generation is distinct from a node authority
-term and cannot be invented from network discovery. It becomes valid only when
-a confirmed `OpenGeneration` operation binds it to the active producer
-incarnation and advances that incarnation's monotonic generation sequence.
-Opening a new generation atomically seals that producer's previous open
-generation. An unconfirmed issuance cannot admit commands after failover.
-
-Command handling has two durable logical records in the confirmed history:
-
-1. **Admission** binds the envelope to a per-world admission sequence and
-   creates durable `Pending` state. Admission alone has no application effect.
-2. **Resolution** records `Succeeded`, `Refused`, or `Cancelled` together with
-   the complete event set and state transition. Applying a successful confirmed
-   record is the only way application effects become canonical. A cancellation
-   has no application effects.
-
-An implementation may confirm admission and resolution in one storage or
-consensus transaction, but the two logical states and their recovery behavior
-remain observable. After recovery, an admitted command without a resolution is
-still `Pending` and is deterministically resumed from its confirmed predecessor.
-A confirmed terminal decision is never recomputed as new work.
-
-`CancelCommand` is a kernel control operation, not an application-law refusal.
-It identifies the target command, authorized requester, reason, and stable
-control-operation identity. It can resolve only an admitted `Pending` command
-whose terminal resolution has not already been confirmed. The first terminal
-record confirmed in a race between normal execution and cancellation wins;
-retries return that durable result. Cancellation cannot erase confirmed effects
-or discharge an application obligation.
-
-The authority group keeps this bounded control path available when application
-execution is blocked, provided authorization, quorum, compatibility of the
-kernel control contract, limits, and persistence remain available. A plugin is
-never allowed to authorize its own administrative cancellation implicitly. The
-control operation itself uses the same bounded identity, fingerprint, retry,
-and status-retention rules as other admitted operations.
-
-New commands execute by target tick and then admission sequence. Closing a tick
-is itself confirmed; after that boundary, a new command targeting that tick is
-resolved as refused and is never silently moved. Deduplication precedes this
-late check, so retrying an older command returns its existing result.
-
-Deduplication and status lookup also precede an active migration pause. Once a
-confirmed `MigrationPrepare` has paused application admission, a genuinely new
-application command returns `WorldPaused` with the migration identity and phase
-and creates no Admission record. After activation or abort, the producer may
-retry it; normal compatibility and late-tick rules then decide the request.
-
-For one command namespace:
-
-- before expiration, same ID and same fingerprint returns the durable status
-  without repeating effects;
-- before expiration, same ID and different fingerprint returns a conflict;
-- a terminal resolution at canonical tick `R` records
-  `expiration_tick = R + status_window_ticks` using checked canonical
-  arithmetic; its detailed status is returned while the confirmed world tick
-  is lower than `expiration_tick`;
-- at `expiration_tick` and afterward, submission or query returns `Expired`,
-  including when the supplied fingerprint differs from the original;
-- a `Pending` command never expires and cannot be removed by compaction;
-- after a terminal result expires, a compact per-command tombstone preserves
-  non-reuse until the whole generation closes;
-- a timeout or unavailable authority result is not a refusal.
-
-Each generation has one durable lifecycle state:
-
-- **Open:** new command identities may be admitted;
-- **Sealed:** no new identity may be admitted, while already admitted commands
-  continue toward a terminal result and remain queryable under their window;
-- **Closed:** every admitted command is terminal and expired. A confirmed close
-  advances the active incarnation's closed-generation floor in increasing
-  order.
-
-Sealing occurs through confirmed order. It happens when the next generation
-opens or when the finite command-count, byte-count, or canonical-tick-age limit
-bound to the generation is reached. A submission ordered after sealing returns
-`GenerationSealed`; a submission ordered before it may be admitted. Closing is
-also a confirmed operation. The durable closed-generation floor then makes
-every identifier in that generation `Expired` without retaining its individual
-tombstone or original `OpenGeneration` record.
-
-The limits profile defines a finite number of world-local producer slots. A
-confirmed producer retirement requires all of that incarnation's generations
-to be closed. Reassigning the slot confirms a strictly greater incarnation and
-resets only its new generation sequence; the durable per-slot incarnation
-high-water mark makes requests for every older incarnation `Expired` before
-any compacted generation metadata is consulted. Producer slots and
-incarnations are kernel-issued and cannot be selected by an external caller.
-
-Durable command states are `Pending`, `Succeeded`, `Refused`, and `Cancelled`.
-`Conflict`, `Expired`, `GenerationSealed`, `LimitExceeded`, `NotFound`,
-`Unavailable`, and `WorldPaused` are submission, control, or query results and
-do not replace a stored command state. `Unavailable` means the authority group
-cannot answer safely; it is never a fabricated terminal result. `WorldPaused`
-means a confirmed lifecycle barrier rejected new application admission; it is
-not a business-law refusal.
-
-The persisted limits profile supplies finite bounds per world for producer
-slots and per producer and world for non-closed generations, admitted command
-count and bytes per generation, pending command count and bytes, and retained
-terminal-result or tombstone count and bytes. Reaching a per-generation count,
-byte, or age bound confirms a seal. If producer activation, opening a
-generation, or admitting a command would exceed a bound, no producer,
-generation, or Admission record is created and the request returns
-`LimitExceeded`; a later retry may succeed after retirement or closure frees
-capacity. The authority group does not evict pending commands, extend a
-promised status window, or manufacture a refusal. Arithmetic overflow in an
-expiration, sequence, incarnation, or limit counter fails closed under P0-04
-without fabricating a terminal command result.
-
-**Implemented:** local commands and ticks exist, but no durable command journal,
-deduplication contract, or network admission order exists.
-
-**Target (P0-08, P0-09, K-08):** durable envelopes, canonical ordering, status
-queries, authorized cancellation, fingerprint conflicts, late refusal,
-open/sealed/closed generations, bounded producer incarnations, exact expiry,
-finite limits, and non-reusable expired IDs.
-
-## 6. Events and causal history
-
-An admitted command resolves with zero or more versioned events plus a durable
-decision when the required execution profile is available. Until then it
-remains `Pending`. Events identify the world, command, tick, resolution
-position, owner, schema version, and stable event position. Unknown mandatory
-variants are refused rather than silently skipped.
-
-A confirmed causal chain binds command, resulting events, active execution
-profile, predecessor cursor and semantic hash, and resulting cursor and
-semantic hash. Diagnostic logs are never canonical history.
-
-**Implemented:** `SimEvent` values have local event IDs and are stored in the
-FileEventLog WAL. Some legacy events are replay no-ops.
-
-**Target (P0-11, P1-06, P1-20):** explicit persisted DTOs and version tags,
-world/contract binding, and causal linkage.
-
-## 7. Distributed confirmation
-
-A world authority group produces one confirmed history. Node discovery does
-not grant membership. A local append, received proposal, or computed transition
-is not a distributed commit.
-
-Canonical success and observer publication occur only after the active
-authority group provides the configured durable confirmation. Loss of quorum
-pauses mutation. Durable authority terms fence stale coordinators, while
-separate confirmed configuration versions govern membership. Read-only access
-to an older confirmed state may continue with explicit freshness.
-
-**Implemented:** only the one-process, one-writer FileStore path.
-
-**Target (K-07):** the behavior in [NODE_NETWORK.md](NODE_NETWORK.md), proven on
-one and three nodes.
-
-## 8. Persistence, recovery, replay, and migration
-
-Three positions have distinct meanings:
-
-- `confirmed_cursor` is the highest canonical history record known confirmed;
-- `checkpoint_cursor` is the confirmed position atomically bound to a retained
-  checkpoint's state, execution profile, and semantic hash;
-- `applied_cursor` is the highest confirmed position materialized into a
-  particular node-local state instance.
-
-An `applied_cursor` cannot advance separately from the state it describes. It
-may lag `confirmed_cursor`. A node cannot use that lagging materialization for a
-current read until it applies through the required read barrier.
-
-These operations are distinct:
-
-- **Recovery:** load and validate a compatible retained checkpoint, set the new
-  state instance to its `checkpoint_cursor`, and materialize retained confirmed
-  records after that cursor in order. It consumes recorded decisions and
-  transitions; it does not invoke owner code to decide resolved commands again.
-- **Re-simulation:** recompute transitions from retained commands and exact
-  execution components, then compare them with the recorded causal results.
-- **Migration:** convert durable data from one explicit stable version to
-  another at a coordinated boundary.
-- **Clone:** create a new world identity from copied or exported state.
-
-Every accepted canonical mutation is durably confirmed before success. A
-storage error such as full/read-only media, I/O failure, failed append, failed
-rename, or failed synchronization prevents unsafe new acceptance. Suspicious
-corruption is quarantined or refused; it is not silently repaired.
-
-Materializing a confirmed resolution requires the current `applied_cursor` and
-semantic hash to match its recorded predecessor. It advances state, semantic
-hash, and `applied_cursor` together. A new state instance may therefore apply a
-confirmed resolution that an earlier in-memory instance had applied before a
-crash; this reconstructs the canonical state and is not a second command
-execution. A gap, mismatched predecessor, or different result at the same
-cursor fails closed.
-
-Recovery never invokes an external side effect merely because it materializes
-a record. Durable events and effect intentions retain their stable IDs and may
-be redelivered; external consumers are responsible for deduplication under
-their explicit asynchronous protocol.
-
-Kernel-owned data has a migration path from every stable version. Plugins own
-their migrations. Re-simulation refuses to run when an exact referenced
-component is missing. Operators retain plugin artifacts; Seej records their
-references and cryptographic fingerprints.
-
-Migration preparation, draining, a final base barrier, and activation are
-separate confirmed phases. The first-stable migration protocol pauses all new
-application admissions for the world. Every application command admitted under
-the old profile then reaches a normal terminal decision or an authorized
-`Cancelled` decision. A confirmed `MigrationBarrier` records the exact
-old-profile state and cursor after that complete drain. From the barrier through
-activation or abort, no world tick or application transition can confirm.
-Read-only inspection, authority elections, and migration-control operations may
-continue under their own contracts. Nodes derive and verify the migrated
-candidate only from this barrier.
-
-Confirmation of the new profile and migrated state against that barrier is the
-activation commit point. Before activation, a confirmed abort under the old
-profile may release the barrier; after activation, recovery continues from the
-new state and any return requires another explicit migration. An uncertain
-activation response is resolved from confirmed history.
-
-**Implemented:** local snapshot + WAL recovery, CRC-protected WAL records, and
-atomic snapshot replacement on the supported path. New worlds use format v4
-with a mixed initial RNG state. Formats v3 (raw seed at genesis) and v4 are
-read and continued without migration, restoring the RNG state stored in the
-snapshot and preserving the world's format on save.
-
-**Target (P0-14, K-09):** injected common-I/O-failure evidence, explicit
-migrations, compatible group activation, and historical-component checks.
-
-Baseline cold backup/restore evidence and the first-stable recovery procedure
-are mandatory under `P2-02` and `P2-03`; hot backup and advanced diagnostic
-tooling remain later work.
-
-The current `snapshot.json`, `meta.json`, and FileEventLog encoding are
-reference-provider formats, not mandatory formats for every future provider.
-
-## 9. Retention and observation
-
-A world declares its retention policy. Compaction may remove old commands and
-events only while preserving:
-
-- a coherent recovery point and current confirmed state;
-- active obligations;
-- stable command-ID expiration safety;
-- required migration and integrity metadata.
-
-At a terminal command's recorded `expiration_tick`, compaction may replace its
-detailed result with a non-reuse tombstone even while its generation remains
-sealed but not closed. After all commands in a sealed generation are terminal
-and expired, confirmed closure may replace those tombstones and generation
-records with the active incarnation's closed-generation floor. Compaction never
-removes a pending admission, reopens a generation, or changes an expiration
-tick.
-
-Full history archival is optional. Genesis re-simulation is possible only when
-the full required history and artifacts were retained.
-
-Observers read a confirmed prefix. Responses contain a stable cursor and
-freshness. A current-confirmed response requires the authority proof defined by
-the node-network contract; otherwise it is explicitly stale or unavailable.
-Reconnection may redeliver identified events. An expired cursor returns an
-explicit expiration plus a coherent state and replacement cursor describing
-the same confirmed cut; that cut remains retained through stream handoff or the
-handoff restarts explicitly. Deleted history stays unavailable.
-
-Observing is semantically neutral. Reader presence, speed, or identity cannot
-change canonical fidelity, rules, ordering, or outcomes. The runtime may rate
-limit or refuse observation under load.
-
-**Implemented:** `sy_cli` opens the local WAL read-only, but
-`FilesystemStore::new` may create `<data-dir>/worlds` before inspection. Its
-explicit `dump --output` destination is also not protected from aliasing the
-world store. P1-11 therefore remains open; this CLI is not a concurrent network
-observation surface.
-
-**Target (K-02, K-10):** confirmed stream, retention, resynchronization, and
-concurrent-read evidence.
-
-## 10. Plugin lifecycle
-
-The first stable release may activate only trusted, operator-approved providers
-at startup. Activation validates compatibility, permissions, versions,
-fingerprints, data migrations, and required capabilities.
-
-Removing or replacing a plugin with owned data or active obligations requires
-an explicit migration of its data and either transfer to an active successor or
-resolution of every active obligation. Archival alone may detach code only when
-all obligations are terminal, or when the entire world is explicitly archived
-and cannot advance. The world may pause at a confirmed boundary while the
-server remains available for inspection.
-
-Hot loading and isolated application-plugin execution are **Later**. Their
-eventual implementation must preserve this contract.
-
-## 11. Semantic integrity
-
-A semantic state hash covers canonical world meaning in a stable order. Storage
-checksums cover physical artifacts. Network authentication verifies identities
-and messages. These are separate mechanisms: the prototype's xxhash and CRC
-checks do not authenticate nodes.
-
-Integrity validation runs after decode, recovery, migration, and before a node
-claims a current state.
-
-**Target (P0-12, P1-04):** generic integrity validation and separation of
-semantic, storage, and authority metadata.
-
-## 12. Stable-contract acceptance
-
-The first contract cannot freeze until the checklist proves at least:
-
-- the generic kernel and provider boundary;
-- bundled-versus-alternative conformance evidence for every fundamental
-  provider capability;
-- fail-closed common storage errors;
-- durable command lifecycle and retention;
-- causal binding from each resolution to its predecessor and resulting state;
-- one- and three-node authority behavior;
-- coherent confirmed observation;
-- kernel-owned migrations;
-- tested cold backup/restore and a baseline operator recovery procedure;
-- a third-party data-owning extension using public commands without internal
-  dependencies.
-
-The authoritative status and evidence live in
-[phase1/EXIT_CHECKLIST.md](phase1/EXIT_CHECKLIST.md).
+The pure engine never reads wall-clock time, packet arrival timing, filesystem
+ordering, thread scheduling, ambient randomness, or connected observers.
+External nondeterminism (LLMs, sensors, clocks) enters only as bounded,
+validated, persisted commands.
+
+- **Checked counters (`P0-04`):** tick, event, command/generation sequence,
+  producer incarnation, expiration, authority term, and configuration version
+  counters fail closed on overflow — never wrap or saturate silently.
+- **No unconstrained floats (`P0-03`):** canonical decisions use explicit
+  integer or fixed-point representations.
+- **Derived entropy (`EntropyScope`):** instead of a single global mutable RNG
+  cursor, entropy is derived deterministically from canonical coordinates
+  `(world_seed, entropy_epoch, tick, admission_seq | phase, domain_id)` and
+  forked per stable key. The counter-based PRF/PRNG algorithm is declared in
+  the execution profile.
+- **Execution profile (`P0-05`):** pins kernel contract version, proof mode,
+  state-hash algorithm, entropy algorithm, active plugin manifests and
+  fingerprints, limits profile, and retention policy. Supported platforms state
+  their verified parity profile rather than claiming untested universal bit
+  identity.
+
+---
+
+## 3. World State and Single Mutation Path
+
+World state separates **canonical state** (values affecting future transitions
+or established history) from **operational state** (local paths, sockets,
+caches, leases, diagnostics).
+
+- **Logical state model (`K-06`):** versioned owner domains backed by
+  partitioned ordered tables
+  `(DomainId, TableId, PartitionKey, RecordKey) -> OpaqueBytes` plus
+  kernel-visible `ObligationRegistry` envelopes.
+- **Single mutation path (`D-015`):** every canonical mutation — live execution
+  and crash recovery alike — constructs a deterministic `WriteSet` against an
+  immutable `StateView` and commits it through one canonical `apply(WriteSet)`
+  operation.
+- **Cross-owner atomicity (within one world):** a transaction binds to one
+  confirmed base cursor and orders its owner sub-commands canonically. Each
+  owner mutates only its own domain in a private candidate overlay while
+  observing earlier sub-commands; cross-domain validators inspect the complete
+  candidate. Effects confirm atomically or not at all. If the confirmed head
+  moves before confirmation, the candidate is discarded and recomputed in full
+  from the actual canonical predecessor.
+- **No fabricated refusals:** plugin crash, timeout, missing artifact, or
+  storage/quorum failure never produces a deterministic `Refused` decision; the
+  command remains `Pending` or the request returns `Unavailable`.
+
+---
+
+## 4. Time, Commands, and Control Plane
+
+`Tick` is the sole canonical clock for a world. There is no global clock across
+worlds, and replicas never advance ticks independently. Real-time cadence and
+overload/catch-up policies are world configuration inputs that cannot weaken
+durability, quorum, or observation neutrality.
+
+### Command Envelope (`K-08`, `P0-08`)
+
+A `CommandEnvelope` binds:
+
+- stable command identity: `(world_id, producer_slot, producer_incarnation,
+  admission_generation, producer_seq)`;
+- `target_tick` and positive finite `status_window_ticks` fixed at admission;
+- `owner_contract` + version, canonical payload, and immutable
+  `intention_fingerprint` covering world, target tick, status window, contract,
+  payload, and validation-affecting authorization context (excluding transport
+  correlation metadata);
+- canonical `admission_seq` once confirmed.
+
+### Two Durable States
+
+1. **Admission** binds the envelope to `admission_seq` and creates durable
+   `Pending` state with no application effects.
+2. **Resolution** records a terminal decision — `Succeeded`, `Refused`, or
+   `Cancelled` — together with canonical events, roots, and transition proof.
+   Applying a confirmed `Succeeded` resolution is the only way application
+   effects become canonical. Admission and resolution may commit in one
+   consensus batch, provided recovery preserves both logical states.
+
+Request/query results `Conflict`, `Expired`, `GenerationSealed`,
+`LimitExceeded`, `NotFound`, `Unavailable`, and `WorldPaused` are transient or
+lookup outcomes and never replace a stored terminal state.
+
+### Tick Closure, `Pending` Commands, and Reserved Control Budget (`D-015`)
+
+Commands execute by `(target_tick, admission_seq)`. Closing tick `T` via
+confirmed `CloseTick(T)` rejects genuinely new commands targeting `T` as
+`Refused` (never silently retargeted); deduplication precedes late checks.
+
+- **Tick closure rule:** `CloseTick(T)` **cannot** close tick `T` while any
+  admitted `Pending` command targeting `T` remains unresolved. Such a command
+  either reaches a normal terminal resolution (`Succeeded`/`Refused`) or is
+  resolved as `Cancelled` by an authorized control operation.
+- **Authorized `CancelCommand`:** a confirmed kernel control operation carrying
+  its own bounded identity, authorized requester, target command, and reason.
+  It resolves only a still-`Pending` command, produces no application effects,
+  cannot erase confirmed state or settle application obligations, and races
+  normal execution strictly through confirmed order (first terminal record
+  wins).
+- **Reserved control-plane budget:** the limits profile allocates a dedicated,
+  isolated capacity budget for kernel control operations (`CancelCommand` and
+  migration control) separate from application quotas. Saturated application
+  limits must never return `LimitExceeded` to authorized control operations,
+  preventing liveness deadlocks when a `Pending` command blocks tick
+  advancement.
+
+### Deduplication, Exact Expiry, and Bounded Generations (`K-08`, `K-10`)
+
+Lookup order for a submission or query:
+
+1. Verify `producer_slot` incarnation. An older incarnation immediately returns
+   `Expired` via the durable per-slot incarnation high-water mark.
+2. Check the active incarnation's durable closed-generation floor. At or below
+   the floor returns `Expired`.
+3. Verify the generation was opened by confirmed `OpenGeneration` (which
+   atomically seals the prior open generation). Look up the command ID.
+4. For a terminal resolution at canonical tick `R`, checked arithmetic fixes
+   `expiration_tick = R + status_window_ticks`. At `confirmed_tick >=
+   expiration_tick`, return `Expired` (even if fingerprints differ); compaction
+   may replace detailed results with a non-reuse tombstone until generation
+   closure.
+5. For an unexpired existing entry: matching fingerprint returns its durable
+   status (preceding late-tick and migration-pause checks); differing
+   fingerprint returns `Conflict`.
+6. If migration admission pause is active, genuinely new application
+   submissions return `WorldPaused` with migration identity/phase and create no
+   Admission.
+7. For an unused ID: `Open` generation proceeds to admission (or `NotFound` on
+   status query); `Sealed` generation returns `GenerationSealed` on submission.
+
+A `Pending` command never expires and cannot be compacted away. Finite
+persisted limits bound producer slots, non-closed generations, command counts
+and bytes, pending work, results, and tombstones — returning `LimitExceeded`
+without mutating state or extending promised windows. Once every command in a
+`Sealed` generation is terminal and expired, confirmed `CloseGeneration`
+advances the closed-generation floor; retiring an incarnation requires all its
+generations closed, after which reassigning the slot increments its monotonic
+incarnation.
+
+---
+
+## 5. Resolution, Roots, and Proof Modes
+
+A confirmed tick commits a group-committed batch (`TickCommit`) containing
+ordered admissions, control operations, and resolutions. Every confirmed
+resolution/tick binds:
+
+- `pre_state_root` and `post_state_root` (semantic state roots independent of
+  physical storage layout, `P1-04`, `P1-20`);
+- `events_root` (committing the canonical event stream emitted for observers);
+- `execution_profile_hash`, `authority_term`, `config_version`, and causal
+  cursor.
+
+### Frozen Roots vs. Profile-Selected Proof Mode & Hash (`D-015`)
+
+- **Roots are frozen in the v1 contract.** Predecessor mismatch, cursor gap, or
+  post-root mismatch fails closed immediately.
+- **State-hash algorithm lives in the execution profile**, never frozen to a
+  single permanent algorithm in the root contract. While per-resolution roots
+  are verified, the hash updates incrementally per modified record (benchmarks
+  show per-partition full rehash breaks scattered command loads).
+- **Proof mode lives in the execution profile:**
+  - **`delta` (v1 default):** confirmed records carry the canonical `WriteSet`
+    and events; recovery and followers materialize state mechanically via
+    `apply(WriteSet)` without invoking application plugin code.
+  - **`root` (future opt-in profile):** confirmed records carry compact ordered
+    inputs, verdicts, `post_state_root`, and `events_root` without bulk
+    internal deltas, for dense autonomous workloads once plugin determinism is
+    enforced by isolation or verified profiles.
+
+Storage CRCs and semantic state roots are integrity checks, never peer
+authentication.
+
+---
+
+## 6. Single-World Authority and Consensus
+
+Each world runs on one authorized authority group (1 node local, or 3
+shared-nothing nodes with quorum 2 under crash faults, storage failures, and
+network partitions). Byzantine nodes and permissionless admission are outside
+v1.
+
+- **Two monotonic fences:** `authority_term` fences coordinators during
+  elections; `config_version` governs membership changes. Every authority
+  message binds both.
+- **One confirmed history:** a local WAL append is not distributed commit.
+  Canonical success, state exposure, and observer publication occur only after
+  quorum confirmation. Loss of quorum suspends mutations; nodes may serve
+  explicitly stale read-only state.
+- **Reference membership transition (joint consensus):**
+  1. New nodes join as non-voting learners, verify the execution profile, and
+     catch up.
+  2. Current configuration confirms a joint configuration requiring majorities
+     of both old and new voter sets.
+  3. Final configuration confirms under the joint rule before removed voters
+     lose authority.
+  - An offline or incompatible configured voter retains its voter role and
+    quorum weight until explicitly removed/demoted via joint reconfiguration;
+    it cannot vote or claim current reads until compatible and caught up.
+  - Durable term, vote, membership, and confirmed log survive full restart;
+    local config files never override confirmed membership.
+- **Returning node:** may reconcile an explicitly unconfirmed local suffix; any
+  conflict in an already confirmed prefix is quarantined and never overwritten.
+- **Local storage failure:** affected node fails closed or quarantines before
+  accepting undurable work; the group continues only while quorum survives.
+
+---
+
+## 7. Recovery, Migration, and Retention
+
+### Three Distinct Cursors
+
+- `confirmed_cursor` — highest canonical history record confirmed by quorum.
+- `checkpoint_cursor` — confirmed position atomically bound to a checkpoint's
+  state, execution profile, and semantic root.
+- `applied_cursor` — highest confirmed position materialized into a local state
+  instance (advances atomically with state; lagging instances cannot serve
+  current reads).
+
+### Distinct Operations
+
+- **Recovery:** validate a compatible checkpoint at `checkpoint_cursor`, then
+  apply retained confirmed records after it in order (checking predecessor and
+  post roots; never re-deciding confirmed terminal commands or directly
+  re-invoking external services — external consumers deduplicate redelivered
+  identified events).
+- **Re-simulation:** separate diagnostic/audit operation recomputing retained
+  commands with exact archived component artifacts and comparing roots. Refuses
+  to run if any referenced artifact is missing.
+- **Migration:** explicit conversion between stable versions at a confirmed
+  boundary.
+- **Clone:** creates a new `world_id` from exported state.
+
+### 5-Phase Coordinated Migration (`K-09`)
+
+Membership changes and migration are serialized (configuration version stays
+fixed from prepare through activate or abort; elections may still advance
+`authority_term`).
+
+1. **`MigrationPrepare`:** identifies old/target execution profiles, conversion
+   steps, required artifacts, and fixed `config_version`; pauses all new
+   application admissions (`WorldPaused`).
+2. **Complete drain:** every old-profile `Pending` application command reaches
+   `Succeeded`, `Refused`, or authorized `Cancelled` (via the reserved control
+   path).
+3. **`MigrationBarrier`:** fixes the exact old-profile state, root, and cursor
+   after complete drain. No world tick or application mutation can pass this
+   barrier; observation, elections, and migration control continue.
+4. **Deterministic derivation:** nodes forming quorum verify target artifacts
+   and derive the identical migrated candidate and root from the barrier.
+5. **`MigrationActivate` (commit point):** atomically confirms barrier
+   reference, target profile, migrated state, and a **mandatory boundary
+   checkpoint** under the new profile so ordinary recovery never crosses two
+   execution profiles.
+   - Before activation: confirmed abort releases the pause under the old
+     profile.
+   - After activation: no automatic rollback; returning requires a new explicit
+     migration. Uncertain replies resolve from confirmed history.
+
+### Retention & Backup (`K-10`, `P1-19`, `P2-02`)
+
+Compaction may prune history older than retained recovery points only while
+preserving current state, active obligations, non-reuse tombstones /
+closed-generation floors / incarnation high-water marks, and migration
+metadata. Full archival is optional. Cold backup/restore and a baseline
+operator recovery runbook are v1 requirements; hot backup is later work.
+
+---
+
+## 8. Confirmed Observation
+
+Observers read a confirmed prefix (`K-02`), never an unconfirmed local tail.
+Every response identifies `world_id`, `authority_term`, `config_version`,
+`confirmed_cursor`, `applied_cursor`, execution profile, and freshness:
+
+- **Current confirmed read:** backed by a quorum read barrier in the active
+  term and configuration, with the serving node applied through that barrier.
+  An isolated former coordinator can never claim current state.
+- **Known confirmed but stale:** explicitly marked stale/unknown freshness.
+
+Event streams carry stable monotonic event IDs (at-least-once delivery on
+reconnect; consumers deduplicate). When compaction expires an observer's
+cursor, the server returns explicit cursor expiration plus a coherent
+replacement state and cursor from the same pinned cut (restarting explicitly if
+the cut cannot remain pinned through handoff).
+
+**Neutrality:** observer presence, count, filters, or backpressure never alter
+canonical rules, tick rate, fidelity, or outcomes. Under overload, observation
+is rate-limited or refused.
+
+---
+
+## 9. Inter-World Federation
+
+Seej does **not** shard one world's synchronous tick across independent
+authority groups in v1 (lockstep coupling collapses availability as $p^N$).
+Instead, horizontal scale and peer-to-peer decentralization across worlds use
+**asynchronous inter-world envelopes and durable obligations**:
+
+- Each world advances autonomously under its own CP authority group and tick
+  clock.
+- Cross-world effects are explicit asynchronous protocols (outbox events /
+  escrow obligations / validated incoming commands), never synchronous
+  cross-world atomic transactions.
+- A dedicated inter-world P2P transport/federation protocol is scheduled in
+  Gate 1-D once single-world v1 is proven.
